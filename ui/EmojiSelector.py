@@ -1,6 +1,6 @@
-from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QPushButton, QLabel
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QPushButton, QLabel
 
 from utils import *
 
@@ -17,8 +17,8 @@ class EmojiSelector(QDialog):
         self.resize(600, 530)
 
         # Facultatif : style frameless + fond transparent
-        # self.setAttribute(Qt.WA_TranslucentBackground)
-        # self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+        # self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        # self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
 
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)

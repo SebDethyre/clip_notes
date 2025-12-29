@@ -1,8 +1,9 @@
 import pyperclip
+import subprocess
 import io
 from PIL import Image, ImageDraw, ImageFont
 
-from PyQt5.QtGui import QColor, QPixmap, QImage
+from PyQt6.QtGui import QColor, QPixmap, QImage
 import re
 
 def is_emoji(s):
@@ -47,7 +48,7 @@ def image_pixmap(path, size=32):
     qt_img = QImage.fromData(data.getvalue(), "PNG")
     return QPixmap.fromImage(qt_img)
 
-def populate_actions_map_from_file(file_path, actions_map_sub):
+def populate_actions_map_from_file(file_path, actions_map_sub, callback):
     with open(file_path, 'r', encoding='utf-8') as f:
         for lineno, line in enumerate(f, start=1):
             # Supprime les espaces superflus avant et après la ligne
@@ -57,7 +58,7 @@ def populate_actions_map_from_file(file_path, actions_map_sub):
                 continue
             try:
                 key, value = line.split(":", 1)
-                actions_map_sub[key] = [(paperclip_copy, [value], {}), value, lineno]
+                actions_map_sub[key] = [(callback, [value], {}), value, lineno]
             except ValueError as e:
                 print(f"[Erreur de parsing] Ligne: {line}\n → {e}")
 
@@ -130,6 +131,15 @@ def replace_or_append_at_lineno(chemin_fichier, clef, valeur, numero_ligne):
     with open(chemin_fichier, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lignes) + '\n')  # ajoute un \n final propre
 
+def delete_line_in_file(path, lineno):
+    with open(path, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+    
+    if 1 <= lineno <= len(lines):
+        del lines[lineno - 1]
+        with open(path, 'w', encoding='utf-8') as f:
+            f.writelines(lines)
+
 def remove_from_actions_file(path, name_to_remove):
     with open(path, "r") as f:
         lines = f.readlines()
@@ -142,3 +152,34 @@ def paperclip_copy(string):
     # Remplacer '\\n' par des sauts de ligne réels
     formatted_string = string.replace(r'\n', '\n')
     pyperclip.copy(formatted_string)
+
+def execute_terminal(string):
+    # Remplacer '\\n' par des sauts de ligne réels
+    formatted_string = string.replace(r'\n', '\n')
+    
+    # Détecter et ouvrir un nouveau terminal selon l'environnement
+    terminals = [
+        ['gnome-terminal', '--', 'bash', '-c', formatted_string + '; exec bash'],
+        ['konsole', '-e', 'bash', '-c', formatted_string + '; exec bash'],
+        ['xterm', '-e', 'bash', '-c', formatted_string + '; exec bash'],
+        ['x-terminal-emulator', '-e', 'bash', '-c', formatted_string + '; exec bash'],
+    ]
+    
+    for terminal in terminals:
+        try:
+            subprocess.Popen(terminal)
+            return
+        except FileNotFoundError:
+            continue
+    
+    # Si aucun terminal n'est trouvé
+    print("Aucun terminal trouvé. Exécution dans le shell actuel...")
+    subprocess.run(formatted_string, shell=True)
+
+def execute_command(string):
+    formatted_string = string.replace(r'\n', '\n')
+    subprocess.Popen(formatted_string, shell=True, 
+                     stdout=subprocess.DEVNULL, 
+                     stderr=subprocess.DEVNULL,
+                     stdin=subprocess.DEVNULL,
+                     start_new_session=True)  # Détache complètement du processus parent
