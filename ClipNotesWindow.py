@@ -4,6 +4,7 @@ import subprocess
 import signal
 import os
 import getpass
+import json
 from PyQt6.QtGui import QCursor
 from PyQt6.QtGui import QPainter, QColor, QIcon, QRadialGradient, QFont
 from PyQt6.QtCore import Qt, QSize, QTimer, QPropertyAnimation, QRect, QEasingCurve, QVariantAnimation, QEvent, QPointF
@@ -16,6 +17,7 @@ from ui import EmojiSelector
 # Constantes de configuration
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CLIP_NOTES_FILE = os.path.join(SCRIPT_DIR, "clip_notes.txt")
+CLIP_NOTES_FILE_JSON = os.path.join(SCRIPT_DIR, "clip_notes.json")
 EMOJIS_FILE = os.path.join(SCRIPT_DIR, "emojis.txt")
 
 DIALOG_STYLE = """
@@ -71,7 +73,6 @@ class CursorTracker(QWidget):
             Qt.WindowType.Tool
         )
         
-        # Pas besoin de setWindowOpacity car WA_TranslucentBackground suffit
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setMouseTracking(True)
         
@@ -80,7 +81,7 @@ class CursorTracker(QWidget):
         
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_pos)
-        self.timer.start(10)  # 10ms pour une réactivité accrue
+        self.timer.start(10)
         
     def update_pos(self):
         pos = QCursor.pos()
@@ -92,15 +93,24 @@ class CursorTracker(QWidget):
 
 class RadialMenu(QWidget):
     def __init__(self, x, y, buttons, parent=None, sub=False, tracker=None):
-        # IMPORTANT : Utiliser le tracker comme parent pour Wayland
         super().__init__(tracker if tracker else parent)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.ToolTip)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.sub = sub
         self.tracker = tracker
-        self.radius = 80
+        
+        # Ajustement dynamique du rayon en fonction du nombre de boutons
+        num_buttons = len(buttons)
         self.btn_size = 55
+        
+        if num_buttons <= 7:
+            self.radius = 80  # Rayon par défaut pour 7 boutons ou moins
+        else:
+            # Augmentation proportionnelle du rayon pour plus de 7 boutons
+            # Formule: on augmente le rayon pour maintenir un espacement confortable
+            self.radius = int(80 * (num_buttons / 7))
+        
         self.buttons = []
 
         self.diameter = 2 * (self.radius + self.btn_size)
@@ -128,28 +138,46 @@ class RadialMenu(QWidget):
         sequence = up + down
         self.keyframes = sequence
         self._neon_radius = self.keyframes[0]  
-        self.neon_enabled = False  # Par défaut désactivé
+        self.neon_enabled = False
         self._neon_opacity = 120
         self._neon_color = "cyan"
-        self._widget_opacity = 1.0  # Opacité personnalisée du widget
+        self._widget_opacity = 1.0
 
         self.current_index = 0
+        self.badge_labels = []  # Pour stocker les badges
         angle_step = 360 / len(buttons)
         for i, button in enumerate(buttons):
             if len(button) == 2:
                 label, callback = button
                 tooltip = ""
+                action = None
             elif len(button) == 3:
                 label, callback, tooltip = button
+                action = None
+            elif len(button) == 4:
+                label, callback, tooltip, action = button
+            else:
+                label, callback = button
+                tooltip = ""
+                action = None
+                
             angle = math.radians(i * angle_step)
             bx = self.diameter // 2 + self.radius * math.cos(angle) - self.btn_size // 2
             by = self.diameter // 2 + self.radius * math.sin(angle) - self.btn_size // 2
 
             btn = QPushButton("", self)
+            # Déterminer le type de label et utiliser la fonction appropriée
             if "/" in label:
+                # C'est un chemin d'image
                 btn.setIcon(QIcon(image_pixmap(label, 32)))
-            else: btn.setIcon(QIcon(emoji_pixmap(label, 32)))
+            elif is_emoji(label):
+                # C'est un emoji
+                btn.setIcon(QIcon(emoji_pixmap(label, 32)))
+            else:
+                # C'est du texte simple
+                btn.setIcon(QIcon(text_pixmap(label, 32)))
             btn.setIconSize(QSize(32, 32))
+            
             btn.setStyleSheet(f"""
                 QPushButton {{
                     background-color: rgba(255, 255, 255, 10);
@@ -164,14 +192,61 @@ class RadialMenu(QWidget):
             btn.move(int(bx), int(by))
             btn.setVisible(False)
             btn.clicked.connect(self.make_click_handler(callback))
+            
+            # Installer l'eventFilter pour tous les boutons (pour tooltips et badges)
+            btn.installEventFilter(self)
             if tooltip:
-                btn.installEventFilter(self)
                 self._tooltips[btn] = tooltip
             self.buttons.append(btn)
+            
+            # Créer le badge si une action est définie
+            badge = None
+            if action:
+                badge_emoji = ""
+                if action == "copy":
+                    badge_emoji = "📋"
+                elif action == "term":
+                    badge_emoji = "💻"
+                elif action == "exec":
+                    badge_emoji = "🚀"
+                
+                if badge_emoji:
+                    badge = QLabel(badge_emoji, self)
+                    badge.setStyleSheet("""
+                        QLabel {
+                            background-color: rgba(255, 255, 255, 60);
+                            border-radius: 12px;
+                            padding: 2px;
+                            font-size: 18px;
+                        }
+                    """)
+                    # badge.setFixedSize(26, 26)
+                    # badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                    # # Positionner en bas à droite du bouton
+                    # badge.move(int(bx + self.btn_size - 22), int(by + self.btn_size - 22))
+                    badge.setFixedSize(25, 25)
+                    badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                    # Positionner en bas à droite du bouton
+                    # badge.move(int(bx + self.btn_size - 18), int(by + self.btn_size - 18))
+                    badge.move(int(bx -17), int(by + self.btn_size - 75))
+                    badge.setVisible(False)
+            
+            self.badge_labels.append((btn, badge))
 
     def eventFilter(self, watched, event):
-        if event.type() == QEvent.Type.Enter and watched in self._tooltips:
-            QToolTip.showText(watched.mapToGlobal(watched.rect().center()), self._tooltips[watched], watched)
+        if event.type() == QEvent.Type.Enter:
+            # Afficher le tooltip si disponible
+            if watched in self._tooltips:
+                QToolTip.showText(watched.mapToGlobal(watched.rect().center()), self._tooltips[watched], watched)
+            # Afficher le badge correspondant
+            for btn, badge in self.badge_labels:
+                if btn == watched and badge:
+                    badge.setVisible(True)
+        elif event.type() == QEvent.Type.Leave:
+            # Masquer le badge correspondant
+            for btn, badge in self.badge_labels:
+                if btn == watched and badge:
+                    badge.setVisible(False)
         return super().eventFilter(watched, event)
 
     def set_central_text(self, value):
@@ -204,7 +279,6 @@ class RadialMenu(QWidget):
 
     def set_widget_opacity(self, value):
         self._widget_opacity = value
-        # Appliquer l'opacité aux boutons aussi
         for btn in self.buttons:
             btn.setStyleSheet(f"""
                 QPushButton {{
@@ -230,7 +304,6 @@ class RadialMenu(QWidget):
     def make_click_handler(self, cb):
         def handler():
             cb()
-            # Ne PAS fermer ici - chaque callback gère sa propre fermeture
         return handler
 
     def mousePressEvent(self, event):
@@ -247,7 +320,6 @@ class RadialMenu(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Appliquer l'opacité globale
         painter.setOpacity(self._widget_opacity)
         
         center = self.rect().center()
@@ -271,7 +343,6 @@ class RadialMenu(QWidget):
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._central_text)
 
     def animate_open(self):
-        # Utiliser une propriété d'opacité personnalisée
         self.anim = QVariantAnimation(self)
         self.anim.setDuration(0)
         self.anim.setStartValue(0.0)
@@ -287,13 +358,10 @@ class RadialMenu(QWidget):
 
     def on_animation_finished(self):
         self.reveal_buttons()
-        # NE PLUS activer le néon automatiquement ici
-        # Le néon sera activé uniquement en mode édition/suppression
     
     def close_with_animation(self):
         self.neon_enabled = False
         
-        # Utiliser une propriété d'opacité personnalisée
         self.anim = QVariantAnimation(self)
         self.anim.setDuration(300)
         self.anim.setStartValue(1.0)
@@ -317,6 +385,25 @@ class App(QMainWindow):
         self.update_mode = False
         self.delete_mode = False
 
+    def get_action_from_json(self, alias):
+        """Lit l'action d'un clip depuis le fichier JSON"""
+        try:
+            if os.path.exists(CLIP_NOTES_FILE_JSON):
+                with open(CLIP_NOTES_FILE_JSON, 'r', encoding='utf-8') as f:
+                    clips = json.load(f)
+                    for clip in clips:
+                        if clip.get('alias') == alias:
+                            action = clip.get('action', 'copy')
+                            action_to_slider = {
+                                'copy': 0,
+                                'term': 1,
+                                'exec': 2
+                            }
+                            return action_to_slider.get(action, 0)
+        except Exception as e:
+            print(f"Erreur lecture JSON: {e}")
+        return 0
+
     def relaunch_window(self, x, y):
         if self.tracker:
             self.tracker.update_pos()
@@ -336,19 +423,23 @@ class App(QMainWindow):
             self.update_mode = False
             self.delete_mode = False
 
-    def update_clip(self, x, y):
+    def update_clip(self, x, y, slider_value=0):
         if self.tracker:
             self.tracker.update_pos()
             x, y = self.tracker.last_x, self.tracker.last_y
         
         self.buttons_sub = []
-        for name, (action_data, value, lineno) in self.actions_map_sub.items():
+        for name, (action_data, value, action) in self.actions_map_sub.items():
             if name not in ["➕", "📝", "🗑️"]:
+                # Lire l'action depuis le JSON pour ce clip
+                clip_slider_value = self.get_action_from_json(name)
+                tooltip = value.replace(r'\n', '\n')
                 self.buttons_sub.append(
                     (
                         name, 
-                        self.make_handler_edit(name, value, x, y, lineno), 
-                        value.replace(r'\n', '\n')
+                        self.make_handler_edit(name, value, x, y, clip_slider_value),
+                        tooltip,
+                        action
                     )
                 )
         try:
@@ -358,20 +449,18 @@ class App(QMainWindow):
             pass
         self.current_popup = RadialMenu(x, y, self.buttons_sub, sub=True, tracker=self.tracker)
         self.current_popup.set_central_text("📝")
-        self.current_popup.set_neon_color("jaune")  # Couleur jaune pour l'édition
-        self.current_popup.toggle_neon(True)  # Activer le néon en mode édition
-        self.current_popup.timer.start(50)     # Démarrer l'animation du néon
+        self.current_popup.set_neon_color("jaune")
+        self.current_popup.toggle_neon(True)
+        self.current_popup.timer.start(50)
         self.current_popup.show()
         self.current_popup.animate_open()
 
-    def make_handler_edit(self, name, value, x, y, lineno):
+    def make_handler_edit(self, name, value, x, y, slider_value):
         def handler():
-            if lineno == 0:
-                return
             if self.tracker:
                 self.tracker.update_pos()
                 x, y = self.tracker.last_x, self.tracker.last_y
-            self.edit_clip(name, value, x, y, lineno)
+            self.edit_clip(name, value, x, y, slider_value)
         return handler
 
     def delete_clip(self, x, y):
@@ -380,13 +469,15 @@ class App(QMainWindow):
             x, y = self.tracker.last_x, self.tracker.last_y
         
         self.buttons_sub = []
-        for name, (action_data, value, lineno) in self.actions_map_sub.items():
+        for name, (action_data, value, action) in self.actions_map_sub.items():
             if name not in ["➕", "📝", "🗑️"]:
+                tooltip = value.replace(r'\n', '\n')
                 self.buttons_sub.append(
                     (
                         name, 
-                        self.make_handler_delete(name, value, x, y, lineno), 
-                        value.replace(r'\n', '\n')
+                        self.make_handler_delete(name, value, x, y),
+                        tooltip,
+                        action
                     )
                 )
         try:
@@ -396,34 +487,29 @@ class App(QMainWindow):
             pass
         self.current_popup = RadialMenu(x, y, self.buttons_sub, sub=True, tracker=self.tracker)
         self.current_popup.set_central_text("🗑️")
-        self.current_popup.set_neon_color("rouge")  # Couleur rouge pour la suppression
-        self.current_popup.toggle_neon(True)  # Activer le néon en mode suppression
-        self.current_popup.timer.start(50)     # Démarrer l'animation du néon
+        self.current_popup.set_neon_color("rouge")
+        self.current_popup.toggle_neon(True)
+        self.current_popup.timer.start(50)
         self.current_popup.show()
         self.current_popup.animate_open()
 
-    def make_handler_delete(self, name, value, x, y, lineno):
+    def make_handler_delete(self, name, value, x, y):
         def handler():
-            if lineno == 0:
-                return
             if self.tracker:
                 self.tracker.update_pos()
                 x, y = self.tracker.last_x, self.tracker.last_y
             
-            # Créer une fenêtre de confirmation avec le tracker comme parent
-            self.show_delete_confirmation(name, value, x, y, lineno)
+            self.show_delete_confirmation(name, value, x, y)
         return handler
 
-    def show_delete_confirmation(self, name, value, x, y, lineno):
+    def show_delete_confirmation(self, name, value, x, y):
         """Affiche une fenêtre de confirmation pour la suppression"""
-        # IMPORTANT : Utiliser le tracker comme parent pour Wayland
         dialog = QDialog(self.tracker)
         dialog.setWindowTitle("Confirmation de suppression")
         dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         dialog.setFixedSize(350, 180)
         
-        # Positionner près de la souris
         if x is None or y is None:
             screen = QApplication.primaryScreen().geometry()
             x = screen.center().x() - dialog.width() // 2
@@ -437,14 +523,12 @@ class App(QMainWindow):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
 
-        # Message de confirmation
         message_label = QLabel(f"Voulez-vous vraiment supprimer :\n\n{name}")
         message_label.setWordWrap(True)
         message_label.setStyleSheet("color: white; font-size: 14px;")
         message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(message_label)
 
-        # Boutons
         buttons_layout = QHBoxLayout()
         buttons_layout.setSpacing(10)
         
@@ -469,7 +553,7 @@ class App(QMainWindow):
         
         def confirm_delete():
             self.actions_map_sub.pop(name, None)
-            delete_line_in_file(CLIP_NOTES_FILE, lineno)
+            delete_from_json(CLIP_NOTES_FILE_JSON, name)
             self.delete_mode = True
             dialog.accept()
             self.relaunch_window(x, y)
@@ -486,14 +570,13 @@ class App(QMainWindow):
         
         dialog.exec()
 
-    def make_handler_sub(self, name, value, x, y, lineno):
+    def make_handler_sub(self, name, value, x, y):
         def handler_sub():
             if name in self.actions_map_sub:
                 func_data = self.actions_map_sub[name][0]
                 if isinstance(func_data, tuple) and len(func_data) == 3:
                     func, args, kwargs = func_data
                     func(*args, **kwargs)
-                    # Fermer le tracker ET le popup pour les clips normaux
                     if name not in ["➕", "📝", "🗑️"]:
                         if self.tracker:
                             self.tracker.close()
@@ -503,230 +586,8 @@ class App(QMainWindow):
                     print(f"Aucune fonction associée à '{name}'")
         return handler_sub
 
-    # def _create_clip_dialog(self, title, button_text, x, y, initial_name="", initial_value="", 
-    #                        placeholder="", on_submit_callback=None):
-    #     # IMPORTANT : Utiliser le tracker comme parent pour Wayland
-    #     dialog = QDialog(self.tracker)
-    #     dialog.setWindowTitle(title)
-    #     dialog.setWindowFlags(Qt.WindowType.Dialog)
-    #     dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-    #     dialog.resize(300, 400)
-        
-    #     if x is None or y is None:
-    #         screen = QApplication.primaryScreen().geometry()
-    #         x = screen.center().x() - dialog.width() // 2
-    #         y = screen.center().y() - dialog.height() // 2
-    #     dialog.move(x, y)
-
-    #     content = QWidget()
-    #     content.setStyleSheet(DIALOG_STYLE)
-
-    #     layout = QVBoxLayout(content)
-    #     layout.setContentsMargins(20, 20, 20, 20)
-    #     layout.setSpacing(12)
-
-    #     top_bar = QHBoxLayout()
-    #     top_bar.addStretch()
-    #     layout.addLayout(top_bar)
-
-    #     name_input = QLineEdit()
-    #     name_input.setPlaceholderText("Nom du clip")
-    #     name_input.setMinimumHeight(30)
-    #     name_input.setText(initial_name)
-
-    #     emoji_button = QPushButton("😀 Emojis")
-    #     emoji_button.setFixedHeight(30)
-
-    #     value_input = QTextEdit()
-    #     value_input.setMinimumHeight(80)
-    #     if placeholder:
-    #         value_input.setPlaceholderText(placeholder)
-    #     if initial_value:
-    #         value_input.setText(initial_value.replace(r'\n', '\n'))
-
-    #     submit_button = QPushButton(button_text)
-    #     submit_button.setFixedHeight(32)
-
-    #     layout.addWidget(name_input)
-    #     layout.addWidget(emoji_button)
-    #     layout.addWidget(value_input)
-    #     layout.addWidget(submit_button)
-
-    #     def open_emoji_selector():
-    #         path = EMOJIS_FILE
-    #         if not os.path.exists(path):
-    #             print(f"Fichier introuvable : {path}")
-    #             return
-    #         with open(path, "r", encoding="utf-8") as f:
-    #             emojis = [line.strip() for line in f if line.strip()]
-    #         selector = EmojiSelector(emojis, parent=dialog)
-
-    #         def on_emoji_selected(emoji):
-    #             cursor_pos = name_input.cursorPosition()
-    #             current_text = name_input.text()
-    #             new_text = current_text[:cursor_pos] + emoji + current_text[cursor_pos:]
-    #             name_input.setFocus()
-    #             name_input.setText(new_text)
-    #             name_input.setCursorPosition(cursor_pos + len(emoji))
-    #             selector.accept()
-
-    #         selector.emoji_selected = on_emoji_selected
-    #         selector.exec()
-
-    #     emoji_button.clicked.connect(open_emoji_selector)
-        
-    #     if on_submit_callback:
-    #         submit_button.clicked.connect(
-    #             lambda: on_submit_callback(dialog, name_input, value_input)
-    #         )
-
-    #     dialog_layout = QVBoxLayout(dialog)
-    #     dialog_layout.setContentsMargins(0, 0, 0, 0)
-    #     dialog_layout.addWidget(content)
-    #     name_input.setFocus()
-    #     dialog.exec()
-        
-    #     return dialog
-    # def _create_clip_dialog(self, title, button_text, x, y, initial_name="", initial_value="", 
-    #                        placeholder="", on_submit_callback=None):
-    #     # IMPORTANT : Utiliser le tracker comme parent pour Wayland
-    #     dialog = QDialog(self.tracker)
-    #     dialog.setWindowTitle(title)
-    #     dialog.setWindowFlags(Qt.WindowType.Dialog)
-    #     dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-    #     dialog.resize(300, 400)
-        
-    #     if x is None or y is None:
-    #         screen = QApplication.primaryScreen().geometry()
-    #         x = screen.center().x() - dialog.width() // 2
-    #         y = screen.center().y() - dialog.height() // 2
-    #     dialog.move(x, y)
-
-    #     content = QWidget()
-    #     content.setStyleSheet(DIALOG_STYLE)
-
-    #     layout = QVBoxLayout(content)
-    #     layout.setContentsMargins(20, 20, 20, 20)
-    #     layout.setSpacing(12)
-
-    #     top_bar = QHBoxLayout()
-    #     top_bar.addStretch()
-    #     layout.addLayout(top_bar)
-
-    #     name_input = QLineEdit()
-    #     name_input.setPlaceholderText("Nom du clip")
-    #     name_input.setMinimumHeight(30)
-    #     name_input.setText(initial_name)
-
-    #     emoji_button = QPushButton("😀 Emojis")
-    #     emoji_button.setFixedHeight(30)
-
-    #     # Slider avec emojis
-    #     slider_container = QWidget()
-    #     slider_layout = QVBoxLayout(slider_container)
-    #     slider_layout.setContentsMargins(0, 0, 0, 0)
-    #     slider_layout.setSpacing(2)
-
-    #     # Labels pour les emojis au-dessus
-    #     emoji_labels_layout = QHBoxLayout()
-    #     emoji_labels_layout.setContentsMargins(0, 0, 0, 0)
-    #     emoji_labels = ["📋", "⚡", "🚀"]  # Modifiez selon vos besoins
-    #     for emoji in emoji_labels:
-    #         label = QLabel(emoji)
-    #         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    #         label.setStyleSheet("font-size: 20px;")
-    #         emoji_labels_layout.addWidget(label)
-        
-    #     slider_layout.addLayout(emoji_labels_layout)
-
-    #     # Slider
-    #     slider = QSlider(Qt.Orientation.Horizontal)
-    #     slider.setMinimum(0)
-    #     slider.setMaximum(2)
-    #     slider.setValue(0)
-    #     slider.setTickPosition(QSlider.TickPosition.TicksBelow)
-    #     slider.setTickInterval(1)
-    #     slider.setSingleStep(1)
-    #     slider.setPageStep(1)
-    #     slider.setStyleSheet("""
-    #         QSlider::groove:horizontal {
-    #             height: 6px;
-    #             background: #555;
-    #             border-radius: 3px;
-    #         }
-    #         QSlider::handle:horizontal {
-    #             background: #fff;
-    #             border: 2px solid #888;
-    #             width: 16px;
-    #             margin: -6px 0;
-    #             border-radius: 9px;
-    #         }
-    #     """)
-    #     slider_layout.addWidget(slider)
-
-    #     value_input = QTextEdit()
-    #     value_input.setMinimumHeight(80)
-    #     if placeholder:
-    #         value_input.setPlaceholderText(placeholder)
-    #     if initial_value:
-    #         value_input.setText(initial_value.replace(r'\n', '\n'))
-
-    #     submit_button = QPushButton(button_text)
-    #     submit_button.setFixedHeight(32)
-
-    #     layout.addWidget(name_input)
-    #     layout.addWidget(emoji_button)
-    #     layout.addWidget(slider_container)
-    #     layout.addWidget(value_input)
-    #     layout.addWidget(submit_button)
-
-    #     def open_emoji_selector():
-    #         path = EMOJIS_FILE
-    #         if not os.path.exists(path):
-    #             print(f"Fichier introuvable : {path}")
-    #             return
-    #         with open(path, "r", encoding="utf-8") as f:
-    #             emojis = [line.strip() for line in f if line.strip()]
-    #         selector = EmojiSelector(emojis, parent=dialog)
-
-    #         def on_emoji_selected(emoji):
-    #             cursor_pos = name_input.cursorPosition()
-    #             current_text = name_input.text()
-    #             new_text = current_text[:cursor_pos] + emoji + current_text[cursor_pos:]
-    #             name_input.setFocus()
-    #             name_input.setText(new_text)
-    #             name_input.setCursorPosition(cursor_pos + len(emoji))
-    #             selector.accept()
-
-    #         selector.emoji_selected = on_emoji_selected
-    #         selector.exec()
-
-    #     emoji_button.clicked.connect(open_emoji_selector)
-        
-    #     if on_submit_callback:
-    #         submit_button.clicked.connect(
-    #             lambda: on_submit_callback(dialog, name_input, value_input, slider)
-    #         )
-
-    #     dialog_layout = QVBoxLayout(dialog)
-    #     dialog_layout.setContentsMargins(0, 0, 0, 0)
-    #     dialog_layout.addWidget(content)
-    #     name_input.setFocus()
-    #     dialog.exec()
-        
-    #     return dialog
-
-
-
-
-
-
-
-
-
     def _create_clip_dialog(self, title, button_text, x, y, initial_name="", initial_value="", 
-                           placeholder="", on_submit_callback=None):
-        # IMPORTANT : Utiliser le tracker comme parent pour Wayland
+                           initial_slider_value=0, placeholder="", on_submit_callback=None):
         dialog = QDialog(self.tracker)
         dialog.setWindowTitle(title)
         dialog.setWindowFlags(Qt.WindowType.Dialog)
@@ -758,17 +619,15 @@ class App(QMainWindow):
         emoji_button = QPushButton("😀 Emojis")
         emoji_button.setFixedHeight(30)
 
-        # Slider avec emojis
         slider_container = QWidget()
         slider_layout = QVBoxLayout(slider_container)
         slider_layout.setContentsMargins(0, 0, 0, 0)
         slider_layout.setSpacing(2)
 
-        # Labels pour les emojis au-dessus
         emoji_labels_layout = QHBoxLayout()
         emoji_labels_layout.setContentsMargins(8, 0, 8, 0)
         emoji_labels_layout.setSpacing(0)
-        emoji_labels = ["📋", "⚡", "🚀"]
+        emoji_labels = ["📋", "💻", "🚀"]
         
         for i, emoji in enumerate(emoji_labels):
             if i > 0:
@@ -782,11 +641,10 @@ class App(QMainWindow):
         
         slider_layout.addLayout(emoji_labels_layout)
 
-        # Slider
         slider = QSlider(Qt.Orientation.Horizontal)
         slider.setMinimum(0)
         slider.setMaximum(2)
-        slider.setValue(0)
+        slider.setValue(initial_slider_value)  # INITIALISER avec la bonne valeur
         slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         slider.setTickInterval(1)
         slider.setSingleStep(1)
@@ -864,15 +722,31 @@ class App(QMainWindow):
             self.tracker.update_pos()
             x, y = self.tracker.last_x, self.tracker.last_y
         
-        def handle_submit(dialog, name_input, value_input):
+        def handle_submit(dialog, name_input, value_input, slider):
             self.buttons_sub = []
             name = name_input.text().strip()
             value = value_input.toPlainText().strip().replace('\n', '\\n')
+            
             if name and value:
-                # self.actions_map_sub[name] = (paperclip_copy, [value], {})
-                # self.actions_map_sub[name] = (execute_terminal, [value], {})
-                self.actions_map_sub[name] = (execute_command, [value], {})
+                slider_value = slider.value()
+                action_map = {
+                    0: "copy",
+                    1: "term",
+                    2: "exec"
+                }
+                action = action_map.get(slider_value, "copy")
+                
+                # Format: [(fonction, [args], {}), value, action]
+                if action == "copy":
+                    self.actions_map_sub[name] = [(paperclip_copy, [value], {}), value, action]
+                elif action == "term":
+                    self.actions_map_sub[name] = [(execute_terminal, [value], {}), value, action]
+                elif action == "exec":
+                    self.actions_map_sub[name] = [(execute_command, [value], {}), value, action]
+                
                 append_to_actions_file(CLIP_NOTES_FILE, name, value)
+                append_to_actions_file_json(CLIP_NOTES_FILE_JSON, name, value, action)
+                
                 dialog.accept()
                 self.delete_mode = False
             else:
@@ -887,26 +761,38 @@ class App(QMainWindow):
         )
         self.relaunch_window(x, y)
 
-    def edit_clip(self, name, value, x, y, lineno):
+    def edit_clip(self, name, value, x, y, slider_value):
         if self.tracker:
             self.tracker.update_pos()
             x, y = self.tracker.last_x, self.tracker.last_y
         
-        global li
-        li = lineno
-
-        def handle_submit(dialog, name_input, value_input):
+        def handle_submit(dialog, name_input, value_input, slider):
             new_name = name_input.text().strip()
             new_value = value_input.toPlainText().strip().replace('\n', '\\n')
 
             if new_name and new_value:
+                slider_value = slider.value()
+                action_map = {
+                    0: "copy",
+                    1: "term",
+                    2: "exec"
+                }
+                action = action_map.get(slider_value, "copy")
                 old_name = name
                 if new_name != old_name:
                     self.actions_map_sub.pop(old_name, None)
-                # self.actions_map_sub[new_name] = (paperclip_copy, [new_value], {}, li)
-                # self.actions_map_sub[new_name] = (execute_terminal, [new_value], {}, li)
-                self.actions_map_sub[new_name] = (execute_command, [new_value], {}, li)
-                replace_or_append_at_lineno(CLIP_NOTES_FILE, new_name, new_value, li)
+                    # Supprimer l'ancien alias du JSON
+                    delete_from_json(CLIP_NOTES_FILE_JSON, old_name)
+                
+                # Format: [(fonction, [args], {}), value, action]
+                if action == "copy":
+                    self.actions_map_sub[new_name] = [(paperclip_copy, [new_value], {}), new_value, action]
+                elif action == "term":
+                    self.actions_map_sub[new_name] = [(execute_terminal, [new_value], {}), new_value, action]
+                elif action == "exec":
+                    self.actions_map_sub[new_name] = [(execute_command, [new_value], {}), new_value, action]
+                
+                replace_or_append_json(CLIP_NOTES_FILE_JSON, new_name, new_value, action)
                 dialog.accept()
                 self.update_mode = True
             else:
@@ -918,6 +804,7 @@ class App(QMainWindow):
             x=x, y=y,
             initial_name=name,
             initial_value=value,
+            initial_slider_value=slider_value,  # PASSER la valeur du slider
             on_submit_callback=handle_submit
         )
         self.relaunch_window(x, y)
@@ -936,16 +823,15 @@ class App(QMainWindow):
 
         self.buttons_sub = []
         self.actions_map_sub = {
-            "➕": [(self.new_clip,    [x,y], {}), "", 0],
-            "📝": [(self.update_clip, [x,y], {}), "", 0],
-            "🗑️": [(self.delete_clip, [x,y], {}), "", 0],
+            "➕": [(self.new_clip,    [x,y], {}), "", None],
+            "📝": [(self.update_clip, [x,y], {}), "", None],
+            "🗑️": [(self.delete_clip, [x,y], {}), "", None],
         }
-        # populate_actions_map_from_file(CLIP_NOTES_FILE, self.actions_map_sub, paperclip_copy)
-        # populate_actions_map_from_file(CLIP_NOTES_FILE, self.actions_map_sub, execute_terminal)
         populate_actions_map_from_file(CLIP_NOTES_FILE, self.actions_map_sub, execute_command)
 
-        for name, (action_data, value, lineno) in self.actions_map_sub.items():
-            self.buttons_sub.append((name, self.make_handler_sub(name, value, x, y, lineno), value.replace(r'\n', '\n')))
+        for name, (action_data, value, action) in self.actions_map_sub.items():
+            tooltip = value.replace(r'\n', '\n')
+            self.buttons_sub.append((name, self.make_handler_sub(name, value, x, y), tooltip, action))
         self.current_popup = RadialMenu(x, y, self.buttons_sub, sub=True, tracker=self.tracker)
         self.current_popup.show()
         self.current_popup.animate_open()
@@ -975,7 +861,6 @@ if __name__ == "__main__":
         time.sleep(0.01)
         elapsed += 0.01
     
-    # Forcer une dernière mise à jour pour être précis
     tracker.update_pos()
     x, y = tracker.last_x, tracker.last_y
     
