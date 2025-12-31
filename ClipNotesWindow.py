@@ -86,7 +86,9 @@ class CursorTracker(QWidget):
     def update_pos(self):
         pos = QCursor.pos()
         self.last_x = pos.x()
-        self.last_y = pos.y()
+        self.last_y = int(pos.y() * 1.25)  # Décalage de 3 cm vers le bas pour test
+        # print("X : ", self.last_x)
+        # print("Y : ", self.last_y)
     
     def mousePressEvent(self, event):
         self.close()
@@ -114,11 +116,13 @@ class RadialMenu(QWidget):
         self.buttons = []
 
         self.diameter = 2 * (self.radius + self.btn_size)
+        # Ajouter de l'espace pour les badges (50 pixels de chaque côté)
+        self.widget_size = self.diameter + 100
         
-        self._target_x = x - self.diameter // 2
-        self._target_y = y - self.diameter // 2
+        self._target_x = x - self.widget_size // 2
+        self._target_y = y - self.widget_size // 2
         
-        self.resize(self.diameter, self.diameter)
+        self.resize(self.widget_size, self.widget_size)
         self.move(self._target_x, self._target_y)
 
         self._x = x
@@ -144,7 +148,28 @@ class RadialMenu(QWidget):
         self._widget_opacity = 1.0
 
         self.current_index = 0
-        self.badge_labels = []  # Pour stocker les badges
+        
+        # Stocker les couleurs par action pour chaque bouton
+        self._button_colors = []  # Liste des couleurs pour chaque bouton
+        self._button_actions = []  # Liste des actions pour chaque bouton
+        self._hovered_action = None  # Action survolée (None, "copy", "term", ou "exec")
+        self._action_badges = {}  # Dictionnaire des badges globaux par action
+        
+        # Activer le tracking de la souris pour détecter le hover
+        self.setMouseTracking(True)
+        
+        # Créer les boutons initiaux
+        self._create_buttons(buttons)
+
+    def _create_buttons(self, buttons):
+        """Crée les boutons pour le menu radial"""
+        # Couleurs par type d'action (plus légères et transparentes)
+        action_colors = {
+            "copy": QColor(255, 150, 100, 25),   # Orange transparent
+            "term": QColor(100, 255, 150, 25),   # Vert transparent
+            "exec": QColor(100, 150, 255, 25),   # Bleu transparent
+        }
+        
         angle_step = 360 / len(buttons)
         for i, button in enumerate(buttons):
             if len(button) == 2:
@@ -160,10 +185,17 @@ class RadialMenu(QWidget):
                 label, callback = button
                 tooltip = ""
                 action = None
+            
+            # Stocker la couleur et l'action pour ce bouton
+            color = action_colors.get(action, None)
+            self._button_colors.append(color)
+            self._button_actions.append(action)
                 
             angle = math.radians(i * angle_step)
-            bx = self.diameter // 2 + self.radius * math.cos(angle) - self.btn_size // 2
-            by = self.diameter // 2 + self.radius * math.sin(angle) - self.btn_size // 2
+            # Le centre du menu radial est maintenant au centre du widget agrandi
+            center_offset = self.widget_size // 2
+            bx = center_offset + self.radius * math.cos(angle) - self.btn_size // 2
+            by = center_offset + self.radius * math.sin(angle) - self.btn_size // 2
 
             btn = QPushButton("", self)
             # Déterminer le type de label et utiliser la fonction appropriée
@@ -198,55 +230,88 @@ class RadialMenu(QWidget):
             if tooltip:
                 self._tooltips[btn] = tooltip
             self.buttons.append(btn)
-            
-            # Créer le badge si une action est définie
-            badge = None
-            if action:
-                badge_emoji = ""
-                if action == "copy":
-                    badge_emoji = "📋"
-                elif action == "term":
-                    badge_emoji = "💻"
-                elif action == "exec":
-                    badge_emoji = "🚀"
-                
-                if badge_emoji:
-                    badge = QLabel(badge_emoji, self)
-                    badge.setStyleSheet("""
-                        QLabel {
-                            background-color: rgba(255, 255, 255, 60);
-                            border-radius: 12px;
-                            padding: 2px;
-                            font-size: 18px;
-                        }
-                    """)
-                    # badge.setFixedSize(26, 26)
-                    # badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                    # # Positionner en bas à droite du bouton
-                    # badge.move(int(bx + self.btn_size - 22), int(by + self.btn_size - 22))
-                    badge.setFixedSize(25, 25)
-                    badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                    # Positionner en bas à droite du bouton
-                    # badge.move(int(bx + self.btn_size - 18), int(by + self.btn_size - 18))
-                    badge.move(int(bx -17), int(by + self.btn_size - 75))
-                    badge.setVisible(False)
-            
-            self.badge_labels.append((btn, badge))
+        
+        # Créer les 3 badges globaux (un par action) - seront positionnés dynamiquement
+        self._action_badges = {}
+        badge_info = {
+            "copy": "✂️",
+            "term": "💻", 
+            "exec": "🚀"
+        }
+        
+        for action, emoji in badge_info.items():
+            badge = QLabel(emoji, self)
+            badge.setStyleSheet("""
+                QLabel {
+                    background-color: rgba(255, 255, 255, 80);
+                    border-radius: 15px;
+                    padding: 4px;
+                    font-size: 22px;
+                }
+            """)
+            badge.setFixedSize(35, 35)
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            badge.setVisible(False)
+            self._action_badges[action] = badge
+
+    def update_buttons(self, buttons):
+        """Met à jour les boutons existants sans recréer le widget entier"""
+        # Sauvegarder l'état actuel
+        was_visible = self.isVisible()
+        current_opacity = self._widget_opacity
+        
+        # Détruire les anciens boutons
+        for btn in self.buttons:
+            btn.removeEventFilter(self)
+            btn.deleteLater()
+        
+        # Détruire les anciens badges
+        if hasattr(self, '_action_badges'):
+            for badge in self._action_badges.values():
+                badge.deleteLater()
+        
+        self.buttons.clear()
+        self._tooltips.clear()
+        self._button_colors.clear()
+        self._button_actions.clear()
+        self._action_badges = {}
+        
+        # Recalculer le rayon si nécessaire
+        num_buttons = len(buttons)
+        old_radius = self.radius
+        
+        if num_buttons <= 7:
+            self.radius = 80
+        else:
+            self.radius = int(80 * (num_buttons / 7))
+        
+        # Si le rayon a changé, redimensionner le widget
+        if old_radius != self.radius:
+            self.diameter = 2 * (self.radius + self.btn_size)
+            self.widget_size = self.diameter + 100
+            self.resize(self.widget_size, self.widget_size)
+            # Recentrer
+            self.move(self._x - self.widget_size // 2, self._y - self.widget_size // 2)
+        
+        # Réinitialiser le hover
+        self._hovered_action = None
+        
+        # Créer les nouveaux boutons
+        self._create_buttons(buttons)
+        
+        # Restaurer l'état
+        if was_visible:
+            self.set_widget_opacity(current_opacity)
+            for btn in self.buttons:
+                btn.setVisible(True)
+        
+        self.update()
 
     def eventFilter(self, watched, event):
         if event.type() == QEvent.Type.Enter:
             # Afficher le tooltip si disponible
             if watched in self._tooltips:
                 QToolTip.showText(watched.mapToGlobal(watched.rect().center()), self._tooltips[watched], watched)
-            # Afficher le badge correspondant
-            for btn, badge in self.badge_labels:
-                if btn == watched and badge:
-                    badge.setVisible(True)
-        elif event.type() == QEvent.Type.Leave:
-            # Masquer le badge correspondant
-            for btn, badge in self.badge_labels:
-                if btn == watched and badge:
-                    badge.setVisible(False)
         return super().eventFilter(watched, event)
 
     def set_central_text(self, value):
@@ -308,10 +373,92 @@ class RadialMenu(QWidget):
 
     def mousePressEvent(self, event):
         if not any(btn.geometry().contains(event.pos()) for btn in self.buttons):
+            # Masquer tous les badges
+            for badge in self._action_badges.values():
+                badge.setVisible(False)
             if self.tracker:
                 self.tracker.close()
             self.close_with_animation()
-
+    
+    def mouseMoveEvent(self, event):
+        """Détecte quelle action est survolée par la souris (zone angulaire complète)"""
+        if not self.buttons:
+            return
+        
+        # Calculer la position relative au centre
+        center = self.rect().center()
+        dx = event.pos().x() - center.x()
+        dy = event.pos().y() - center.y()
+        
+        # Calculer la distance au centre
+        distance = math.sqrt(dx * dx + dy * dy)
+        
+        # Si on est trop près du centre ou au-delà de la zone externe, pas de hover
+        if distance < 30 or distance > self.radius + self.btn_size + 10:
+            if self._hovered_action is not None:
+                self._hovered_action = None
+                # Masquer tous les badges
+                for badge in self._action_badges.values():
+                    badge.setVisible(False)
+                self.update()
+            return
+        
+        # Calculer l'angle de la souris (0° = droite, sens horaire)
+        angle_rad = math.atan2(dy, dx)
+        
+        # Normaliser pour être positif (0 à 2π)
+        if angle_rad < 0:
+            angle_rad += 2 * math.pi
+        
+        # Convertir en degrés
+        angle_deg = math.degrees(angle_rad)
+        
+        # Trouver l'index du bouton correspondant à cet angle
+        angle_step = 360 / len(self.buttons)
+        button_index = int(round(angle_deg / angle_step)) % len(self.buttons)
+        
+        # Récupérer l'action de ce bouton
+        hovered_action = None
+        if button_index < len(self._button_actions):
+            hovered_action = self._button_actions[button_index]
+        
+        # Mettre à jour si l'action survolée a changé
+        if hovered_action != self._hovered_action:
+            self._hovered_action = hovered_action
+            
+            # Masquer tous les badges d'abord
+            for badge in self._action_badges.values():
+                badge.setVisible(False)
+            
+            # Si une action est survolée, calculer la position et afficher son badge
+            if self._hovered_action and self._hovered_action in self._action_badges:
+                # Trouver tous les indices des boutons ayant cette action
+                indices = [i for i, action in enumerate(self._button_actions) if action == self._hovered_action]
+                
+                if indices:
+                    angle_step = 360 / len(self.buttons)
+                    
+                    # Calculer l'angle moyen de tous ces boutons avec moyenne vectorielle
+                    angles_rad = [math.radians(i * angle_step) for i in indices]
+                    avg_x = sum(math.cos(a) for a in angles_rad) / len(angles_rad)
+                    avg_y = sum(math.sin(a) for a in angles_rad) / len(angles_rad)
+                    avg_angle_rad = math.atan2(avg_y, avg_x)
+                    
+                    # Distance du badge depuis le centre (juste après les boutons)
+                    badge_distance = self.radius + self.btn_size + 20
+                    
+                    # Position du badge
+                    center = self.rect().center()
+                    badge_x = center.x() + badge_distance * math.cos(avg_angle_rad)
+                    badge_y = center.y() + badge_distance * math.sin(avg_angle_rad)
+                    
+                    # Centrer le badge sur cette position
+                    badge = self._action_badges[self._hovered_action]
+                    badge.move(int(badge_x - badge.width() / 2), int(badge_y - badge.height() / 2))
+                    badge.setVisible(True)
+            
+            self.update()
+    
     def reveal_buttons(self):
         for btn in self.buttons:
             btn.setVisible(True)
@@ -323,10 +470,46 @@ class RadialMenu(QWidget):
         painter.setOpacity(self._widget_opacity)
         
         center = self.rect().center()
+        
+        # Le cercle du menu radial (plus petit que le widget)
+        circle_rect = QRect(
+            (self.widget_size - self.diameter) // 2,
+            (self.widget_size - self.diameter) // 2,
+            self.diameter,
+            self.diameter
+        )
 
+        # Dessiner le fond global
         painter.setBrush(QColor(50, 50, 50, 100))
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(self.rect())
+        painter.drawEllipse(circle_rect)
+        
+        # Dessiner les zones colorées de tous les boutons qui ont l'action survolée
+        if self._hovered_action is not None:
+            # Trouver la couleur correspondante (plus légère et transparente)
+            action_colors = {
+                "copy": QColor(255, 150, 100, 25),
+                "term": QColor(100, 255, 150, 25),
+                "exec": QColor(100, 150, 255, 25),
+            }
+            color = action_colors.get(self._hovered_action)
+            
+            if color is not None:
+                angle_step = 360 / len(self.buttons)
+                
+                # Dessiner une tranche pour chaque bouton ayant cette action
+                for i, action in enumerate(self._button_actions):
+                    if action == self._hovered_action:
+                        # Calculer l'angle de ce bouton
+                        button_angle = i * angle_step
+                        
+                        # Convertir en angle Qt (0° à droite, sens anti-horaire)
+                        start_angle = -button_angle - (angle_step / 2)
+                        
+                        painter.setBrush(color)
+                        painter.setPen(Qt.PenStyle.NoPen)
+                        # drawPie utilise des "16èmes de degrés"
+                        painter.drawPie(circle_rect, int(start_angle * 16), int(angle_step * 16))
 
         if self.neon_enabled:
             gradient = QRadialGradient(QPointF(center), self._neon_radius)
@@ -341,6 +524,7 @@ class RadialMenu(QWidget):
             font = QFont("Arial", 24)
             painter.setFont(font)
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._central_text)
+
 
     def animate_open(self):
         self.anim = QVariantAnimation(self)
@@ -404,56 +588,58 @@ class App(QMainWindow):
             print(f"Erreur lecture JSON: {e}")
         return 0
 
-    def relaunch_window(self, x, y):
-        if self.tracker:
-            self.tracker.update_pos()
-            x, y = self.tracker.last_x, self.tracker.last_y
+    def refresh_menu(self):
+        """Rafraîchit le menu en mettant à jour les boutons existants"""
+        if not self.current_popup:
+            return
         
-        if self.current_popup:
-            try:
-                self.current_popup.close()
-            except RuntimeError:
-                pass
-            self.current_popup = None
+        # Réinitialiser le state
+        self.current_popup.set_central_text("")
+        self.current_popup.set_neon_color("cyan")
+        self.current_popup.toggle_neon(False)
+        self.current_popup.timer.stop()
         
-        if not self.update_mode and not self.delete_mode:
-            QTimer.singleShot(100, lambda: self.show_window_at(x, y, ""))
-        else:
-            self.show_window_at(x, y, "")
-            self.update_mode = False
-            self.delete_mode = False
+        # Reconstruire buttons_sub depuis actions_map_sub avec tri
+        self.buttons_sub = []
+        sorted_actions = sort_actions_map(self.actions_map_sub)
+        for name, (action_data, value, action) in sorted_actions:
+            tooltip = value.replace(r'\n', '\n')
+            self.buttons_sub.append((name, self.make_handler_sub(name, value, self._x, self._y), tooltip, action))
+        
+        # Mettre à jour les boutons du menu existant
+        self.current_popup.update_buttons(self.buttons_sub)
 
     def update_clip(self, x, y, slider_value=0):
         if self.tracker:
             self.tracker.update_pos()
             x, y = self.tracker.last_x, self.tracker.last_y
         
+        # Filtrer les clips (sans les boutons d'action)
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➕", "📝", "🗑️"]}
+        
+        # Trier les clips
+        sorted_clips = sort_actions_map(clips_only)
+        
         self.buttons_sub = []
-        for name, (action_data, value, action) in self.actions_map_sub.items():
-            if name not in ["➕", "📝", "🗑️"]:
-                # Lire l'action depuis le JSON pour ce clip
-                clip_slider_value = self.get_action_from_json(name)
-                tooltip = value.replace(r'\n', '\n')
-                self.buttons_sub.append(
-                    (
-                        name, 
-                        self.make_handler_edit(name, value, x, y, clip_slider_value),
-                        tooltip,
-                        action
-                    )
+        for name, (action_data, value, action) in sorted_clips:
+            # Lire l'action depuis le JSON pour ce clip
+            clip_slider_value = self.get_action_from_json(name)
+            tooltip = value.replace(r'\n', '\n')
+            self.buttons_sub.append(
+                (
+                    name, 
+                    self.make_handler_edit(name, value, x, y, clip_slider_value),
+                    tooltip,
+                    action
                 )
-        try:
-            if self.current_popup:
-                self.current_popup.destroy()
-        except RuntimeError:
-            pass
-        self.current_popup = RadialMenu(x, y, self.buttons_sub, sub=True, tracker=self.tracker)
-        self.current_popup.set_central_text("📝")
-        self.current_popup.set_neon_color("jaune")
-        self.current_popup.toggle_neon(True)
-        self.current_popup.timer.start(50)
-        self.current_popup.show()
-        self.current_popup.animate_open()
+            )
+        
+        if self.current_popup:
+            self.current_popup.update_buttons(self.buttons_sub)
+            self.current_popup.set_central_text("📝")
+            self.current_popup.set_neon_color("jaune")
+            self.current_popup.toggle_neon(True)
+            self.current_popup.timer.start(50)
 
     def make_handler_edit(self, name, value, x, y, slider_value):
         def handler():
@@ -468,30 +654,30 @@ class App(QMainWindow):
             self.tracker.update_pos()
             x, y = self.tracker.last_x, self.tracker.last_y
         
+        # Filtrer les clips (sans les boutons d'action)
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➕", "📝", "🗑️"]}
+        
+        # Trier les clips
+        sorted_clips = sort_actions_map(clips_only)
+        
         self.buttons_sub = []
-        for name, (action_data, value, action) in self.actions_map_sub.items():
-            if name not in ["➕", "📝", "🗑️"]:
-                tooltip = value.replace(r'\n', '\n')
-                self.buttons_sub.append(
-                    (
-                        name, 
-                        self.make_handler_delete(name, value, x, y),
-                        tooltip,
-                        action
-                    )
+        for name, (action_data, value, action) in sorted_clips:
+            tooltip = value.replace(r'\n', '\n')
+            self.buttons_sub.append(
+                (
+                    name, 
+                    self.make_handler_delete(name, value, x, y),
+                    tooltip,
+                    action
                 )
-        try:
-            if self.current_popup:
-                self.current_popup.destroy()
-        except RuntimeError:
-            pass
-        self.current_popup = RadialMenu(x, y, self.buttons_sub, sub=True, tracker=self.tracker)
-        self.current_popup.set_central_text("🗑️")
-        self.current_popup.set_neon_color("rouge")
-        self.current_popup.toggle_neon(True)
-        self.current_popup.timer.start(50)
-        self.current_popup.show()
-        self.current_popup.animate_open()
+            )
+        
+        if self.current_popup:
+            self.current_popup.update_buttons(self.buttons_sub)
+            self.current_popup.set_central_text("🗑️")
+            self.current_popup.set_neon_color("rouge")
+            self.current_popup.toggle_neon(True)
+            self.current_popup.timer.start(50)
 
     def make_handler_delete(self, name, value, x, y):
         def handler():
@@ -556,7 +742,8 @@ class App(QMainWindow):
             delete_from_json(CLIP_NOTES_FILE_JSON, name)
             self.delete_mode = True
             dialog.accept()
-            self.relaunch_window(x, y)
+            # Au lieu de relaunch_window, on rafraîchit le menu
+            self.refresh_menu()
         
         delete_button.clicked.connect(confirm_delete)
         
@@ -627,7 +814,7 @@ class App(QMainWindow):
         emoji_labels_layout = QHBoxLayout()
         emoji_labels_layout.setContentsMargins(8, 0, 8, 0)
         emoji_labels_layout.setSpacing(0)
-        emoji_labels = ["📋", "💻", "🚀"]
+        emoji_labels = ["✂️", "💻", "🚀"]
         
         for i, emoji in enumerate(emoji_labels):
             if i > 0:
@@ -723,7 +910,6 @@ class App(QMainWindow):
             x, y = self.tracker.last_x, self.tracker.last_y
         
         def handle_submit(dialog, name_input, value_input, slider):
-            self.buttons_sub = []
             name = name_input.text().strip()
             value = value_input.toPlainText().strip().replace('\n', '\\n')
             
@@ -749,6 +935,9 @@ class App(QMainWindow):
                 
                 dialog.accept()
                 self.delete_mode = False
+                
+                # Au lieu de relaunch_window, on rafraîchit le menu
+                self.refresh_menu()
             else:
                 print("Les deux champs doivent être remplis")
         
@@ -759,7 +948,6 @@ class App(QMainWindow):
             placeholder="Contenu (ex: lien ou texte)",
             on_submit_callback=handle_submit
         )
-        self.relaunch_window(x, y)
 
     def edit_clip(self, name, value, x, y, slider_value):
         if self.tracker:
@@ -795,6 +983,9 @@ class App(QMainWindow):
                 replace_or_append_json(CLIP_NOTES_FILE_JSON, new_name, new_value, action)
                 dialog.accept()
                 self.update_mode = True
+                
+                # Au lieu de relaunch_window, on rafraîchit le menu
+                self.refresh_menu()
             else:
                 print("Les deux champs doivent être remplis")
 
@@ -807,12 +998,15 @@ class App(QMainWindow):
             initial_slider_value=slider_value,  # PASSER la valeur du slider
             on_submit_callback=handle_submit
         )
-        self.relaunch_window(x, y)
 
     def show_window_at(self, x, y, wm_name):
         if self.tracker:
             self.tracker.update_pos()
             x, y = self.tracker.last_x, self.tracker.last_y
+        
+        # Stocker les coordonnées pour refresh_menu
+        self._x = x
+        self._y = y
         
         try:
             if self.current_popup:
@@ -829,7 +1023,10 @@ class App(QMainWindow):
         }
         populate_actions_map_from_file(CLIP_NOTES_FILE, self.actions_map_sub, execute_command)
 
-        for name, (action_data, value, action) in self.actions_map_sub.items():
+        # Trier les actions avant de créer les boutons
+        sorted_actions = sort_actions_map(self.actions_map_sub)
+        
+        for name, (action_data, value, action) in sorted_actions:
             tooltip = value.replace(r'\n', '\n')
             self.buttons_sub.append((name, self.make_handler_sub(name, value, x, y), tooltip, action))
         self.current_popup = RadialMenu(x, y, self.buttons_sub, sub=True, tracker=self.tracker)
@@ -854,12 +1051,12 @@ if __name__ == "__main__":
     tracker.show()
     
     import time
-    max_wait = 0.2
+    max_wait = 0.3
     elapsed = 0.0
     while (tracker.last_x == 0 and tracker.last_y == 0) and elapsed < max_wait:
         QApplication.processEvents()
-        time.sleep(0.01)
-        elapsed += 0.01
+        time.sleep(0.1)
+        elapsed += 0.1
     
     tracker.update_pos()
     x, y = tracker.last_x, tracker.last_y

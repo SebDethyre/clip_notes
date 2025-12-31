@@ -13,7 +13,7 @@ import re
 def is_emoji(s):
     """
     Détecte si une chaîne est un emoji ou un symbole Unicode graphique.
-    Inclut les emojis standards et les symboles comme ⭕, ➕, etc.
+    Version ultra-permissive qui accepte TOUS les emojis.
     """
     if not s:
         return False
@@ -30,23 +30,29 @@ def is_emoji(s):
     if s in special_chars:
         return True
     
-    # Plages Unicode pour les emojis
-    emoji_ranges = [
-        (0x1F300, 0x1F9FF),  # Emojis divers et symboles
-        (0x2600, 0x26FF),    # Symboles divers (☀, ⚡, ⭐, etc.)
-        (0x2700, 0x27BF),    # Dingbats (✂, ✈, ✉, ✏, etc.)
-        (0x1F600, 0x1F64F),  # Emoticones
-        (0x1F680, 0x1F6FF),  # Transport et symboles de carte
-        (0x1F900, 0x1F9FF),  # Emojis supplémentaires
-        (0x1FA70, 0x1FAFF),  # Symboles et pictogrammes étendus
-        (0x2B50, 0x2B55),    # Inclut ⭐ et ⭕
-    ]
-    
+    # Approche ultra-permissive : toutes les plages Unicode possibles d'emojis et symboles
     for char in s:
         code_point = ord(char)
-        for start, end in emoji_ranges:
-            if start <= code_point <= end:
-                return True
+        
+        # Ignorer les variation selectors et zero-width joiners
+        if code_point in (0xFE0E, 0xFE0F, 0x200D):
+            continue
+        
+        # Toutes les plages possibles d'emojis et symboles graphiques
+        if (
+            (0x1F000 <= code_point <= 0x1FFFF) or  # Toute la plage Supplementary Multilingual Plane des emojis
+            (0x2190 <= code_point <= 0x27BF) or    # Flèches, symboles mathématiques, Dingbats
+            (0x2900 <= code_point <= 0x2BFF) or    # Flèches supplémentaires, symboles
+            (0x1F300 <= code_point <= 0x1F9FF) or  # Emojis principaux
+            (0x1FA00 <= code_point <= 0x1FAFF) or  # Symboles étendus
+            (0x2600 <= code_point <= 0x26FF) or    # Symboles divers
+            (0x2700 <= code_point <= 0x27BF) or    # Dingbats
+            (0x2B00 <= code_point <= 0x2BFF) or    # Symboles divers
+            (0x3000 <= code_point <= 0x303F) or    # Symboles CJK
+            (0x3200 <= code_point <= 0x32FF) or    # Lettres CJK entre parenthèses
+            (0x3300 <= code_point <= 0x33FF)       # Compatibilité CJK
+        ):
+            return True
     
     return False
 
@@ -138,6 +144,38 @@ def text_pixmap(text, size=32):
     qt_img = QImage.fromData(data.getvalue(), "PNG")
     return QPixmap.fromImage(qt_img)
 
+def sort_actions_map(actions_map):
+    """
+    Trie le dictionnaire d'actions selon :
+    1. L'action (None d'abord, puis copy, term, exec)
+    2. Alphabétiquement par alias à l'intérieur de chaque groupe
+    
+    Retourne une liste d'items triés : [(alias, (action_data, value, action)), ...]
+    """
+    # Définir l'ordre de priorité des actions
+    action_order = {
+        None: 0,    # Boutons d'action (➕, 📝, 🗑️) en premier
+        "copy": 1,
+        "term": 2,
+        "exec": 3
+    }
+    
+    # Convertir le dictionnaire en liste d'items
+    items = list(actions_map.items())
+    
+    # Fonction de tri personnalisée
+    def sort_key(item):
+        alias, (action_data, value, action) = item
+        # Première clé : priorité de l'action
+        action_priority = action_order.get(action, 999)
+        # Deuxième clé : tri alphabétique de l'alias (en minuscules)
+        alias_lower = alias.lower()
+        return (action_priority, alias_lower)
+    
+    # Trier
+    sorted_items = sorted(items, key=sort_key)
+    return sorted_items
+
 def populate_actions_map_from_file(file_path, actions_map_sub, callback):
     # Déterminer le chemin du fichier JSON
     json_path = file_path.replace('.txt', '.json')
@@ -198,8 +236,6 @@ def append_to_actions_file(file_path, key, value):
         # Ajouter la nouvelle ligne
         f.write(f"{key}:{value}\n")
         # print(f"[Info] La clé '{key}' a été ajoutée au fichier.")
-
-
 
 def append_to_actions_file_json(file_path, alias, string, action="copy"):
     """
