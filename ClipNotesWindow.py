@@ -100,13 +100,14 @@ class CursorTracker(QWidget):
 
 
 class RadialMenu(QWidget):
-    def __init__(self, x, y, buttons, parent=None, sub=False, tracker=None):
+    def __init__(self, x, y, buttons, parent=None, sub=False, tracker=None, app_instance=None):
         super().__init__(parent)  # Ne jamais utiliser tracker comme parent
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.ToolTip)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.sub = sub
         self.tracker = tracker
+        self.app_instance = app_instance  # Référence à l'instance de App
         
         # Ajustement dynamique du rayon en fonction du nombre de boutons
         num_buttons = len(buttons)
@@ -399,7 +400,7 @@ class RadialMenu(QWidget):
             # Masquer tous les badges
             for badge in self._action_badges.values():
                 badge.setVisible(False)
-            self.close_with_animation()
+            self.handle_click_outside()
     
     def mouseMoveEvent(self, event):
         """Détecte quelle action est survolée par la souris (zone angulaire complète)"""
@@ -551,6 +552,17 @@ class RadialMenu(QWidget):
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._central_text)
 
 
+    def handle_click_outside(self):
+        """Gère le clic en dehors du menu (sur le tracker ou au centre)"""
+        # Si on est en mode modification ou suppression, revenir au menu de base
+        if self.app_instance and (self.app_instance.update_mode or self.app_instance.delete_mode):
+            self.app_instance.update_mode = False
+            self.app_instance.delete_mode = False
+            self.app_instance.refresh_menu()
+        else:
+            # Sinon, fermer normalement
+            self.close_with_animation()
+
     def animate_open(self):
         # Masquer les badges pendant l'animation
         for badge in self._action_badges.values():
@@ -558,7 +570,7 @@ class RadialMenu(QWidget):
         
         # Configurer le tracker pour qu'il ferme ce menu quand on clique dessus
         if self.tracker:
-            self.tracker.on_click_callback = self.close_with_animation
+            self.tracker.on_click_callback = self.handle_click_outside
         
         self.anim = QVariantAnimation(self)
         self.anim.setDuration(250)  # Réduit de 350ms à 250ms
@@ -726,6 +738,9 @@ class App(QMainWindow):
             self.tracker.update_pos()
             x, y = self.tracker.last_x, self.tracker.last_y
         
+        # Activer le mode modification
+        self.update_mode = True
+        
         # Filtrer les clips (sans les boutons d'action)
         clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➕", "✏️", "➖"]}
         
@@ -765,6 +780,9 @@ class App(QMainWindow):
         if self.tracker:
             self.tracker.update_pos()
             x, y = self.tracker.last_x, self.tracker.last_y
+        
+        # Activer le mode suppression
+        self.delete_mode = True
         
         # Filtrer les clips (sans les boutons d'action)
         clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➕", "✏️", "➖"]}
@@ -852,7 +870,7 @@ class App(QMainWindow):
         def confirm_delete():
             self.actions_map_sub.pop(name, None)
             delete_from_json(CLIP_NOTES_FILE_JSON, name)
-            self.delete_mode = True
+            self.delete_mode = False  # Désactiver le mode après suppression
             dialog.accept()
             # Au lieu de relaunch_window, on rafraîchit le menu
             self.refresh_menu()
@@ -1094,7 +1112,7 @@ class App(QMainWindow):
                 
                 replace_or_append_json(CLIP_NOTES_FILE_JSON, new_name, new_value, action)
                 dialog.accept()
-                self.update_mode = True
+                self.update_mode = False  # Désactiver le mode après édition
                 
                 # Au lieu de relaunch_window, on rafraîchit le menu
                 self.refresh_menu()
@@ -1154,7 +1172,7 @@ class App(QMainWindow):
             tooltip = value.replace(r'\n', '\n')
             self.buttons_sub.append((name, self.make_handler_sub(name, value, x, y), tooltip, action))
         
-        self.current_popup = RadialMenu(x, y, self.buttons_sub, sub=True, tracker=self.tracker)
+        self.current_popup = RadialMenu(x, y, self.buttons_sub, sub=True, tracker=self.tracker, app_instance=self)
         self.current_popup.show()
         self.current_popup.animate_open()
 
