@@ -61,13 +61,127 @@ def remove_lock_file():
     except:
         pass
 
+class CalibrationWindow(QWidget):
+    def __init__(self, tracker, main_app):
+        super().__init__()
+        self.tracker = tracker
+        self.main_app = main_app  # Référence à l'app principale
+        
+        self.setWindowTitle("Calibration Curseur Wayland")
+        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
+        self.resize(400, 300)
+        
+        layout = QVBoxLayout()
+        
+        # === SLIDER X GAUCHE ===
+        x_left_layout = QHBoxLayout()
+        x_left_label = QLabel("X Correction Gauche:")
+        self.x_left_value = QLabel(str(tracker.x_correction_left))
+        self.x_left_slider = QSlider(Qt.Orientation.Horizontal)
+        self.x_left_slider.setRange(-300, 300)
+        self.x_left_slider.setValue(tracker.x_correction_left)
+        self.x_left_slider.valueChanged.connect(self.update_x_left)
+        
+        x_left_layout.addWidget(x_left_label)
+        x_left_layout.addWidget(self.x_left_slider)
+        x_left_layout.addWidget(self.x_left_value)
+        layout.addLayout(x_left_layout)
+        
+        # === SLIDER X DROITE ===
+        x_right_layout = QHBoxLayout()
+        x_right_label = QLabel("X Correction Droite:")
+        self.x_right_value = QLabel(str(tracker.x_correction_right))
+        self.x_right_slider = QSlider(Qt.Orientation.Horizontal)
+        self.x_right_slider.setRange(-300, 300)
+        self.x_right_slider.setValue(tracker.x_correction_right)
+        self.x_right_slider.valueChanged.connect(self.update_x_right)
+        
+        x_right_layout.addWidget(x_right_label)
+        x_right_layout.addWidget(self.x_right_slider)
+        x_right_layout.addWidget(self.x_right_value)
+        layout.addLayout(x_right_layout)
+        
+        # === SLIDER Y HAUT ===
+        y_top_layout = QHBoxLayout()
+        y_top_label = QLabel("Y Correction Haut:")
+        self.y_top_value = QLabel(str(tracker.y_correction_top))
+        self.y_top_slider = QSlider(Qt.Orientation.Horizontal)
+        self.y_top_slider.setRange(-300, 300)
+        self.y_top_slider.setValue(tracker.y_correction_top)
+        self.y_top_slider.valueChanged.connect(self.update_y_top)
+        
+        y_top_layout.addWidget(y_top_label)
+        y_top_layout.addWidget(self.y_top_slider)
+        y_top_layout.addWidget(self.y_top_value)
+        layout.addLayout(y_top_layout)
+        
+        # === SLIDER Y BAS ===
+        y_bottom_layout = QHBoxLayout()
+        y_bottom_label = QLabel("Y Correction Bas:")
+        self.y_bottom_value = QLabel(str(tracker.y_correction_bottom))
+        self.y_bottom_slider = QSlider(Qt.Orientation.Horizontal)
+        self.y_bottom_slider.setRange(-300, 300)
+        self.y_bottom_slider.setValue(tracker.y_correction_bottom)
+        self.y_bottom_slider.valueChanged.connect(self.update_y_bottom)
+        
+        y_bottom_layout.addWidget(y_bottom_label)
+        y_bottom_layout.addWidget(self.y_bottom_slider)
+        y_bottom_layout.addWidget(self.y_bottom_value)
+        layout.addLayout(y_bottom_layout)
+        
+        # === BOUTON AFFICHER VALEURS ===
+        print_button = QPushButton("Afficher valeurs actuelles")
+        print_button.clicked.connect(self.print_values)
+        layout.addWidget(print_button)
+        
+        # === INFO ===
+        info_label = QLabel("Le menu se relance automatiquement à chaque changement")
+        info_label.setStyleSheet("color: gray; font-style: italic;")
+        layout.addWidget(info_label)
+        
+        self.setLayout(layout)
+    
+    def refresh_menu(self):
+        """Relance le menu à la position actuelle du curseur"""
+        self.tracker.update_pos()
+        x, y = self.tracker.last_x, self.tracker.last_y
+        self.main_app.show_window_at(x, y, "")
+    
+    def update_x_left(self, value):
+        self.tracker.x_correction_left = value
+        self.x_left_value.setText(str(value))
+        self.refresh_menu()  # Relancer le menu
+    
+    def update_x_right(self, value):
+        self.tracker.x_correction_right = value
+        self.x_right_value.setText(str(value))
+        self.refresh_menu()  # Relancer le menu
+    
+    def update_y_top(self, value):
+        self.tracker.y_correction_top = value
+        self.y_top_value.setText(str(value))
+        self.refresh_menu()  # Relancer le menu
+    
+    def update_y_bottom(self, value):
+        self.tracker.y_correction_bottom = value
+        self.y_bottom_value.setText(str(value))
+        self.refresh_menu()  # Relancer le menu
+    
+    def print_values(self):
+        print("\n=== VALEURS DE CALIBRATION ===")
+        print(f"self.x_correction_left = {self.tracker.x_correction_left}")
+        print(f"self.x_correction_right = {self.tracker.x_correction_right}")
+        print(f"self.y_correction_top = {self.tracker.y_correction_top}")
+        print(f"self.y_correction_bottom = {self.tracker.y_correction_bottom}")
+        print("==============================\n")
+
 # === TRACKER POUR WAYLAND ===
 class CursorTracker(QWidget):
     def __init__(self):
         super().__init__()
         self.last_x = 0
         self.last_y = 0
-        self.on_click_callback = None  # Callback pour fermer le menu
+        self.on_click_callback = None
         
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
@@ -78,23 +192,68 @@ class CursorTracker(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setMouseTracking(True)
         
-        screen = QApplication.primaryScreen().geometry()
-        self.setGeometry(screen)
+        screen = QApplication.primaryScreen()
+        geometry = screen.geometry()
+        self.setGeometry(geometry)
+
+        self.screen_width = geometry.width()
+        self.screen_height = geometry.height()
+      
+        self.x_correction_left = 200   # Correction à gauche
+        self.x_correction_right = -200  # Correction à droite
+        
+        self.y_correction_top = 200     # Correction en haut
+        self.y_correction_bottom = 80   # Correction en bas
+        
+        print(f"Écran: {self.screen_width}x{self.screen_height}")
+        # print(f"Milieu: X={self.screen_mid_x}, Y={self.screen_mid_y}")
         
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_pos)
-        self.timer.start(10)
+        self.timer.start(100)
         
+
     def update_pos(self):
         pos = QCursor.pos()
-        self.last_x = pos.x()
-        self.last_y = int(pos.y() * 1.25)  # Décalage de 3 cm vers le bas pour test
-        # print("X : ", self.last_x)
-        # print("Y : ", self.last_y)
+        
+        # Correction X PROPORTIONNELLE basée sur la position
+        # Ratio : 0 à gauche, 1 à droite
+        x_ratio = pos.x() / self.screen_width if self.screen_width > 0 else 0
+        # Interpolation linéaire entre correction_left et correction_right
+        x_offset = self.x_correction_left + (self.x_correction_right - self.x_correction_left) * x_ratio
+        self.last_x = int(pos.x() + x_offset)
+        
+        # Correction Y PROPORTIONNELLE basée sur la position
+        # Ratio : 0 en haut, 1 en bas
+        y_ratio = pos.y() / self.screen_height if self.screen_height > 0 else 0
+        # Interpolation linéaire entre correction_top et correction_bottom
+        y_offset = self.y_correction_top + (self.y_correction_bottom - self.y_correction_top) * y_ratio
+        self.last_y = int(pos.y() + y_offset)
+
+    # def update_pos(self):
+    #     pos = QCursor.pos()
+        # if pos.x() < self.screen_mid_x / 2:  # Quart gauche (0-25%)
+        #     self.last_x = pos.x() + 180
+        # elif pos.x() < self.screen_mid_x:  # Entre quart et milieu (25-50%)
+        #     self.last_x = pos.x() + 80
+        # elif pos.x() < self.screen_mid_x + (self.screen_mid_x / 2):  # Entre milieu et 3/4 (50-75%)
+        #     self.last_x = pos.x() - 80
+        # else:  # Quart droit (75-100%)
+        #     self.last_x = pos.x() - 150
+        
+        # # Correction Y
+        # if pos.y() < self.screen_mid_y / 2:  # Quart supérieur
+        #     self.last_y = pos.y() + 180
+        # elif pos.y() < self.screen_mid_y:  # Entre quart et milieu
+        #     self.last_y = pos.y() + 220
+        # elif pos.y() > self.screen_mid_y:  # En dessous du milieu
+        #     self.last_y = pos.y() + 80
+        # else:
+        #     self.last_y = pos.y()
     
     def mousePressEvent(self, event):
         if self.on_click_callback:
-            self.on_click_callback()  # Fermer le menu avec animation
+            self.on_click_callback()
         else:
             self.close()
 
@@ -573,7 +732,7 @@ class RadialMenu(QWidget):
             self.tracker.on_click_callback = self.handle_click_outside
         
         self.anim = QVariantAnimation(self)
-        self.anim.setDuration(250)  # Réduit de 350ms à 250ms
+        self.anim.setDuration(200)  # Réduit de 350ms à 250ms
         self.anim.setStartValue(0.1)  # Partir de 10% de la taille, pas 0
         self.anim.setEndValue(1.0)
         self.anim.setEasingCurve(QEasingCurve.Type.OutBack)
@@ -649,7 +808,7 @@ class RadialMenu(QWidget):
             badge.setVisible(False)
         
         self.anim = QVariantAnimation(self)
-        self.anim.setDuration(300)
+        self.anim.setDuration(200)
         self.anim.setStartValue(1.0)
         self.anim.setEndValue(0.1)  # Finir à 10% de la taille, pas 0
         self.anim.setEasingCurve(QEasingCurve.Type.InBack)
@@ -1192,6 +1351,9 @@ if __name__ == "__main__":
     global tracker
     tracker = CursorTracker()
     tracker.show()
+    #     # AJOUTER LA FENÊTRE DE CALIBRATION
+    # calibration_window = CalibrationWindow(tracker)
+    # calibration_window.show()
     
     import time
     max_wait = 0.3
@@ -1208,6 +1370,9 @@ if __name__ == "__main__":
     
     main_app = App()
     main_app.tracker = tracker
+    # Fenêtre de calibration du menu Radial
+    # calibration_window = CalibrationWindow(tracker, main_app)
+    # calibration_window.show()
     main_app.show_window_at(x, y, "")
 
     try:
