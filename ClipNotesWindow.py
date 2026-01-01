@@ -159,6 +159,7 @@ class RadialMenu(QWidget):
         # Stocker les couleurs par action pour chaque bouton
         self._button_colors = []  # Liste des couleurs pour chaque bouton
         self._button_actions = []  # Liste des actions pour chaque bouton
+        self._button_labels = []  # Liste des labels pour chaque bouton
         self._hovered_action = None  # Action survolée (None, "copy", "term", ou "exec")
         self._action_badges = {}  # Dictionnaire des badges globaux par action
         
@@ -193,10 +194,11 @@ class RadialMenu(QWidget):
                 tooltip = ""
                 action = None
             
-            # Stocker la couleur et l'action pour ce bouton
+            # Stocker la couleur, l'action et le label pour ce bouton
             color = action_colors.get(action, None)
             self._button_colors.append(color)
             self._button_actions.append(action)
+            self._button_labels.append(label)
                 
             angle = math.radians(i * angle_step)
             # Le centre du menu radial est maintenant au centre du widget agrandi
@@ -217,16 +219,29 @@ class RadialMenu(QWidget):
                 btn.setIcon(QIcon(text_pixmap(label, 32)))
             btn.setIconSize(QSize(32, 32))
             
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: rgba(255, 255, 255, 10);
-                    border-radius: {self.btn_size // 2}px;
-                    border: none;
-                }}
-                QPushButton:hover {{
-                    background-color: rgba(255, 255, 255, 100);
-                }}
-            """)
+            # Les boutons spéciaux (➕ ✏️ ➖) ont un fond transparent
+            if label in ["➕", "✏️", "➖"]:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: transparent;
+                        border-radius: {self.btn_size // 2}px;
+                        border: none;
+                    }}
+                    QPushButton:hover {{
+                        background-color: rgba(255, 255, 255, 50);
+                    }}
+                """)
+            else:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: rgba(255, 255, 255, 10);
+                        border-radius: {self.btn_size // 2}px;
+                        border: none;
+                    }}
+                    QPushButton:hover {{
+                        background-color: rgba(255, 255, 255, 100);
+                    }}
+                """)
             btn.setFixedSize(self.btn_size, self.btn_size)
             btn.move(int(bx), int(by))
             btn.setVisible(False)
@@ -251,7 +266,7 @@ class RadialMenu(QWidget):
             badge.setStyleSheet("""
                 QLabel {
                     background-color: rgba(255, 255, 255, 80);
-                    border-radius: 15px;
+                    border-radius: 17px;
                     padding: 4px;
                     font-size: 22px;
                 }
@@ -281,6 +296,7 @@ class RadialMenu(QWidget):
         self._tooltips.clear()
         self._button_colors.clear()
         self._button_actions.clear()
+        self._button_labels.clear()
         self._action_badges = {}
         
         # Recalculer le rayon si nécessaire
@@ -545,7 +561,7 @@ class RadialMenu(QWidget):
             self.tracker.on_click_callback = self.close_with_animation
         
         self.anim = QVariantAnimation(self)
-        self.anim.setDuration(200)  # Réduit de 350ms à 250ms
+        self.anim.setDuration(250)  # Réduit de 350ms à 250ms
         self.anim.setStartValue(0.1)  # Partir de 10% de la taille, pas 0
         self.anim.setEndValue(1.0)
         self.anim.setEasingCurve(QEasingCurve.Type.OutBack)
@@ -583,16 +599,30 @@ class RadialMenu(QWidget):
                 btn.setIconSize(QSize(int(32 * self._scale_factor), int(32 * self._scale_factor)))
                 
                 # Mettre à jour le style avec le border-radius scalé
-                btn.setStyleSheet(f"""
-                    QPushButton {{
-                        background-color: rgba(255, 255, 255, 10);
-                        border-radius: {int((self.btn_size // 2) * self._scale_factor)}px;
-                        border: none;
-                    }}
-                    QPushButton:hover {{
-                        background-color: rgba(255, 255, 255, 100);
-                    }}
-                """)
+                # Les boutons spéciaux (➕ ✏️ ➖) restent transparents
+                label = self._button_labels[i] if i < len(self._button_labels) else ""
+                if label in ["➕", "✏️", "➖"]:
+                    btn.setStyleSheet(f"""
+                        QPushButton {{
+                            background-color: transparent;
+                            border-radius: {int((self.btn_size // 2) * self._scale_factor)}px;
+                            border: none;
+                        }}
+                        QPushButton:hover {{
+                            background-color: rgba(255, 255, 255, 50);
+                        }}
+                    """)
+                else:
+                    btn.setStyleSheet(f"""
+                        QPushButton {{
+                            background-color: rgba(255, 255, 255, 10);
+                            border-radius: {int((self.btn_size // 2) * self._scale_factor)}px;
+                            border: none;
+                        }}
+                        QPushButton:hover {{
+                            background-color: rgba(255, 255, 255, 100);
+                        }}
+                    """)
         
         self.update()
 
@@ -607,7 +637,7 @@ class RadialMenu(QWidget):
             badge.setVisible(False)
         
         self.anim = QVariantAnimation(self)
-        self.anim.setDuration(200)
+        self.anim.setDuration(300)
         self.anim.setStartValue(1.0)
         self.anim.setEndValue(0.1)  # Finir à 10% de la taille, pas 0
         self.anim.setEasingCurve(QEasingCurve.Type.InBack)
@@ -668,8 +698,23 @@ class App(QMainWindow):
         
         # Reconstruire buttons_sub depuis actions_map_sub avec tri
         self.buttons_sub = []
-        sorted_actions = sort_actions_map(self.actions_map_sub)
-        for name, (action_data, value, action) in sorted_actions:
+        
+        # Séparer les boutons spéciaux des autres
+        special_buttons = ["➕", "✏️", "➖"]
+        clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
+        
+        # Trier seulement les clips (pas les boutons spéciaux)
+        sorted_clips = sort_actions_map(clips_to_sort)
+        
+        # Ajouter d'abord les boutons spéciaux dans l'ordre fixe
+        for name in special_buttons:
+            if name in self.actions_map_sub:
+                action_data, value, action = self.actions_map_sub[name]
+                tooltip = value.replace(r'\n', '\n')
+                self.buttons_sub.append((name, self.make_handler_sub(name, value, self._x, self._y), tooltip, action))
+        
+        # Puis ajouter les clips triés
+        for name, (action_data, value, action) in sorted_clips:
             tooltip = value.replace(r'\n', '\n')
             self.buttons_sub.append((name, self.make_handler_sub(name, value, self._x, self._y), tooltip, action))
         
@@ -1090,12 +1135,25 @@ class App(QMainWindow):
         }
         populate_actions_map_from_file(CLIP_NOTES_FILE, self.actions_map_sub, execute_command)
 
-        # Trier les actions avant de créer les boutons
-        sorted_actions = sort_actions_map(self.actions_map_sub)
+        # Séparer les boutons spéciaux des autres
+        special_buttons = ["➕", "✏️", "➖"]
+        clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
-        for name, (action_data, value, action) in sorted_actions:
+        # Trier seulement les clips (pas les boutons spéciaux)
+        sorted_clips = sort_actions_map(clips_to_sort)
+        
+        # Ajouter d'abord les boutons spéciaux dans l'ordre fixe
+        for name in special_buttons:
+            if name in self.actions_map_sub:
+                action_data, value, action = self.actions_map_sub[name]
+                tooltip = value.replace(r'\n', '\n')
+                self.buttons_sub.append((name, self.make_handler_sub(name, value, x, y), tooltip, action))
+        
+        # Puis ajouter les clips triés
+        for name, (action_data, value, action) in sorted_clips:
             tooltip = value.replace(r'\n', '\n')
             self.buttons_sub.append((name, self.make_handler_sub(name, value, x, y), tooltip, action))
+        
         self.current_popup = RadialMenu(x, y, self.buttons_sub, sub=True, tracker=self.tracker)
         self.current_popup.show()
         self.current_popup.animate_open()
