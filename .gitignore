@@ -51,5 +51,6 @@ clip_notes.txt.bak
 # Logs
 *.log
 clip_notes.txt
+clip_notes.json
 BACKUP*/
 backup*/

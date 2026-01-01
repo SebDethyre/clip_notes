@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import QDialog, QLineEdit, QMessageBox, QTextEdit, QToolTip
 from utils import *                
 from ui import EmojiSelector
 
+# 🗑️ 📝
 # Constantes de configuration
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CLIP_NOTES_FILE = os.path.join(SCRIPT_DIR, "clip_notes.txt")
@@ -66,6 +67,7 @@ class CursorTracker(QWidget):
         super().__init__()
         self.last_x = 0
         self.last_y = 0
+        self.on_click_callback = None  # Callback pour fermer le menu
         
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
@@ -91,11 +93,15 @@ class CursorTracker(QWidget):
         # print("Y : ", self.last_y)
     
     def mousePressEvent(self, event):
-        self.close()
+        if self.on_click_callback:
+            self.on_click_callback()  # Fermer le menu avec animation
+        else:
+            self.close()
+
 
 class RadialMenu(QWidget):
     def __init__(self, x, y, buttons, parent=None, sub=False, tracker=None):
-        super().__init__(tracker if tracker else parent)
+        super().__init__(parent)  # Ne jamais utiliser tracker comme parent
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.ToolTip)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -146,6 +152,7 @@ class RadialMenu(QWidget):
         self._neon_opacity = 120
         self._neon_color = "cyan"
         self._widget_opacity = 1.0
+        self._scale_factor = 0.1  # Démarrer petit pour l'animation
 
         self.current_index = 0
         
@@ -376,8 +383,6 @@ class RadialMenu(QWidget):
             # Masquer tous les badges
             for badge in self._action_badges.values():
                 badge.setVisible(False)
-            if self.tracker:
-                self.tracker.close()
             self.close_with_animation()
     
     def mouseMoveEvent(self, event):
@@ -471,12 +476,15 @@ class RadialMenu(QWidget):
         
         center = self.rect().center()
         
+        # Appliquer le scale au diamètre
+        scaled_diameter = int(self.diameter * self._scale_factor)
+        
         # Le cercle du menu radial (plus petit que le widget)
         circle_rect = QRect(
-            (self.widget_size - self.diameter) // 2,
-            (self.widget_size - self.diameter) // 2,
-            self.diameter,
-            self.diameter
+            (self.widget_size - scaled_diameter) // 2,
+            (self.widget_size - scaled_diameter) // 2,
+            scaled_diameter,
+            scaled_diameter
         )
 
         # Dessiner le fond global
@@ -512,33 +520,81 @@ class RadialMenu(QWidget):
                         painter.drawPie(circle_rect, int(start_angle * 16), int(angle_step * 16))
 
         if self.neon_enabled:
-            gradient = QRadialGradient(QPointF(center), self._neon_radius)
+            scaled_neon_radius = self._neon_radius * self._scale_factor
+            gradient = QRadialGradient(QPointF(center), scaled_neon_radius)
             gradient.setColorAt(0.0, couleur_avec_opacite(self._neon_color, self._neon_opacity))
             gradient.setColorAt(1.0, couleur_avec_opacite(self._neon_color, 0))
             painter.setBrush(gradient)
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(QPointF(center), self._neon_radius, self._neon_radius)
+            painter.drawEllipse(QPointF(center), scaled_neon_radius, scaled_neon_radius)
 
         if self._central_text:
             painter.setPen(QColor(255, 255, 255))
-            font = QFont("Arial", 24)
+            font = QFont("Arial", int(24 * self._scale_factor))
             painter.setFont(font)
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._central_text)
 
 
     def animate_open(self):
+        # Masquer les badges pendant l'animation
+        for badge in self._action_badges.values():
+            badge.setVisible(False)
+        
+        # Configurer le tracker pour qu'il ferme ce menu quand on clique dessus
+        if self.tracker:
+            self.tracker.on_click_callback = self.close_with_animation
+        
         self.anim = QVariantAnimation(self)
-        self.anim.setDuration(0)
-        self.anim.setStartValue(0.0)
+        self.anim.setDuration(200)  # Réduit de 350ms à 250ms
+        self.anim.setStartValue(0.1)  # Partir de 10% de la taille, pas 0
         self.anim.setEndValue(1.0)
         self.anim.setEasingCurve(QEasingCurve.Type.OutBack)
 
-        def update_opacity(value):
-            self.set_widget_opacity(value)
+        def update_scale(value):
+            self._scale_factor = value
+            self._apply_scale()
         
-        self.anim.valueChanged.connect(update_opacity)
+        self.anim.valueChanged.connect(update_scale)
         self.anim.finished.connect(self.on_animation_finished)
         self.anim.start()
+    
+    def _apply_scale(self):
+        """Trigger un repaint avec le nouveau scale factor"""
+        # Le scale sera appliqué dans paintEvent via une transformation
+        # On met aussi à jour la position/taille des boutons
+        if self._scale_factor > 0:
+            for i, btn in enumerate(self.buttons):
+                # Repositionner et redimensionner chaque bouton selon le scale
+                angle_step = 360 / len(self.buttons)
+                angle = math.radians(i * angle_step)
+                center_offset = self.widget_size // 2
+                
+                # Position originale
+                orig_bx = center_offset + self.radius * math.cos(angle) - self.btn_size // 2
+                orig_by = center_offset + self.radius * math.sin(angle) - self.btn_size // 2
+                
+                # Appliquer le scale depuis le centre
+                scaled_bx = center_offset + (orig_bx - center_offset) * self._scale_factor
+                scaled_by = center_offset + (orig_by - center_offset) * self._scale_factor
+                scaled_size = int(self.btn_size * self._scale_factor)
+                
+                btn.move(int(scaled_bx), int(scaled_by))
+                btn.setFixedSize(scaled_size, scaled_size)
+                btn.setIconSize(QSize(int(32 * self._scale_factor), int(32 * self._scale_factor)))
+                
+                # Mettre à jour le style avec le border-radius scalé
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: rgba(255, 255, 255, 10);
+                        border-radius: {int((self.btn_size // 2) * self._scale_factor)}px;
+                        border: none;
+                    }}
+                    QPushButton:hover {{
+                        background-color: rgba(255, 255, 255, 100);
+                    }}
+                """)
+        
+        self.update()
 
     def on_animation_finished(self):
         self.reveal_buttons()
@@ -546,18 +602,29 @@ class RadialMenu(QWidget):
     def close_with_animation(self):
         self.neon_enabled = False
         
+        # Masquer les badges pendant l'animation
+        for badge in self._action_badges.values():
+            badge.setVisible(False)
+        
         self.anim = QVariantAnimation(self)
-        self.anim.setDuration(300)
+        self.anim.setDuration(200)
         self.anim.setStartValue(1.0)
-        self.anim.setEndValue(0.0)
+        self.anim.setEndValue(0.1)  # Finir à 10% de la taille, pas 0
         self.anim.setEasingCurve(QEasingCurve.Type.InBack)
         
-        def update_opacity(value):
-            self.set_widget_opacity(value)
+        def update_scale(value):
+            self._scale_factor = value
+            self._apply_scale()
         
-        self.anim.valueChanged.connect(update_opacity)
-        self.anim.finished.connect(self.close)
+        self.anim.valueChanged.connect(update_scale)
+        self.anim.finished.connect(self._on_close_finished)
         self.anim.start()
+    
+    def _on_close_finished(self):
+        """Appelé quand l'animation de fermeture est terminée"""
+        if self.tracker:
+            self.tracker.close()
+        self.close()
 
 class App(QMainWindow):
     def __init__(self):
@@ -615,7 +682,7 @@ class App(QMainWindow):
             x, y = self.tracker.last_x, self.tracker.last_y
         
         # Filtrer les clips (sans les boutons d'action)
-        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➕", "📝", "🗑️"]}
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➕", "✏️", "➖"]}
         
         # Trier les clips
         sorted_clips = sort_actions_map(clips_only)
@@ -636,7 +703,7 @@ class App(QMainWindow):
         
         if self.current_popup:
             self.current_popup.update_buttons(self.buttons_sub)
-            self.current_popup.set_central_text("📝")
+            self.current_popup.set_central_text("✏️")
             self.current_popup.set_neon_color("jaune")
             self.current_popup.toggle_neon(True)
             self.current_popup.timer.start(50)
@@ -655,7 +722,7 @@ class App(QMainWindow):
             x, y = self.tracker.last_x, self.tracker.last_y
         
         # Filtrer les clips (sans les boutons d'action)
-        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➕", "📝", "🗑️"]}
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➕", "✏️", "➖"]}
         
         # Trier les clips
         sorted_clips = sort_actions_map(clips_only)
@@ -674,7 +741,7 @@ class App(QMainWindow):
         
         if self.current_popup:
             self.current_popup.update_buttons(self.buttons_sub)
-            self.current_popup.set_central_text("🗑️")
+            self.current_popup.set_central_text("➖")
             self.current_popup.set_neon_color("rouge")
             self.current_popup.toggle_neon(True)
             self.current_popup.timer.start(50)
@@ -764,7 +831,7 @@ class App(QMainWindow):
                 if isinstance(func_data, tuple) and len(func_data) == 3:
                     func, args, kwargs = func_data
                     func(*args, **kwargs)
-                    if name not in ["➕", "📝", "🗑️"]:
+                    if name not in ["➕", "✏️", "➖"]:
                         if self.tracker:
                             self.tracker.close()
                         if self.current_popup:
@@ -1018,8 +1085,8 @@ class App(QMainWindow):
         self.buttons_sub = []
         self.actions_map_sub = {
             "➕": [(self.new_clip,    [x,y], {}), "", None],
-            "📝": [(self.update_clip, [x,y], {}), "", None],
-            "🗑️": [(self.delete_clip, [x,y], {}), "", None],
+            "✏️": [(self.update_clip, [x,y], {}), "", None],
+            "➖": [(self.delete_clip, [x,y], {}), "", None],
         }
         populate_actions_map_from_file(CLIP_NOTES_FILE, self.actions_map_sub, execute_command)
 
