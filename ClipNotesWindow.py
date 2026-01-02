@@ -1,14 +1,17 @@
 import sys
 import math
+import subprocess
 import signal
 import os
-import time
+import getpass
 import json
 from PyQt6.QtGui import QCursor
 from PyQt6.QtGui import QPainter, QColor, QIcon, QRadialGradient, QFont, QPalette
-from PyQt6.QtCore import Qt, QSize, QTimer, QRect, QEasingCurve, QVariantAnimation, QEvent, QPointF
+from PyQt6.QtCore import Qt, QSize, QTimer, QPropertyAnimation, QRect, QEasingCurve, QVariantAnimation, QEvent, QPointF
 from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QMainWindow, QVBoxLayout, QHBoxLayout, QSlider
-from PyQt6.QtWidgets import QDialog, QLineEdit, QTextEdit, QLabel
+from PyQt6.QtWidgets import QDialog, QLineEdit, QMessageBox, QTextEdit, QToolTip, QLabel, QFileDialog
+from PIL import Image, ImageDraw
+import hashlib
 
 from utils import *                
 from ui import EmojiSelector
@@ -19,7 +22,60 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CLIP_NOTES_FILE = os.path.join(SCRIPT_DIR, "clip_notes.txt")
 CLIP_NOTES_FILE_JSON = os.path.join(SCRIPT_DIR, "clip_notes.json")
 EMOJIS_FILE = os.path.join(SCRIPT_DIR, "emojis.txt")
+THUMBNAILS_DIR = os.path.join(SCRIPT_DIR, "thumbnails")
 NEON_PRINCIPAL=False
+
+# Créer le dossier des miniatures s'il n'existe pas
+os.makedirs(THUMBNAILS_DIR, exist_ok=True)
+
+def create_thumbnail(image_path, size=48):
+    """
+    Crée une miniature ronde d'une image et la sauvegarde dans le dossier thumbnails.
+    Retourne le chemin relatif de la miniature.
+    """
+    try:
+        # Ouvrir l'image
+        img = Image.open(image_path)
+        
+        # Convertir en RGBA pour gérer la transparence
+        img = img.convert('RGBA')
+        
+        # Redimensionner en carré en remplissant tout l'espace (crop si nécessaire)
+        # On prend la plus petite dimension et on crop le reste
+        min_dimension = min(img.size)
+        left = (img.width - min_dimension) / 2
+        top = (img.height - min_dimension) / 2
+        right = (img.width + min_dimension) / 2
+        bottom = (img.height + min_dimension) / 2
+        img = img.crop((left, top, right, bottom))
+        
+        # Redimensionner au size voulu
+        img = img.resize((size, size), Image.Resampling.LANCZOS)
+        
+        # Créer un masque circulaire
+        mask = Image.new('L', (size, size), 0)
+        draw = ImageDraw.Draw(mask)
+        draw.ellipse((0, 0, size, size), fill=255)
+        
+        # Appliquer le masque circulaire
+        output = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+        output.paste(img, (0, 0))
+        output.putalpha(mask)
+        
+        # Créer un nom unique basé sur le hash du chemin original
+        hash_name = hashlib.md5(image_path.encode()).hexdigest()
+        thumbnail_filename = f"{hash_name}.png"
+        thumbnail_path = os.path.join(THUMBNAILS_DIR, thumbnail_filename)
+        
+        # Sauvegarder en PNG pour conserver la transparence
+        output.save(thumbnail_path, "PNG", optimize=True)
+        
+        # Retourner le chemin absolu
+        return thumbnail_path
+        
+    except Exception as e:
+        print(f"Erreur lors de la création de la miniature: {e}")
+        return None
 
 DIALOG_STYLE = """
     QWidget {
@@ -469,18 +525,20 @@ class RadialMenu(QWidget):
             btn = QPushButton("", self)
             # Déterminer le type de label et utiliser la fonction appropriée
             if "/" in label:
-                # C'est un chemin d'image
-                btn.setIcon(QIcon(image_pixmap(label, 32)))
+                # C'est un chemin d'image - légèrement plus petit pour voir le hover
+                btn.setIcon(QIcon(image_pixmap(label, 48)))
+                btn.setIconSize(QSize(48, 48))
             elif is_emoji(label):
                 # C'est un emoji
                 btn.setIcon(QIcon(emoji_pixmap(label, 32)))
+                btn.setIconSize(QSize(32, 32))
             else:
                 # C'est du texte simple
                 btn.setIcon(QIcon(text_pixmap(label, 32)))
-            btn.setIconSize(QSize(32, 32))
+                btn.setIconSize(QSize(32, 32))
             
             # Les boutons spéciaux (➕ ✏️ ➖) ont un fond transparent MAIS coloré au hover
-            if label in ["➖", "✏️", "➕"]:
+            if label in ["➕", "✏️", "➖"]:
                 btn.setStyleSheet(f"""
                     QPushButton {{
                         background-color: transparent;
@@ -489,6 +547,19 @@ class RadialMenu(QWidget):
                     }}
                     QPushButton:hover {{
                         background-color: rgba(255, 255, 255, 100);
+                    }}
+                """)
+            elif "/" in label:
+                # Boutons avec images - pas de padding, fond transparent
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: transparent;
+                        border-radius: {self.btn_size // 2}px;
+                        border: none;
+                        padding: 0px;
+                    }}
+                    QPushButton:hover {{
+                        background-color: rgba(255, 255, 255, 30);
                     }}
                 """)
             else:
@@ -650,7 +721,7 @@ class RadialMenu(QWidget):
         for i, btn in enumerate(self.buttons):
             # Vérifier si c'est un bouton spécial (➕ ✏️ ➖)
             label = self._button_labels[i] if i < len(self._button_labels) else ""
-            if label in ["➖", "✏️", "➕"]:
+            if label in ["➕", "✏️", "➖"]:
                 # Les boutons spéciaux restent transparents MAIS colorés au hover
                 btn.setStyleSheet(f"""
                     QPushButton {{
@@ -660,6 +731,19 @@ class RadialMenu(QWidget):
                     }}
                     QPushButton:hover {{
                         background-color: rgba(255, 255, 255, {int(100 * value)});
+                    }}
+                """)
+            elif "/" in label:
+                # Boutons avec images - pas de padding
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: transparent;
+                        border-radius: {self.btn_size // 2}px;
+                        border: none;
+                        padding: 0px;
+                    }}
+                    QPushButton:hover {{
+                        background-color: rgba(255, 255, 255, {int(30 * value)});
                     }}
                 """)
             else:
@@ -916,12 +1000,18 @@ class RadialMenu(QWidget):
                 
                 btn.move(int(scaled_bx), int(scaled_by))
                 btn.setFixedSize(scaled_size, scaled_size)
-                btn.setIconSize(QSize(int(32 * self._scale_factor), int(32 * self._scale_factor)))
+                
+                # Adapter la taille de l'icône selon le type
+                label = self._button_labels[i] if i < len(self._button_labels) else ""
+                if "/" in label:
+                    # Image - légèrement plus petit pour voir le hover
+                    btn.setIconSize(QSize(int(48 * self._scale_factor), int(48 * self._scale_factor)))
+                else:
+                    # Emoji ou texte - taille d'icône standard
+                    btn.setIconSize(QSize(int(32 * self._scale_factor), int(32 * self._scale_factor)))
                 
                 # Mettre à jour le style avec le border-radius scalé
-                # Les boutons spéciaux (➕ ✏️ ➖) restent transparents
-                label = self._button_labels[i] if i < len(self._button_labels) else ""
-                if label in ["➖", "✏️", "➕"]:
+                if label in ["➕", "✏️", "➖"]:
                     btn.setStyleSheet(f"""
                         QPushButton {{
                             background-color: transparent;
@@ -930,6 +1020,19 @@ class RadialMenu(QWidget):
                         }}
                         QPushButton:hover {{
                             background-color: rgba(255, 255, 255, 100);
+                        }}
+                    """)
+                elif "/" in label:
+                    # Boutons avec images - pas de padding
+                    btn.setStyleSheet(f"""
+                        QPushButton {{
+                            background-color: transparent;
+                            border-radius: {int((self.btn_size // 2) * self._scale_factor)}px;
+                            border: none;
+                            padding: 0px;
+                        }}
+                        QPushButton:hover {{
+                            background-color: rgba(255, 255, 255, 30);
                         }}
                     """)
                 else:
@@ -1065,7 +1168,7 @@ class App(QMainWindow):
         self.buttons_sub = []
         
         # Séparer les boutons spéciaux des autres
-        special_buttons = ["➖", "✏️", "➕"]
+        special_buttons = ["➕", "✏️", "➖"]
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Trier seulement les clips (pas les boutons spéciaux)
@@ -1098,7 +1201,7 @@ class App(QMainWindow):
         self.update_mode = True
         
         # Filtrer les clips (sans les boutons d'action)
-        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➖", "✏️", "➕"]}
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➕", "✏️", "➖"]}
         
         # Trier les clips
         sorted_clips = sort_actions_map(clips_only)
@@ -1141,7 +1244,7 @@ class App(QMainWindow):
         self.delete_mode = True
         
         # Filtrer les clips (sans les boutons d'action)
-        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➖", "✏️", "➕"]}
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➕", "✏️", "➖"]}
         
         # Trier les clips
         sorted_clips = sort_actions_map(clips_only)
@@ -1177,7 +1280,7 @@ class App(QMainWindow):
     def show_delete_confirmation(self, name, value, x, y):
         """Affiche une fenêtre de confirmation pour la suppression"""
         dialog = QDialog(self.tracker)
-        dialog.setWindowTitle("➖")
+        dialog.setWindowTitle("Confirmation de suppression")
         dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
@@ -1270,7 +1373,7 @@ class App(QMainWindow):
                 if isinstance(func_data, tuple) and len(func_data) == 3:
                     func, args, kwargs = func_data
                     func(*args, **kwargs)
-                    if name not in ["➖", "✏️", "➕"]:
+                    if name not in ["➕", "✏️", "➖"]:
                         # Récupérer l'action et générer le message
                         action = self.actions_map_sub[name][2]
                         if action == "copy":
@@ -1351,10 +1454,22 @@ class App(QMainWindow):
         name_input.setProperty("help_text", "Alias")
         name_input.installEventFilter(self)
 
-        emoji_button = QPushButton("😀 Emojis")
+        # Layout horizontal pour les boutons emoji et image
+        buttons_row = QHBoxLayout()
+        buttons_row.setSpacing(8)
+        
+        emoji_button = QPushButton("😀 Emoji")
         emoji_button.setFixedHeight(30)
         emoji_button.setProperty("help_text", "Attribuer un emoji")
         emoji_button.installEventFilter(self)
+        
+        image_button = QPushButton("🖼️ Image")
+        image_button.setFixedHeight(30)
+        image_button.setProperty("help_text", "Attribuer une image")
+        image_button.installEventFilter(self)
+        
+        buttons_row.addWidget(emoji_button)
+        buttons_row.addWidget(image_button)
 
         slider_container = QWidget()
         slider_layout = QVBoxLayout(slider_container)
@@ -1446,11 +1561,30 @@ class App(QMainWindow):
         self._dialog_help_label = help_label  # Stocker pour l'event filter
 
         layout.addWidget(name_input)
-        layout.addWidget(emoji_button)
+        layout.addLayout(buttons_row)
         layout.addWidget(slider_container)
         layout.addWidget(value_input)
         layout.addWidget(submit_button)
         layout.addWidget(help_label)
+
+        def open_image_selector():
+            """Ouvre un sélecteur de fichier pour choisir une image"""
+            file_path, _ = QFileDialog.getOpenFileName(
+                dialog,
+                "Choisir une image",
+                "",
+                "Images (*.png *.jpg *.jpeg *.gif *.bmp *.webp);;Tous les fichiers (*)"
+            )
+            
+            if file_path:
+                # Créer une miniature
+                thumbnail_path = create_thumbnail(file_path)
+                if thumbnail_path:
+                    # Mettre le chemin de la miniature dans le champ nom
+                    name_input.setText(thumbnail_path)
+                    print(f"Miniature créée: {thumbnail_path}")
+                else:
+                    print("Erreur lors de la création de la miniature")
 
         def open_emoji_selector():
             path = EMOJIS_FILE
@@ -1474,6 +1608,7 @@ class App(QMainWindow):
             selector.exec()
 
         emoji_button.clicked.connect(open_emoji_selector)
+        image_button.clicked.connect(open_image_selector)
         
         if on_submit_callback:
             submit_button.clicked.connect(
@@ -1530,7 +1665,7 @@ class App(QMainWindow):
                 print("Les deux champs doivent être remplis")
         
         self._create_clip_dialog(
-            title="➕",
+            title="Ajouter un clip",
             button_text="Ajouter",
             x=x, y=y,
             placeholder="Contenu (ex: lien ou texte)",
@@ -1577,7 +1712,7 @@ class App(QMainWindow):
                 print("Les deux champs doivent être remplis")
 
         self._create_clip_dialog(
-            title="✏️",
+            title="Éditer un clip",
             button_text="Modifier",
             x=x, y=y,
             initial_name=name,
@@ -1619,7 +1754,7 @@ class App(QMainWindow):
         populate_actions_map_from_file(CLIP_NOTES_FILE, self.actions_map_sub, execute_command)
 
         # Séparer les boutons spéciaux des autres
-        special_buttons = ["➖", "✏️", "➕"]
+        special_buttons = ["➕", "✏️", "➖"]
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Trier seulement les clips (pas les boutons spéciaux)
@@ -1667,6 +1802,7 @@ if __name__ == "__main__":
     # calibration_window = CalibrationWindow(tracker)
     # calibration_window.show()
     
+    import time
     max_wait = 0.3
     elapsed = 0.0
     while (tracker.last_x == 0 and tracker.last_y == 0) and elapsed < max_wait:
