@@ -1280,7 +1280,7 @@ class App(QMainWindow):
     def show_delete_confirmation(self, name, value, x, y):
         """Affiche une fenêtre de confirmation pour la suppression"""
         dialog = QDialog(self.tracker)
-        dialog.setWindowTitle("Confirmation de suppression")
+        dialog.setWindowTitle("➖ Supprimer")
         dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
@@ -1412,6 +1412,7 @@ class App(QMainWindow):
                            initial_slider_value=0, placeholder="", on_submit_callback=None):
         dialog = QDialog(self.tracker)
         dialog.setWindowTitle(title)
+        dialog.setMinimumWidth(350)
         dialog.setWindowFlags(Qt.WindowType.Dialog)
         dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
@@ -1451,7 +1452,7 @@ class App(QMainWindow):
         layout.addLayout(top_bar)
 
         name_input = QLineEdit()
-        name_input.setPlaceholderText("Nom du clip")
+        name_input.setPlaceholderText("Émoji - Image - Texte")
         name_input.setMinimumHeight(30)
         name_input.setText(initial_name)
         name_input.setProperty("help_text", "Alias")
@@ -1668,7 +1669,7 @@ class App(QMainWindow):
                 print("Les deux champs doivent être remplis")
         
         self._create_clip_dialog(
-            title="Ajouter un clip",
+            title="➕ Ajouter",
             button_text="Ajouter",
             x=x, y=y,
             placeholder="Contenu (ex: lien ou texte)",
@@ -1718,7 +1719,7 @@ class App(QMainWindow):
                 print("Les deux champs doivent être remplis")
 
         self._create_clip_dialog(
-            title="Éditer un clip",
+            title="✏️ Modifier",
             button_text="Modifier",
             x=x, y=y,
             initial_name=name,
