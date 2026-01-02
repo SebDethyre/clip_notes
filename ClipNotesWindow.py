@@ -480,7 +480,7 @@ class RadialMenu(QWidget):
                 btn.setIcon(QIcon(text_pixmap(label, 32)))
             btn.setIconSize(QSize(32, 32))
             
-            # Les boutons spéciaux (➕ ✏️ ➖) ont un fond transparent (même au hover)
+            # Les boutons spéciaux (➕ ✏️ ➖) ont un fond transparent MAIS coloré au hover
             if label in ["➕", "✏️", "➖"]:
                 btn.setStyleSheet(f"""
                     QPushButton {{
@@ -489,7 +489,7 @@ class RadialMenu(QWidget):
                         border: none;
                     }}
                     QPushButton:hover {{
-                        background-color: transparent;
+                        background-color: rgba(255, 255, 255, 100);
                     }}
                 """)
             else:
@@ -652,7 +652,7 @@ class RadialMenu(QWidget):
             # Vérifier si c'est un bouton spécial (➕ ✏️ ➖)
             label = self._button_labels[i] if i < len(self._button_labels) else ""
             if label in ["➕", "✏️", "➖"]:
-                # Les boutons spéciaux restent transparents
+                # Les boutons spéciaux restent transparents MAIS colorés au hover
                 btn.setStyleSheet(f"""
                     QPushButton {{
                         background-color: transparent;
@@ -660,7 +660,7 @@ class RadialMenu(QWidget):
                         border: none;
                     }}
                     QPushButton:hover {{
-                        background-color: transparent;
+                        background-color: rgba(255, 255, 255, {int(100 * value)});
                     }}
                 """)
             else:
@@ -930,7 +930,7 @@ class RadialMenu(QWidget):
                             border: none;
                         }}
                         QPushButton:hover {{
-                            background-color: transparent;
+                            background-color: rgba(255, 255, 255, 100);
                         }}
                     """)
                 else:
