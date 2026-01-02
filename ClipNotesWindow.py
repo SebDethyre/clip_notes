@@ -261,7 +261,7 @@ class CursorTracker(QWidget):
         self.y_correction_top = 200     # Correction en haut
         self.y_correction_bottom = 80   # Correction en bas
         
-        print(f"Écran: {self.screen_width}x{self.screen_height}")
+        # print(f"Écran: {self.screen_width}x{self.screen_height}")
         # print(f"Milieu: X={self.screen_mid_x}, Y={self.screen_mid_y}")
         
         self.timer = QTimer()
@@ -1346,6 +1346,7 @@ class App(QMainWindow):
         def confirm_delete():
             self.actions_map_sub.pop(name, None)
             delete_from_json(CLIP_NOTES_FILE_JSON, name)
+            os.remove(name)
             dialog.accept()
             # Rester en mode suppression au lieu de revenir au menu principal
             self.delete_clip(x, y)
@@ -1694,6 +1695,8 @@ class App(QMainWindow):
                     self.actions_map_sub.pop(old_name, None)
                     # Supprimer l'ancien alias du JSON
                     delete_from_json(CLIP_NOTES_FILE_JSON, old_name)
+                    if os.path.exists(old_name):
+                        os.remove(old_name)
                 
                 # Format: [(fonction, [args], {}), value, action]
                 if action == "copy":
