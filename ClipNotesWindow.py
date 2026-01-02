@@ -1,15 +1,14 @@
 import sys
 import math
-import subprocess
 import signal
 import os
-import getpass
+import time
 import json
 from PyQt6.QtGui import QCursor
 from PyQt6.QtGui import QPainter, QColor, QIcon, QRadialGradient, QFont, QPalette
-from PyQt6.QtCore import Qt, QSize, QTimer, QPropertyAnimation, QRect, QEasingCurve, QVariantAnimation, QEvent, QPointF
+from PyQt6.QtCore import Qt, QSize, QTimer, QRect, QEasingCurve, QVariantAnimation, QEvent, QPointF
 from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QMainWindow, QVBoxLayout, QHBoxLayout, QSlider
-from PyQt6.QtWidgets import QDialog, QLineEdit, QMessageBox, QTextEdit, QToolTip, QLabel
+from PyQt6.QtWidgets import QDialog, QLineEdit, QTextEdit, QLabel
 
 from utils import *                
 from ui import EmojiSelector
@@ -481,7 +480,7 @@ class RadialMenu(QWidget):
             btn.setIconSize(QSize(32, 32))
             
             # Les boutons spéciaux (➕ ✏️ ➖) ont un fond transparent MAIS coloré au hover
-            if label in ["➕", "✏️", "➖"]:
+            if label in ["➖", "✏️", "➕"]:
                 btn.setStyleSheet(f"""
                     QPushButton {{
                         background-color: transparent;
@@ -651,7 +650,7 @@ class RadialMenu(QWidget):
         for i, btn in enumerate(self.buttons):
             # Vérifier si c'est un bouton spécial (➕ ✏️ ➖)
             label = self._button_labels[i] if i < len(self._button_labels) else ""
-            if label in ["➕", "✏️", "➖"]:
+            if label in ["➖", "✏️", "➕"]:
                 # Les boutons spéciaux restent transparents MAIS colorés au hover
                 btn.setStyleSheet(f"""
                     QPushButton {{
@@ -922,7 +921,7 @@ class RadialMenu(QWidget):
                 # Mettre à jour le style avec le border-radius scalé
                 # Les boutons spéciaux (➕ ✏️ ➖) restent transparents
                 label = self._button_labels[i] if i < len(self._button_labels) else ""
-                if label in ["➕", "✏️", "➖"]:
+                if label in ["➖", "✏️", "➕"]:
                     btn.setStyleSheet(f"""
                         QPushButton {{
                             background-color: transparent;
@@ -1066,7 +1065,7 @@ class App(QMainWindow):
         self.buttons_sub = []
         
         # Séparer les boutons spéciaux des autres
-        special_buttons = ["➕", "✏️", "➖"]
+        special_buttons = ["➖", "✏️", "➕"]
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Trier seulement les clips (pas les boutons spéciaux)
@@ -1099,7 +1098,7 @@ class App(QMainWindow):
         self.update_mode = True
         
         # Filtrer les clips (sans les boutons d'action)
-        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➕", "✏️", "➖"]}
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➖", "✏️", "➕"]}
         
         # Trier les clips
         sorted_clips = sort_actions_map(clips_only)
@@ -1142,7 +1141,7 @@ class App(QMainWindow):
         self.delete_mode = True
         
         # Filtrer les clips (sans les boutons d'action)
-        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➕", "✏️", "➖"]}
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➖", "✏️", "➕"]}
         
         # Trier les clips
         sorted_clips = sort_actions_map(clips_only)
@@ -1178,7 +1177,7 @@ class App(QMainWindow):
     def show_delete_confirmation(self, name, value, x, y):
         """Affiche une fenêtre de confirmation pour la suppression"""
         dialog = QDialog(self.tracker)
-        dialog.setWindowTitle("Confirmation de suppression")
+        dialog.setWindowTitle("➖")
         dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
@@ -1271,7 +1270,7 @@ class App(QMainWindow):
                 if isinstance(func_data, tuple) and len(func_data) == 3:
                     func, args, kwargs = func_data
                     func(*args, **kwargs)
-                    if name not in ["➕", "✏️", "➖"]:
+                    if name not in ["➖", "✏️", "➕"]:
                         # Récupérer l'action et générer le message
                         action = self.actions_map_sub[name][2]
                         if action == "copy":
@@ -1531,7 +1530,7 @@ class App(QMainWindow):
                 print("Les deux champs doivent être remplis")
         
         self._create_clip_dialog(
-            title="Ajouter un clip",
+            title="➕",
             button_text="Ajouter",
             x=x, y=y,
             placeholder="Contenu (ex: lien ou texte)",
@@ -1578,7 +1577,7 @@ class App(QMainWindow):
                 print("Les deux champs doivent être remplis")
 
         self._create_clip_dialog(
-            title="Éditer un clip",
+            title="✏️",
             button_text="Modifier",
             x=x, y=y,
             initial_name=name,
@@ -1620,7 +1619,7 @@ class App(QMainWindow):
         populate_actions_map_from_file(CLIP_NOTES_FILE, self.actions_map_sub, execute_command)
 
         # Séparer les boutons spéciaux des autres
-        special_buttons = ["➕", "✏️", "➖"]
+        special_buttons = ["➖", "✏️", "➕"]
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Trier seulement les clips (pas les boutons spéciaux)
@@ -1668,7 +1667,6 @@ if __name__ == "__main__":
     # calibration_window = CalibrationWindow(tracker)
     # calibration_window.show()
     
-    import time
     max_wait = 0.3
     elapsed = 0.0
     while (tracker.last_x == 0 and tracker.last_y == 0) and elapsed < max_wait:
