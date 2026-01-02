@@ -538,7 +538,7 @@ class RadialMenu(QWidget):
                 btn.setIconSize(QSize(32, 32))
             
             # Les boutons spéciaux (➕ ✏️ ➖) ont un fond transparent MAIS coloré au hover
-            if label in ["➕", "✏️", "➖"]:
+            if label in ["➖", "✏️", "➕"]:
                 btn.setStyleSheet(f"""
                     QPushButton {{
                         background-color: transparent;
@@ -721,7 +721,7 @@ class RadialMenu(QWidget):
         for i, btn in enumerate(self.buttons):
             # Vérifier si c'est un bouton spécial (➕ ✏️ ➖)
             label = self._button_labels[i] if i < len(self._button_labels) else ""
-            if label in ["➕", "✏️", "➖"]:
+            if label in ["➖", "✏️", "➕"]:
                 # Les boutons spéciaux restent transparents MAIS colorés au hover
                 btn.setStyleSheet(f"""
                     QPushButton {{
@@ -1011,7 +1011,7 @@ class RadialMenu(QWidget):
                     btn.setIconSize(QSize(int(32 * self._scale_factor), int(32 * self._scale_factor)))
                 
                 # Mettre à jour le style avec le border-radius scalé
-                if label in ["➕", "✏️", "➖"]:
+                if label in ["➖", "✏️", "➕"]:
                     btn.setStyleSheet(f"""
                         QPushButton {{
                             background-color: transparent;
@@ -1168,7 +1168,7 @@ class App(QMainWindow):
         self.buttons_sub = []
         
         # Séparer les boutons spéciaux des autres
-        special_buttons = ["➕", "✏️", "➖"]
+        special_buttons = ["➖", "✏️", "➕"]
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Trier seulement les clips (pas les boutons spéciaux)
@@ -1201,7 +1201,7 @@ class App(QMainWindow):
         self.update_mode = True
         
         # Filtrer les clips (sans les boutons d'action)
-        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➕", "✏️", "➖"]}
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➖", "✏️", "➕"]}
         
         # Trier les clips
         sorted_clips = sort_actions_map(clips_only)
@@ -1244,7 +1244,7 @@ class App(QMainWindow):
         self.delete_mode = True
         
         # Filtrer les clips (sans les boutons d'action)
-        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➕", "✏️", "➖"]}
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➖", "✏️", "➕"]}
         
         # Trier les clips
         sorted_clips = sort_actions_map(clips_only)
@@ -1346,7 +1346,9 @@ class App(QMainWindow):
         def confirm_delete():
             self.actions_map_sub.pop(name, None)
             delete_from_json(CLIP_NOTES_FILE_JSON, name)
-            os.remove(name)
+            # Supprimer l'ancien thumbnail s'il existe
+            if os.path.exists(name):
+                os.remove(name)
             dialog.accept()
             # Rester en mode suppression au lieu de revenir au menu principal
             self.delete_clip(x, y)
@@ -1374,7 +1376,7 @@ class App(QMainWindow):
                 if isinstance(func_data, tuple) and len(func_data) == 3:
                     func, args, kwargs = func_data
                     func(*args, **kwargs)
-                    if name not in ["➕", "✏️", "➖"]:
+                    if name not in ["➖", "✏️", "➕"]:
                         # Récupérer l'action et générer le message
                         action = self.actions_map_sub[name][2]
                         if action == "copy":
@@ -1695,6 +1697,7 @@ class App(QMainWindow):
                     self.actions_map_sub.pop(old_name, None)
                     # Supprimer l'ancien alias du JSON
                     delete_from_json(CLIP_NOTES_FILE_JSON, old_name)
+                    # Supprimer l'ancien thumbnail s'il existe
                     if os.path.exists(old_name):
                         os.remove(old_name)
                 
@@ -1757,7 +1760,7 @@ class App(QMainWindow):
         populate_actions_map_from_file(CLIP_NOTES_FILE, self.actions_map_sub, execute_command)
 
         # Séparer les boutons spéciaux des autres
-        special_buttons = ["➕", "✏️", "➖"]
+        special_buttons = ["➖", "✏️", "➕"]
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Trier seulement les clips (pas les boutons spéciaux)
