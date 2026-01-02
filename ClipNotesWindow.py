@@ -20,6 +20,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CLIP_NOTES_FILE = os.path.join(SCRIPT_DIR, "clip_notes.txt")
 CLIP_NOTES_FILE_JSON = os.path.join(SCRIPT_DIR, "clip_notes.json")
 EMOJIS_FILE = os.path.join(SCRIPT_DIR, "emojis.txt")
+NEON_PRINCIPAL=False
 
 DIALOG_STYLE = """
     QWidget {
@@ -864,8 +865,12 @@ class App(QMainWindow):
         # Réinitialiser le state
         self.current_popup.set_central_text("")
         self.current_popup.set_neon_color("cyan")
-        self.current_popup.toggle_neon(False)
-        self.current_popup.timer.stop()
+        # ===== NÉON BLEU MENU PRINCIPAL =====
+        # Pour activer le néon bleu clignotant sur le menu principal :
+        self.current_popup.toggle_neon(NEON_PRINCIPAL)
+        self.current_popup.timer.start(80)  # 100ms = clignotement lent (50ms = rapide)
+        # Pour désactiver, changez True en False et commentez la ligne timer.start()
+        # ====================================
         
         # Reconstruire buttons_sub depuis actions_map_sub avec tri
         self.buttons_sub = []
@@ -1334,6 +1339,12 @@ class App(QMainWindow):
         self.current_popup = RadialMenu(x, y, self.buttons_sub, sub=True, tracker=self.tracker, app_instance=self)
         self.current_popup.show()
         self.current_popup.animate_open()
+        
+        # ===== NÉON BLEU MENU PRINCIPAL =====
+        # Activer le néon bleu clignotant dès l'ouverture
+        self.current_popup.toggle_neon(NEON_PRINCIPAL)
+        self.current_popup.timer.start(80)  # 100ms = clignotement lent
+        # ====================================
 
 if __name__ == "__main__":
     create_lock_file()
@@ -1378,4 +1389,4 @@ if __name__ == "__main__":
     try:
         sys.exit(app.exec())
     finally:
-        remove_lock_file()
+        remove_lock_file() 
