@@ -6,7 +6,7 @@ import os
 import getpass
 import json
 from PyQt6.QtGui import QCursor
-from PyQt6.QtGui import QPainter, QColor, QIcon, QRadialGradient, QFont
+from PyQt6.QtGui import QPainter, QColor, QIcon, QRadialGradient, QFont, QPalette
 from PyQt6.QtCore import Qt, QSize, QTimer, QPropertyAnimation, QRect, QEasingCurve, QVariantAnimation, QEvent, QPointF
 from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QMainWindow, QVBoxLayout, QHBoxLayout, QSlider
 from PyQt6.QtWidgets import QDialog, QLineEdit, QMessageBox, QTextEdit, QToolTip, QLabel
@@ -259,6 +259,91 @@ class CursorTracker(QWidget):
             self.close()
 
 
+
+# === NOUVELLE CLASSE: FENÊTRE TOOLTIP INVISIBLE ===
+class TooltipWindow(QWidget):
+    """Fenêtre semi-transparente pour afficher des messages en dessous du menu radial"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        
+        # Configuration de la fenêtre
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.ToolTip
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        # CRITIQUE: La tooltip ne doit pas intercepter les événements souris
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        
+        # Label pour le texte
+        self.label = QLabel("", self)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.label.setStyleSheet("""
+            QLabel {
+                color: white;
+                background-color: rgba(80, 80, 80, 200);
+                border-radius: 8px;
+                padding: 8px 16px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+        """)
+        
+        # Layout
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.label)
+        
+        # Timer pour l'auto-masquage
+        self.hide_timer = QTimer(self)
+        self.hide_timer.timeout.connect(self.hide)
+        self.hide_timer.setSingleShot(True)
+        
+        # État initial
+        self.hide()
+    
+    def show_message(self, text, duration_ms=0):
+        """
+        Affiche un message.
+        
+        Args:
+            text: Le texte à afficher
+            duration_ms: Durée d'affichage en millisecondes (0 = infini)
+        """
+        if not text:
+            self.hide()
+            return
+        
+        self.label.setText(text)
+        self.adjustSize()
+        self.show()
+        
+        # Si une durée est spécifiée, masquer automatiquement
+        if duration_ms > 0:
+            self.hide_timer.start(duration_ms)
+        else:
+            self.hide_timer.stop()
+    
+    def position_below_menu(self, menu_center_x, menu_center_y, menu_radius):
+        """
+        Positionne la fenêtre tooltip en dessous du menu radial.
+        
+        Args:
+            menu_center_x: Position X du centre du menu
+            menu_center_y: Position Y du centre du menu
+            menu_radius: Rayon du menu (pour calculer la distance)
+        """
+        # Distance en pixels (environ 1cm = 38 pixels sur un écran standard)
+        distance_below = menu_radius + 20  # Rayon du menu + 50 pixels de marge
+        
+        # Calculer la position
+        tooltip_x = menu_center_x - self.width() // 2
+        tooltip_y = menu_center_y + distance_below
+        
+        self.move(tooltip_x, tooltip_y)
+
+
 class RadialMenu(QWidget):
     def __init__(self, x, y, buttons, parent=None, sub=False, tracker=None, app_instance=None):
         super().__init__(parent)  # Ne jamais utiliser tracker comme parent
@@ -327,6 +412,10 @@ class RadialMenu(QWidget):
         # Activer le tracking de la souris pour détecter le hover
         self.setMouseTracking(True)
         
+        
+        # === NOUVELLE FENÊTRE TOOLTIP ===
+        self.tooltip_window = TooltipWindow(parent=self)
+        
         # Créer les boutons initiaux
         self._create_buttons(buttons)
 
@@ -337,6 +426,13 @@ class RadialMenu(QWidget):
             "copy": QColor(255, 150, 100, 25),   # Orange transparent
             "term": QColor(100, 255, 150, 25),   # Vert transparent
             "exec": QColor(100, 150, 255, 25),   # Bleu transparent
+        }
+        
+        # Tooltips pour les boutons spéciaux
+        special_tooltips = {
+            "➕": "Ajouter",
+            "✏️": "Modifier",
+            "➖": "Supprimer"
         }
         
         angle_step = 360 / len(buttons)
@@ -354,6 +450,10 @@ class RadialMenu(QWidget):
                 label, callback = button
                 tooltip = ""
                 action = None
+            
+            # Si c'est un bouton spécial sans tooltip, utiliser le tooltip par défaut
+            if label in special_tooltips and not tooltip:
+                tooltip = special_tooltips[label]
             
             # Stocker la couleur, l'action et le label pour ce bouton
             color = action_colors.get(action, None)
@@ -380,7 +480,7 @@ class RadialMenu(QWidget):
                 btn.setIcon(QIcon(text_pixmap(label, 32)))
             btn.setIconSize(QSize(32, 32))
             
-            # Les boutons spéciaux (➕ ✏️ ➖) ont un fond transparent
+            # Les boutons spéciaux (➕ ✏️ ➖) ont un fond transparent (même au hover)
             if label in ["➕", "✏️", "➖"]:
                 btn.setStyleSheet(f"""
                     QPushButton {{
@@ -389,7 +489,7 @@ class RadialMenu(QWidget):
                         border: none;
                     }}
                     QPushButton:hover {{
-                        background-color: rgba(255, 255, 255, 50);
+                        background-color: transparent;
                     }}
                 """)
             else:
@@ -406,7 +506,7 @@ class RadialMenu(QWidget):
             btn.setFixedSize(self.btn_size, self.btn_size)
             btn.move(int(bx), int(by))
             btn.setVisible(False)
-            btn.clicked.connect(self.make_click_handler(callback))
+            btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
             
             # Installer l'eventFilter pour tous les boutons (pour tooltips et badges)
             btn.installEventFilter(self)
@@ -435,6 +535,8 @@ class RadialMenu(QWidget):
             badge.setFixedSize(35, 35)
             badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
             badge.setVisible(False)
+            # CRITIQUE: Les badges ne doivent pas intercepter les événements souris
+            badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
             self._action_badges[action] = badge
 
     def update_buttons(self, buttons):
@@ -489,14 +591,32 @@ class RadialMenu(QWidget):
             for btn in self.buttons:
                 btn.setVisible(True)
         
+        # CRITIQUE: Réactiver le mouse tracking après la reconstruction
+        self.setMouseTracking(True)
+        
+        # Repositionner la fenêtre tooltip
+        self._update_tooltip_position()
+        
         self.update()
 
     def eventFilter(self, watched, event):
+        """Gère les événements de hover sur les boutons"""
         if event.type() == QEvent.Type.Enter:
-            # Afficher le tooltip si disponible
+            # Afficher le message de hover dans la fenêtre tooltip
             if watched in self._tooltips:
-                QToolTip.showText(watched.mapToGlobal(watched.rect().center()), self._tooltips[watched], watched)
+                tooltip_text = self._tooltips[watched]
+                # Afficher dans la fenêtre tooltip en dessous (durée infinie)
+                self.tooltip_window.show_message(tooltip_text, 0)
+                self._update_tooltip_position()
+        elif event.type() == QEvent.Type.Leave:
+            # Masquer le message quand on quitte le bouton
+            self.tooltip_window.hide()
+        
         return super().eventFilter(watched, event)
+
+    def _update_tooltip_position(self):
+        """Met à jour la position de la fenêtre tooltip en dessous du menu"""
+        self.tooltip_window.position_below_menu(self._x, self._y, self.radius + self.btn_size)
 
     def set_central_text(self, value):
         self._central_text = value
@@ -528,17 +648,33 @@ class RadialMenu(QWidget):
 
     def set_widget_opacity(self, value):
         self._widget_opacity = value
-        for btn in self.buttons:
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: rgba(255, 255, 255, {int(10 * value)});
-                    border-radius: {self.btn_size // 2}px;
-                    border: none;
-                }}
-                QPushButton:hover {{
-                    background-color: rgba(255, 255, 255, {int(100 * value)});
-                }}
-            """)
+        for i, btn in enumerate(self.buttons):
+            # Vérifier si c'est un bouton spécial (➕ ✏️ ➖)
+            label = self._button_labels[i] if i < len(self._button_labels) else ""
+            if label in ["➕", "✏️", "➖"]:
+                # Les boutons spéciaux restent transparents
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: transparent;
+                        border-radius: {self.btn_size // 2}px;
+                        border: none;
+                    }}
+                    QPushButton:hover {{
+                        background-color: transparent;
+                    }}
+                """)
+            else:
+                # Les autres boutons ont un fond avec opacité
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: rgba(255, 255, 255, {int(10 * value)});
+                        border-radius: {self.btn_size // 2}px;
+                        border: none;
+                    }}
+                    QPushButton:hover {{
+                        background-color: rgba(255, 255, 255, {int(100 * value)});
+                    }}
+                """)
         self.update()
 
     def toggle_neon(self, enabled: bool):
@@ -550,8 +686,16 @@ class RadialMenu(QWidget):
         self.update()
         self.current_index = (self.current_index + 1) % len(self.keyframes)
 
-    def make_click_handler(self, cb):
+    def make_click_handler(self, cb, label, value, action):
+        """Crée un handler de clic qui affiche un message de confirmation personnalisé selon l'action"""
         def handler():
+            # Pour les boutons spéciaux uniquement, afficher un message
+            if action is None:
+                message = f"✓ {label}"
+                self.tooltip_window.show_message(message, 1000)
+                self._update_tooltip_position()
+            
+            # Exécuter le callback
             cb()
         return handler
 
@@ -560,6 +704,8 @@ class RadialMenu(QWidget):
             # Masquer tous les badges
             for badge in self._action_badges.values():
                 badge.setVisible(False)
+            # Masquer la fenêtre tooltip
+            self.tooltip_window.hide()
             self.handle_click_outside()
     
     def mouseMoveEvent(self, event):
@@ -728,6 +874,9 @@ class RadialMenu(QWidget):
         for badge in self._action_badges.values():
             badge.setVisible(False)
         
+        # Masquer la fenêtre tooltip pendant l'animation
+        self.tooltip_window.hide()
+        
         # Configurer le tracker pour qu'il ferme ce menu quand on clique dessus
         if self.tracker:
             self.tracker.on_click_callback = self.handle_click_outside
@@ -781,7 +930,7 @@ class RadialMenu(QWidget):
                             border: none;
                         }}
                         QPushButton:hover {{
-                            background-color: rgba(255, 255, 255, 50);
+                            background-color: transparent;
                         }}
                     """)
                 else:
@@ -800,6 +949,10 @@ class RadialMenu(QWidget):
 
     def on_animation_finished(self):
         self.reveal_buttons()
+        # CRITIQUE: Réactiver le mouse tracking après l'animation
+        self.setMouseTracking(True)
+        # Positionner la fenêtre tooltip après l'animation
+        self._update_tooltip_position()
     
     def close_with_animation(self):
         self.neon_enabled = False
@@ -807,6 +960,9 @@ class RadialMenu(QWidget):
         # Masquer les badges pendant l'animation
         for badge in self._action_badges.values():
             badge.setVisible(False)
+        
+        # Masquer la fenêtre tooltip
+        self.tooltip_window.hide()
         
         self.anim = QVariantAnimation(self)
         self.anim.setDuration(200)
@@ -824,6 +980,8 @@ class RadialMenu(QWidget):
     
     def _on_close_finished(self):
         """Appelé quand l'animation de fermeture est terminée"""
+        # Fermer la fenêtre tooltip
+        self.tooltip_window.close()
         if self.tracker:
             self.tracker.close()
         self.close()
@@ -837,6 +995,38 @@ class App(QMainWindow):
         self.buttons_sub = []
         self.update_mode = False
         self.delete_mode = False
+        
+        # Créer une fenêtre tooltip pour l'application (utilisée dans les dialogues)
+        self.tooltip_window = TooltipWindow()
+        self._dialog_emoji_labels = []
+        self._dialog_help_label = None
+        self._dialog_slider = None
+
+    def eventFilter(self, watched, event):
+        """Gère les événements de hover et de clic sur les widgets du dialogue"""
+        if event.type() == QEvent.Type.Enter:
+            # Vérifier les icônes d'action (avec tooltip_text)
+            if watched in self._dialog_emoji_labels:
+                tooltip_text = watched.property("tooltip_text")
+                if tooltip_text and self._dialog_help_label:
+                    self._dialog_help_label.setText(tooltip_text)
+            # Vérifier les autres widgets (avec help_text)
+            else:
+                help_text = watched.property("help_text")
+                if help_text and self._dialog_help_label:
+                    self._dialog_help_label.setText(help_text)
+        elif event.type() == QEvent.Type.Leave:
+            # Vider le label d'aide
+            if self._dialog_help_label:
+                self._dialog_help_label.setText("")
+        elif event.type() == QEvent.Type.MouseButtonPress:
+            # Gérer les clics sur les emojis pour changer le slider
+            if watched in self._dialog_emoji_labels and self._dialog_slider:
+                slider_value = watched.property("slider_value")
+                if slider_value is not None:
+                    self._dialog_slider.setValue(slider_value)
+        
+        return super().eventFilter(watched, event)
 
     def get_action_from_json(self, alias):
         """Lit l'action d'un clip depuis le fichier JSON"""
@@ -896,6 +1086,9 @@ class App(QMainWindow):
         
         # Mettre à jour les boutons du menu existant
         self.current_popup.update_buttons(self.buttons_sub)
+        
+        # CRITIQUE: Forcer le mouse tracking après le refresh
+        self.current_popup.setMouseTracking(True)
 
     def update_clip(self, x, y, slider_value=0):
         if self.tracker:
@@ -988,6 +1181,23 @@ class App(QMainWindow):
         dialog.setWindowTitle("Confirmation de suppression")
         dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        # Appliquer une palette sombre au dialogue
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Base, QColor(35, 35, 35))
+        palette.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(25, 25, 25))
+        palette.setColor(QPalette.ColorRole.ToolTipText, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Link, QColor(42, 130, 218))
+        palette.setColor(QPalette.ColorRole.Highlight, QColor(42, 130, 218))
+        palette.setColor(QPalette.ColorRole.HighlightedText, QColor(35, 35, 35))
+        dialog.setPalette(palette)
+        
         dialog.setFixedSize(350, 180)
         
         if x is None or y is None:
@@ -1034,10 +1244,9 @@ class App(QMainWindow):
         def confirm_delete():
             self.actions_map_sub.pop(name, None)
             delete_from_json(CLIP_NOTES_FILE_JSON, name)
-            self.delete_mode = False  # Désactiver le mode après suppression
             dialog.accept()
-            # Au lieu de relaunch_window, on rafraîchit le menu
-            self.refresh_menu()
+            # Rester en mode suppression au lieu de revenir au menu principal
+            self.delete_clip(x, y)
         
         delete_button.clicked.connect(confirm_delete)
         
@@ -1050,6 +1259,10 @@ class App(QMainWindow):
         dialog_layout.addWidget(content)
         
         dialog.exec()
+        
+        # CRITIQUE: Réactiver le mouse tracking du menu radial après fermeture du dialogue
+        if self.current_popup:
+            self.current_popup.setMouseTracking(True)
 
     def make_handler_sub(self, name, value, x, y):
         def handler_sub():
@@ -1059,13 +1272,36 @@ class App(QMainWindow):
                     func, args, kwargs = func_data
                     func(*args, **kwargs)
                     if name not in ["➕", "✏️", "➖"]:
-                        if self.tracker:
-                            self.tracker.close()
-                        if self.current_popup:
-                            self.current_popup.close()
+                        # Récupérer l'action et générer le message
+                        action = self.actions_map_sub[name][2]
+                        if action == "copy":
+                            message = f'"{value}" copié'
+                        elif action == "term":
+                            message = f'"{value}" exécuté dans un terminal'
+                        elif action == "exec":
+                            message = f'"{value}" lancé'
+                        else:
+                            message = None
+                        
+                        # Afficher le message et fermer après 1 seconde
+                        if message and self.current_popup:
+                            self.current_popup.tooltip_window.show_message(message, 1000)
+                            self.current_popup._update_tooltip_position()
+                            # Fermer après 1 seconde
+                            QTimer.singleShot(1000, self._close_popup)
+                        else:
+                            # Fermer immédiatement si pas de message
+                            self._close_popup()
                 else:
                     print(f"Aucune fonction associée à '{name}'")
         return handler_sub
+    
+    def _close_popup(self):
+        """Méthode helper pour fermer le popup"""
+        if self.tracker:
+            self.tracker.close()
+        if self.current_popup:
+            self.current_popup.close()
 
     def _create_clip_dialog(self, title, button_text, x, y, initial_name="", initial_value="", 
                            initial_slider_value=0, placeholder="", on_submit_callback=None):
@@ -1073,6 +1309,23 @@ class App(QMainWindow):
         dialog.setWindowTitle(title)
         dialog.setWindowFlags(Qt.WindowType.Dialog)
         dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        # Appliquer une palette sombre au dialogue
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Base, QColor(35, 35, 35))
+        palette.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(25, 25, 25))
+        palette.setColor(QPalette.ColorRole.ToolTipText, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Link, QColor(42, 130, 218))
+        palette.setColor(QPalette.ColorRole.Highlight, QColor(42, 130, 218))
+        palette.setColor(QPalette.ColorRole.HighlightedText, QColor(35, 35, 35))
+        dialog.setPalette(palette)
+        
         dialog.resize(300, 400)
         
         if x is None or y is None:
@@ -1096,9 +1349,13 @@ class App(QMainWindow):
         name_input.setPlaceholderText("Nom du clip")
         name_input.setMinimumHeight(30)
         name_input.setText(initial_name)
+        name_input.setProperty("help_text", "Alias")
+        name_input.installEventFilter(self)
 
         emoji_button = QPushButton("😀 Emojis")
         emoji_button.setFixedHeight(30)
+        emoji_button.setProperty("help_text", "Attribuer un emoji")
+        emoji_button.installEventFilter(self)
 
         slider_container = QWidget()
         slider_layout = QVBoxLayout(slider_container)
@@ -1109,6 +1366,11 @@ class App(QMainWindow):
         emoji_labels_layout.setContentsMargins(8, 0, 8, 0)
         emoji_labels_layout.setSpacing(0)
         emoji_labels = ["✂️", "💻", "🚀"]
+        emoji_tooltips = ["Copier", "Exécuter dans un terminal", "Exécuter"]
+        
+        # Stocker les labels pour l'event filter
+        self._dialog_emoji_labels = []
+        self._dialog_slider = None  # Référence au slider pour les clics sur emojis
         
         for i, emoji in enumerate(emoji_labels):
             if i > 0:
@@ -1116,6 +1378,17 @@ class App(QMainWindow):
             label = QLabel(emoji)
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             label.setStyleSheet("font-size: 20px;")
+            label.setCursor(Qt.CursorShape.PointingHandCursor)  # Curseur pointeur
+            
+            # Stocker le tooltip et la valeur du slider pour ce label
+            label.setProperty("tooltip_text", emoji_tooltips[i])
+            label.setProperty("slider_value", i)  # 0 pour ✂️, 1 pour 💻, 2 pour 🚀
+            
+            # Installer l'event filter pour détecter le hover et les clics
+            label.installEventFilter(self)
+            label.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+            self._dialog_emoji_labels.append(label)
+            
             emoji_labels_layout.addWidget(label)
             if i < len(emoji_labels) - 1:
                 emoji_labels_layout.addStretch()
@@ -1130,6 +1403,9 @@ class App(QMainWindow):
         slider.setTickInterval(1)
         slider.setSingleStep(1)
         slider.setPageStep(1)
+        slider.setProperty("help_text", "Associer une action")
+        slider.installEventFilter(self)
+        self._dialog_slider = slider  # Stocker pour les clics sur emojis
         slider.setStyleSheet("""
             QSlider::groove:horizontal {
                 height: 6px;
@@ -1144,10 +1420,17 @@ class App(QMainWindow):
                 border-radius: 9px;
             }
         """)
-        slider_layout.addWidget(slider)
+        
+        # Layout pour réduire la largeur du slider
+        slider_h_layout = QHBoxLayout()
+        slider_h_layout.setContentsMargins(8, 0, 8, 0)
+        slider_h_layout.addWidget(slider)
+        slider_layout.addLayout(slider_h_layout)
 
         value_input = QTextEdit()
         value_input.setMinimumHeight(80)
+        value_input.setProperty("help_text", "Valeur")
+        value_input.installEventFilter(self)
         if placeholder:
             value_input.setPlaceholderText(placeholder)
         if initial_value:
@@ -1155,12 +1438,20 @@ class App(QMainWindow):
 
         submit_button = QPushButton(button_text)
         submit_button.setFixedHeight(32)
+        
+        # Label d'aide pour afficher les descriptions des icônes
+        help_label = QLabel("")
+        help_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        help_label.setStyleSheet("color: white; font-size: 12px; padding: 4px; font-weight: bold;")
+        help_label.setMinimumHeight(20)
+        self._dialog_help_label = help_label  # Stocker pour l'event filter
 
         layout.addWidget(name_input)
         layout.addWidget(emoji_button)
         layout.addWidget(slider_container)
         layout.addWidget(value_input)
         layout.addWidget(submit_button)
+        layout.addWidget(help_label)
 
         def open_emoji_selector():
             path = EMOJIS_FILE
@@ -1195,6 +1486,10 @@ class App(QMainWindow):
         dialog_layout.addWidget(content)
         name_input.setFocus()
         dialog.exec()
+        
+        # CRITIQUE: Réactiver le mouse tracking du menu radial après fermeture du dialogue
+        if self.current_popup:
+            self.current_popup.setMouseTracking(True)
         
         return dialog
 
@@ -1276,10 +1571,9 @@ class App(QMainWindow):
                 
                 replace_or_append_json(CLIP_NOTES_FILE_JSON, new_name, new_value, action)
                 dialog.accept()
-                self.update_mode = False  # Désactiver le mode après édition
                 
-                # Au lieu de relaunch_window, on rafraîchit le menu
-                self.refresh_menu()
+                # Rester en mode modification au lieu de revenir au menu principal
+                self.update_clip(x, y)
             else:
                 print("Les deux champs doivent être remplis")
 
@@ -1310,10 +1604,18 @@ class App(QMainWindow):
         self.current_popup = None
 
         self.buttons_sub = []
+        
+        # Définir les tooltips pour les boutons spéciaux
+        special_button_tooltips = {
+            "➕": "Ajouter",
+            "✏️": "Modifier",
+            "➖": "Supprimer"
+        }
+        
         self.actions_map_sub = {
-            "➕": [(self.new_clip,    [x,y], {}), "", None],
-            "✏️": [(self.update_clip, [x,y], {}), "", None],
-            "➖": [(self.delete_clip, [x,y], {}), "", None],
+            "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
+            "✏️": [(self.update_clip, [x,y], {}), special_button_tooltips["✏️"], None],
+            "➖": [(self.delete_clip, [x,y], {}), special_button_tooltips["➖"], None],
         }
         populate_actions_map_from_file(CLIP_NOTES_FILE, self.actions_map_sub, execute_command)
 
@@ -1389,4 +1691,4 @@ if __name__ == "__main__":
     try:
         sys.exit(app.exec())
     finally:
-        remove_lock_file() 
+        remove_lock_file()
