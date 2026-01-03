@@ -76,7 +76,7 @@ def couleur_avec_opacite(nom_couleur, opacite):
 
 def emoji_pixmap(emoji_char, size=32):
     
-    font = ImageFont.truetype("/home/simon/Téléchargements/sandbox/radial_menu/seguiemj.ttf", size=int(size / 1.5))
+    font = ImageFont.truetype("seguiemj.ttf", size=int(size / 1.5))
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     draw.text((size/2, size/2), emoji_char, font=font, embedded_color=True, anchor="mm")

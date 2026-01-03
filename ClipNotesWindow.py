@@ -6,7 +6,7 @@ import os
 import getpass
 import json
 from PyQt6.QtGui import QCursor
-from PyQt6.QtGui import QPainter, QColor, QIcon, QRadialGradient, QFont, QPalette
+from PyQt6.QtGui import QPainter, QColor, QIcon, QRadialGradient, QFont, QPalette, QPixmap, QPainterPath
 from PyQt6.QtCore import Qt, QSize, QTimer, QPropertyAnimation, QRect, QEasingCurve, QVariantAnimation, QEvent, QPointF
 from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QMainWindow, QVBoxLayout, QHBoxLayout, QSlider
 from PyQt6.QtWidgets import QDialog, QLineEdit, QMessageBox, QTextEdit, QToolTip, QLabel, QFileDialog
@@ -19,7 +19,7 @@ from ui import EmojiSelector
 # 🗑️ 📝
 # Constantes de configuration
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CLIP_NOTES_FILE = os.path.join(SCRIPT_DIR, "clip_notes.txt")
+# CLIP_NOTES_FILE = os.path.join(SCRIPT_DIR, "clip_notes.txt")
 CLIP_NOTES_FILE_JSON = os.path.join(SCRIPT_DIR, "clip_notes.json")
 EMOJIS_FILE = os.path.join(SCRIPT_DIR, "emojis.txt")
 THUMBNAILS_DIR = os.path.join(SCRIPT_DIR, "thumbnails")
@@ -55,7 +55,9 @@ def create_thumbnail(image_path, size=48):
         # Créer un masque circulaire
         mask = Image.new('L', (size, size), 0)
         draw = ImageDraw.Draw(mask)
-        draw.ellipse((0, 0, size, size), fill=255)
+        # PIL ellipse : (left, top, right, bottom) où right et bottom sont INCLUS
+        # Pour un cercle parfait de 48 pixels, on utilise (0, 0, 47, 47)
+        draw.ellipse((0, 0, size-1, size-1), fill=255)
         
         # Appliquer le masque circulaire
         output = Image.new('RGBA', (size, size), (0, 0, 0, 0))
@@ -266,7 +268,7 @@ class CursorTracker(QWidget):
         
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_pos)
-        self.timer.start(100)
+        self.timer.start(150)
         
 
     def update_pos(self):
@@ -1103,6 +1105,9 @@ class App(QMainWindow):
         self._dialog_emoji_labels = []
         self._dialog_help_label = None
         self._dialog_slider = None
+        self._dialog_image_preview = None  # Label pour l'aperçu de l'image
+        self._dialog_temp_image_path = None  # Chemin temporaire de l'image sélectionnée
+        self._dialog_remove_image_button = None  # Bouton pour supprimer l'image
 
     def eventFilter(self, watched, event):
         """Gère les événements de hover et de clic sur les widgets du dialogue"""
@@ -1160,7 +1165,7 @@ class App(QMainWindow):
         # ===== NÉON BLEU MENU PRINCIPAL =====
         # Pour activer le néon bleu clignotant sur le menu principal :
         self.current_popup.toggle_neon(NEON_PRINCIPAL)
-        self.current_popup.timer.start(80)  # 100ms = clignotement lent (50ms = rapide)
+        # self.current_popup.timer.start(80)  # 100ms = clignotement lent (50ms = rapide)
         # Pour désactiver, changez True en False et commentez la ligne timer.start()
         # ====================================
         
@@ -1455,6 +1460,10 @@ class App(QMainWindow):
         name_input.setPlaceholderText("Émoji - Image - Texte")
         name_input.setMinimumHeight(30)
         name_input.setText(initial_name)
+        
+        # Stocker le nom initial pour la comparaison
+        initial_name_stored = initial_name
+        
         name_input.setProperty("help_text", "Alias")
         name_input.installEventFilter(self)
 
@@ -1565,6 +1574,114 @@ class App(QMainWindow):
         self._dialog_help_label = help_label  # Stocker pour l'event filter
 
         layout.addWidget(name_input)
+        
+        # Conteneur pour l'aperçu de l'image avec bouton de suppression
+        image_container = QWidget()
+        image_container_layout = QVBoxLayout(image_container)
+        image_container_layout.setContentsMargins(0, 0, 0, 0)
+        image_container_layout.setSpacing(4)
+        
+        # Aperçu de l'image (caché par défaut)
+        image_preview = QLabel()
+        image_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        image_preview.setFixedSize(100, 100)
+        image_preview.setStyleSheet("""
+            QLabel {
+                border: 2px solid rgba(255, 255, 255, 30);
+                border-radius: 50px;
+                background-color: rgba(0, 0, 0, 50);
+            }
+        """)
+        image_preview.setVisible(False)
+        self._dialog_image_preview = image_preview
+        
+        # Bouton de suppression de l'image
+        remove_image_button = QPushButton("❌")
+        remove_image_button.setFixedSize(30, 30)
+        remove_image_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 70, 70, 100);
+                border: 1px solid rgba(255, 100, 100, 150);
+                border-radius: 15px;
+                padding: 0px;
+                color: white;
+                font-size: 16px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 100, 100, 150);
+            }
+        """)
+        remove_image_button.setVisible(False)
+        remove_image_button.setProperty("help_text", "Supprimer l'image")
+        remove_image_button.installEventFilter(self)
+        self._dialog_remove_image_button = remove_image_button
+        
+        def remove_image():
+            """Supprime l'aperçu de l'image et vide le champ nom"""
+            self._dialog_temp_image_path = None
+            if self._dialog_image_preview:
+                self._dialog_image_preview.setVisible(False)
+                self._dialog_image_preview.clear()
+            if self._dialog_remove_image_button:
+                self._dialog_remove_image_button.setVisible(False)
+            name_input.clear()
+        
+        remove_image_button.clicked.connect(remove_image)
+        
+        # Détecter les modifications manuelles du champ nom pour cacher l'image
+        def on_name_changed(text):
+            """Cache l'aperçu si l'utilisateur modifie le texte manuellement"""
+            # Si on a une image temporaire et que le texte ne correspond plus au nom attendu
+            if self._dialog_temp_image_path:
+                expected_name = os.path.splitext(os.path.basename(self._dialog_temp_image_path))[0]
+                if text != expected_name:
+                    # L'utilisateur a modifié le texte, effacer l'aperçu
+                    self._dialog_temp_image_path = None
+                    if self._dialog_image_preview:
+                        self._dialog_image_preview.setVisible(False)
+                        self._dialog_image_preview.clear()
+                    if self._dialog_remove_image_button:
+                        self._dialog_remove_image_button.setVisible(False)
+            # Si on édite une image existante et que le texte change
+            elif initial_name_stored and "/" in initial_name_stored and text != initial_name_stored:
+                # L'utilisateur a modifié le chemin, effacer l'aperçu
+                if self._dialog_image_preview:
+                    self._dialog_image_preview.setVisible(False)
+                    self._dialog_image_preview.clear()
+                if self._dialog_remove_image_button:
+                    self._dialog_remove_image_button.setVisible(False)
+        
+        name_input.textChanged.connect(on_name_changed)
+        
+        image_container_layout.addWidget(image_preview, alignment=Qt.AlignmentFlag.AlignCenter)
+        image_container_layout.addWidget(remove_image_button, alignment=Qt.AlignmentFlag.AlignCenter)
+        
+        # Si on édite un clip avec une image existante, l'afficher
+        if initial_name and "/" in initial_name and os.path.exists(initial_name):
+            pixmap = QPixmap(initial_name)
+            if not pixmap.isNull():
+                scaled_pixmap = pixmap.scaled(
+                    100, 100,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                rounded = QPixmap(100, 100)
+                rounded.fill(Qt.GlobalColor.transparent)
+                painter = QPainter(rounded)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                path = QPainterPath()
+                path.addEllipse(0, 0, 100, 100)
+                painter.setClipPath(path)
+                x_offset = (100 - scaled_pixmap.width()) // 2
+                y_offset = (100 - scaled_pixmap.height()) // 2
+                painter.drawPixmap(x_offset, y_offset, scaled_pixmap)
+                painter.end()
+                image_preview.setPixmap(rounded)
+                image_preview.setVisible(True)
+                remove_image_button.setVisible(True)
+        
+        layout.addWidget(image_container)
+        
         layout.addLayout(buttons_row)
         layout.addWidget(slider_container)
         layout.addWidget(value_input)
@@ -1581,14 +1698,52 @@ class App(QMainWindow):
             )
             
             if file_path:
-                # Créer une miniature
-                thumbnail_path = create_thumbnail(file_path)
-                if thumbnail_path:
-                    # Mettre le chemin de la miniature dans le champ nom
-                    name_input.setText(thumbnail_path)
-                    print(f"Miniature créée: {thumbnail_path}")
-                else:
-                    print("Erreur lors de la création de la miniature")
+                # Stocker le chemin temporairement (ne pas créer le thumbnail maintenant)
+                self._dialog_temp_image_path = file_path
+                
+                # Mettre seulement le nom de fichier (sans chemin) dans name_input
+                file_name = os.path.basename(file_path)
+                name_without_ext = os.path.splitext(file_name)[0]
+                name_input.setText(name_without_ext)
+                
+                # Afficher l'aperçu de l'image
+                if self._dialog_image_preview:
+                    pixmap = QPixmap(file_path)
+                    if not pixmap.isNull():
+                        # Redimensionner en gardant les proportions
+                        scaled_pixmap = pixmap.scaled(
+                            100, 100,
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation
+                        )
+                        
+                        # Créer un pixmap rond
+                        rounded = QPixmap(100, 100)
+                        rounded.fill(Qt.GlobalColor.transparent)
+                        painter = QPainter(rounded)
+                        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                        
+                        # Dessiner un cercle pour le masque
+                        path = QPainterPath()
+                        path.addEllipse(0, 0, 100, 100)
+                        painter.setClipPath(path)
+                        
+                        # Centrer l'image
+                        x = (100 - scaled_pixmap.width()) // 2
+                        y = (100 - scaled_pixmap.height()) // 2
+                        painter.drawPixmap(x, y, scaled_pixmap)
+                        painter.end()
+                        
+                        self._dialog_image_preview.setPixmap(rounded)
+                        self._dialog_image_preview.setVisible(True)
+                        
+                        # Rendre visible le bouton de suppression
+                        if self._dialog_remove_image_button:
+                            self._dialog_remove_image_button.setVisible(True)
+                        
+                        print(f"Image sélectionnée: {file_path}")
+                    else:
+                        print("Erreur lors du chargement de l'image")
 
         def open_emoji_selector():
             path = EMOJIS_FILE
@@ -1600,12 +1755,10 @@ class App(QMainWindow):
             selector = EmojiSelector(emojis, parent=dialog)
 
             def on_emoji_selected(emoji):
-                cursor_pos = name_input.cursorPosition()
-                current_text = name_input.text()
-                new_text = current_text[:cursor_pos] + emoji + current_text[cursor_pos:]
+                # Remplacer tout le texte par l'emoji sélectionné
                 name_input.setFocus()
-                name_input.setText(new_text)
-                name_input.setCursorPosition(cursor_pos + len(emoji))
+                name_input.setText(emoji)
+                name_input.setCursorPosition(len(emoji))
                 selector.accept()
 
             selector.emoji_selected = on_emoji_selected
@@ -1625,6 +1778,11 @@ class App(QMainWindow):
         name_input.setFocus()
         dialog.exec()
         
+        # CRITIQUE: Nettoyer les variables du dialogue
+        self._dialog_temp_image_path = None
+        self._dialog_image_preview = None
+        self._dialog_remove_image_button = None
+        
         # CRITIQUE: Réactiver le mouse tracking du menu radial après fermeture du dialogue
         if self.current_popup:
             self.current_popup.setMouseTracking(True)
@@ -1641,6 +1799,16 @@ class App(QMainWindow):
             value = value_input.toPlainText().strip().replace('\n', '\\n')
             
             if name and value:
+                # Si une image a été sélectionnée, créer le thumbnail
+                if self._dialog_temp_image_path:
+                    thumbnail_path = create_thumbnail(self._dialog_temp_image_path)
+                    if thumbnail_path:
+                        name = thumbnail_path  # Utiliser le chemin du thumbnail comme nom
+                        print(f"Thumbnail créé: {thumbnail_path}")
+                    else:
+                        print("Erreur lors de la création du thumbnail")
+                        return
+                
                 slider_value = slider.value()
                 action_map = {
                     0: "copy",
@@ -1657,7 +1825,7 @@ class App(QMainWindow):
                 elif action == "exec":
                     self.actions_map_sub[name] = [(execute_command, [value], {}), value, action]
                 
-                append_to_actions_file(CLIP_NOTES_FILE, name, value)
+                # append_to_actions_file(CLIP_NOTES_FILE, name, value)
                 append_to_actions_file_json(CLIP_NOTES_FILE_JSON, name, value, action)
                 
                 dialog.accept()
@@ -1694,13 +1862,28 @@ class App(QMainWindow):
                 }
                 action = action_map.get(slider_value, "copy")
                 old_name = name
+                
+                # Si une nouvelle image a été sélectionnée, créer le thumbnail
+                if self._dialog_temp_image_path:
+                    thumbnail_path = create_thumbnail(self._dialog_temp_image_path)
+                    if thumbnail_path:
+                        new_name = thumbnail_path  # Utiliser le chemin du thumbnail comme nom
+                        print(f"Nouveau thumbnail créé: {thumbnail_path}")
+                    else:
+                        print("Erreur lors de la création du thumbnail")
+                        return
+                
                 if new_name != old_name:
                     self.actions_map_sub.pop(old_name, None)
                     # Supprimer l'ancien alias du JSON
                     delete_from_json(CLIP_NOTES_FILE_JSON, old_name)
-                    # Supprimer l'ancien thumbnail s'il existe
-                    if os.path.exists(old_name):
-                        os.remove(old_name)
+                    # Supprimer l'ancien thumbnail s'il existe (si c'est un chemin de fichier)
+                    if "/" in old_name and os.path.exists(old_name):
+                        try:
+                            os.remove(old_name)
+                            print(f"Ancien thumbnail supprimé: {old_name}")
+                        except Exception as e:
+                            print(f"Erreur lors de la suppression de l'ancien thumbnail: {e}")
                 
                 # Format: [(fonction, [args], {}), value, action]
                 if action == "copy":
@@ -1758,7 +1941,7 @@ class App(QMainWindow):
             "✏️": [(self.update_clip, [x,y], {}), special_button_tooltips["✏️"], None],
             "➖": [(self.delete_clip, [x,y], {}), special_button_tooltips["➖"], None],
         }
-        populate_actions_map_from_file(CLIP_NOTES_FILE, self.actions_map_sub, execute_command)
+        populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
 
         # Séparer les boutons spéciaux des autres
         special_buttons = ["➖", "✏️", "➕"]
