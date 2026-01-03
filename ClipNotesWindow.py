@@ -9,7 +9,7 @@ from PyQt6.QtGui import QCursor
 from PyQt6.QtGui import QPainter, QColor, QIcon, QRadialGradient, QFont, QPalette, QPixmap, QPainterPath
 from PyQt6.QtCore import Qt, QSize, QTimer, QPropertyAnimation, QRect, QEasingCurve, QVariantAnimation, QEvent, QPointF
 from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QMainWindow, QVBoxLayout, QHBoxLayout, QSlider
-from PyQt6.QtWidgets import QDialog, QLineEdit, QMessageBox, QTextEdit, QToolTip, QLabel, QFileDialog
+from PyQt6.QtWidgets import QDialog, QLineEdit, QMessageBox, QTextEdit, QToolTip, QLabel, QFileDialog, QComboBox, QCheckBox, QColorDialog
 from PIL import Image, ImageDraw
 import hashlib
 
@@ -19,70 +19,76 @@ from ui import EmojiSelector
 # 🗑️ 📝
 # Constantes de configuration
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# CLIP_NOTES_FILE = os.path.join(SCRIPT_DIR, "clip_notes.txt")
 CLIP_NOTES_FILE_JSON = os.path.join(SCRIPT_DIR, "clip_notes.json")
 EMOJIS_FILE = os.path.join(SCRIPT_DIR, "emojis.txt")
 THUMBNAILS_DIR = os.path.join(SCRIPT_DIR, "thumbnails")
+CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.json")
+NEON_PRINCIPAL=False
+CENTRAL_NEON = False  # Afficher le néon cosmétique au centre
+ZONE_BASIC_OPACITY = 15
+ZONE_HOVER_OPACITY = 45
+SHOW_CENTRAL_ICON = True  # Afficher l'icône du clip survolé au centre
+MENU_OPACITY = 100  # Opacité globale du menu radial (0-100)
 
+SPECIAL_BUTTONS = ["⚙️", "➖", "✏️", "➕"]
 
 # Palette de couleurs disponibles (RGB)
 COLOR_PALETTE = {
     # Rouges
-    "rouge": (255, 0, 0),
-    "rouge clair": (255, 100, 100),
-    "rose": (255, 192, 203),
-    "rose pale": (255, 200, 200),
-    "rouge fonce": (200, 0, 0),
+    "Rouge": (255, 0, 0),
+    "Rouge clair": (255, 100, 100),
+    "Rose": (255, 192, 203),
+    "Rose pâle": (255, 200, 200),
+    "Rouge foncé": (200, 0, 0),
+    
     # Oranges
-    "orange": (255, 150, 100),
-    "orange vif": (255, 100, 0),
-    "orange clair": (255, 200, 150),
-    "peche": (255, 218, 185),
+    "Orange": (255, 150, 100),
+    "Orange vif": (255, 100, 0),
+    "Orange clair": (255, 200, 150),
+    "Pêche": (255, 218, 185),
+    
     # Jaunes
-    "jaune": (255, 255, 0),
-    "jaune clair": (255, 255, 150),
-    "jaune pale": (255, 255, 200),
-    "or": (255, 215, 0),
+    "Jaune": (255, 255, 0),
+    "Jaune clair": (255, 255, 150),
+    "Jaune pâle": (255, 255, 200),
+    "Or": (255, 215, 0),
+    
     # Verts
-    "vert": (100, 255, 150),
-    "vert vif": (0, 255, 0),
-    "vert clair": (150, 255, 150),
-    "vert pale": (200, 255, 200),
-    "vert fonce": (0, 150, 0),
-    "vert menthe": (152, 255, 152),
+    "Vert": (100, 255, 150),
+    "Vert vif": (0, 255, 0),
+    "Vert clair": (150, 255, 150),
+    "Vert pâle": (200, 255, 200),
+    "Vert foncé": (0, 150, 0),
+    "Vert menthe": (152, 255, 152),
+    
     # Bleus
-    "bleu": (100, 150, 255),
-    "bleu vif": (0, 0, 255),
-    "bleu clair": (150, 200, 255),
-    "bleu pale": (200, 200, 255),
-    "cyan": (0, 255, 255),
-    "cyan pale": (200, 255, 255),
-    "bleu fonce": (0, 0, 200),
+    "Bleu": (100, 150, 255),
+    "Bleu vif": (0, 0, 255),
+    "Bleu clair": (150, 200, 255),
+    "Bleu pâle": (200, 200, 255),
+    "Cyan": (0, 255, 255),
+    "Cyan pâle": (200, 255, 255),
+    "Bleu foncé": (0, 0, 200),
+    
     # Violets
-    "violet": (150, 100, 255),
-    "violet clair": (200, 150, 255),
-    "mauve": (224, 176, 255),
-    "magenta": (255, 0, 255),
+    "Violet": (150, 100, 255),
+    "Violet clair": (200, 150, 255),
+    "Mauve": (224, 176, 255),
+    "Magenta": (255, 0, 255),
+    
     # Gris
-    "gris": (150, 150, 150),
-    "gris clair": (200, 200, 200),
-    "gris fonce": (100, 100, 100),
+    "Gris": (150, 150, 150),
+    "Gris clair": (200, 200, 200),
+    "Gris foncé": (100, 100, 100),
 }
 
-# Couleurs des zones par action
+# Couleurs des zones par action (RGB)
 ACTION_ZONE_COLORS = {
-    "copy": "orange",
-    "term": "jaune",
-    "exec": "bleu",
+    "copy": (255, 150, 100),  # Orange par défaut
+    "term": (100, 255, 150),  # Vert par défaut
+    "exec": (100, 150, 255),  # Bleu par défaut
 }
-
-# Afficher le néon cosmétique au centre
-CENTRAL_NEON=False
-# Opacité des zones d'action (copie, terminal ou exécution)
-ZONE_BASIC_OPACITY = 15
-# Opacité des zones d'action (copie, terminal ou exécution) en survol (hover)
-ZONE_HOVER_OPACITY = 45
-# Afficher l'icône du clip survolé au centre
-SHOW_CENTRAL_ICON = True
 
 # Créer le dossier des miniatures s'il n'existe pas
 os.makedirs(THUMBNAILS_DIR, exist_ok=True)
@@ -138,6 +144,79 @@ def create_thumbnail(image_path, size=48):
         print(f"Erreur lors de la création de la miniature: {e}")
         return None
 
+def load_config():
+    """Charge la configuration depuis le fichier JSON"""
+    global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, ACTION_ZONE_COLORS, MENU_OPACITY
+    
+    if not os.path.exists(CONFIG_FILE):
+        return
+    
+    try:
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        CENTRAL_NEON = config.get('central_neon', CENTRAL_NEON)
+        ZONE_BASIC_OPACITY = config.get('zone_basic_opacity', ZONE_BASIC_OPACITY)
+        ZONE_HOVER_OPACITY = config.get('zone_hover_opacity', ZONE_HOVER_OPACITY)
+        SHOW_CENTRAL_ICON = config.get('show_central_icon', SHOW_CENTRAL_ICON)
+        MENU_OPACITY = config.get('menu_opacity', MENU_OPACITY)
+        
+        # Charger les couleurs et migrer l'ancien format si nécessaire
+        loaded_colors = config.get('action_zone_colors', ACTION_ZONE_COLORS)
+        ACTION_ZONE_COLORS = {}
+        
+        for action, color_value in loaded_colors.items():
+            if isinstance(color_value, str):
+                # Ancien format : nom de couleur -> convertir en RGB
+                if color_value in COLOR_PALETTE:
+                    ACTION_ZONE_COLORS[action] = COLOR_PALETTE[color_value]
+                    print(f"[Config] Migration: {action} '{color_value}' -> {COLOR_PALETTE[color_value]}")
+                else:
+                    # Couleur inconnue, utiliser la valeur par défaut
+                    default_colors = {
+                        "copy": (255, 150, 100),
+                        "term": (100, 255, 150),
+                        "exec": (100, 150, 255)
+                    }
+                    ACTION_ZONE_COLORS[action] = default_colors.get(action, (255, 255, 255))
+            elif isinstance(color_value, list):
+                # Nouveau format : liste RGB -> convertir en tuple
+                ACTION_ZONE_COLORS[action] = tuple(color_value)
+            else:
+                # Déjà un tuple
+                ACTION_ZONE_COLORS[action] = color_value
+        
+        print(f"[Config] Configuration chargée: {config}")
+    except Exception as e:
+        print(f"[Erreur] Impossible de charger la configuration: {e}")
+
+def create_color_icon(rgb_tuple, size=16):
+    """Crée une icône carrée de couleur pour les ComboBox"""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(QColor(*rgb_tuple))
+    return QIcon(pixmap)
+
+def save_config():
+    """Sauvegarde la configuration dans le fichier JSON"""
+    config = {
+        'central_neon': CENTRAL_NEON,
+        'zone_basic_opacity': ZONE_BASIC_OPACITY,
+        'zone_hover_opacity': ZONE_HOVER_OPACITY,
+        'show_central_icon': SHOW_CENTRAL_ICON,
+        'action_zone_colors': ACTION_ZONE_COLORS,
+        'menu_opacity': MENU_OPACITY
+    }
+    
+    try:
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
+        print(f"[Config] Configuration sauvegardée: {config}")
+    except Exception as e:
+        print(f"[Erreur] Impossible de sauvegarder la configuration: {e}")
+
+# Charger la configuration au démarrage
+load_config()
+
 DIALOG_STYLE = """
     QWidget {
         background-color: rgba(30, 30, 30, 180);
@@ -166,9 +245,11 @@ DIALOG_STYLE = """
 os.environ.pop("XDG_SESSION_TYPE", None)
 
 LOCK_FILE = os.path.join(SCRIPT_DIR, ".clipnotes.lock")
+
 def create_lock_file():
     with open(LOCK_FILE, 'w') as f:
         f.write(str(os.getpid()))
+
 def remove_lock_file():
     try:
         if os.path.exists(LOCK_FILE):
@@ -516,10 +597,10 @@ class RadialMenu(QWidget):
 
     def _create_buttons(self, buttons):
         """Crée les boutons pour le menu radial"""
-        # Couleurs par type d'action (résout les noms depuis COLOR_PALETTE)
+        # Couleurs par type d'action (utilise directement les RGB)
         action_colors = {
-            action: QColor(*COLOR_PALETTE[color_name], 25)
-            for action, color_name in ACTION_ZONE_COLORS.items()
+            action: QColor(*rgb, 25)
+            for action, rgb in ACTION_ZONE_COLORS.items()
         }
         
         # Tooltips pour les boutons spéciaux
@@ -580,7 +661,7 @@ class RadialMenu(QWidget):
                 btn.setIconSize(QSize(32, 32))
             
             # Les boutons spéciaux (➕ ✏️ ➖) ont un fond transparent MAIS coloré au hover
-            if label in ["➖", "✏️", "➕"]:
+            if label in SPECIAL_BUTTONS:
                 btn.setStyleSheet(f"""
                     QPushButton {{
                         background-color: transparent;
@@ -790,7 +871,7 @@ class RadialMenu(QWidget):
         for i, btn in enumerate(self.buttons):
             # Vérifier si c'est un bouton spécial (➕ ✏️ ➖)
             label = self._button_labels[i] if i < len(self._button_labels) else ""
-            if label in ["➖", "✏️", "➕"]:
+            if label in SPECIAL_BUTTONS:
                 # Les boutons spéciaux restent transparents MAIS colorés au hover
                 btn.setStyleSheet(f"""
                     QPushButton {{
@@ -956,7 +1037,8 @@ class RadialMenu(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        painter.setOpacity(self._widget_opacity)
+        # Ne pas appliquer l'opacité globalement - seulement au fond
+        # painter.setOpacity(self._widget_opacity)  # SUPPRIMÉ
         
         center = self.rect().center()
         
@@ -971,21 +1053,23 @@ class RadialMenu(QWidget):
             scaled_diameter
         )
 
-        # Dessiner le fond global
-        painter.setBrush(QColor(50, 50, 50, 100))
+        # Dessiner le fond global avec opacité contrôlée par MENU_OPACITY
+        # _widget_opacity va de 0.0 à 1.0, on le convertit en alpha 0-255
+        background_alpha = int(255 * self._widget_opacity)
+        painter.setBrush(QColor(50, 50, 50, background_alpha))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(circle_rect)
         
         # Dessiner les zones colorées pour TOUS les boutons avec des actions
         # Toutes les zones sont toujours visibles avec une opacité de base légère
         action_colors_base = {
-            action: QColor(*COLOR_PALETTE[color_name], ZONE_BASIC_OPACITY)
-            for action, color_name in ACTION_ZONE_COLORS.items()
+            action: QColor(*rgb, ZONE_BASIC_OPACITY)
+            for action, rgb in ACTION_ZONE_COLORS.items()
         }
 
         action_colors_hover = {
-            action: QColor(*COLOR_PALETTE[color_name], ZONE_HOVER_OPACITY)
-            for action, color_name in ACTION_ZONE_COLORS.items()
+            action: QColor(*rgb, ZONE_HOVER_OPACITY)
+            for action, rgb in ACTION_ZONE_COLORS.items()
         }
         
         angle_step = 360 / len(self.buttons)
@@ -1111,7 +1195,7 @@ class RadialMenu(QWidget):
                     btn.setIconSize(QSize(int(32 * self._scale_factor), int(32 * self._scale_factor)))
                 
                 # Mettre à jour le style avec le border-radius scalé
-                if label in ["➖", "✏️", "➕"]:
+                if label in SPECIAL_BUTTONS:
                     btn.setStyleSheet(f"""
                         QPushButton {{
                             background-color: transparent;
@@ -1262,7 +1346,7 @@ class App(QMainWindow):
         self.current_popup.set_neon_color("cyan")
         # ===== NÉON BLEU MENU PRINCIPAL =====
         # Pour activer le néon bleu clignotant sur le menu principal :
-        self.current_popup.toggle_neon(CENTRAL_NEON)
+        self.current_popup.toggle_neon(NEON_PRINCIPAL)
         # self.current_popup.timer.start(80)  # 100ms = clignotement lent (50ms = rapide)
         # Pour désactiver, changez True en False et commentez la ligne timer.start()
         # ====================================
@@ -1271,7 +1355,7 @@ class App(QMainWindow):
         self.buttons_sub = []
         
         # Séparer les boutons spéciaux des autres
-        special_buttons = ["➖", "✏️", "➕"]
+        special_buttons = SPECIAL_BUTTONS
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Trier seulement les clips (pas les boutons spéciaux)
@@ -1304,7 +1388,7 @@ class App(QMainWindow):
         self.update_mode = True
         
         # Filtrer les clips (sans les boutons d'action)
-        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➖", "✏️", "➕"]}
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in SPECIAL_BUTTONS}
         
         # Trier les clips
         sorted_clips = sort_actions_map(clips_only)
@@ -1347,7 +1431,7 @@ class App(QMainWindow):
         self.delete_mode = True
         
         # Filtrer les clips (sans les boutons d'action)
-        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in ["➖", "✏️", "➕"]}
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in SPECIAL_BUTTONS}
         
         # Trier les clips
         sorted_clips = sort_actions_map(clips_only)
@@ -1479,7 +1563,7 @@ class App(QMainWindow):
                 if isinstance(func_data, tuple) and len(func_data) == 3:
                     func, args, kwargs = func_data
                     func(*args, **kwargs)
-                    if name not in ["➖", "✏️", "➕"]:
+                    if name not in SPECIAL_BUTTONS:
                         # Récupérer l'action et générer le message
                         action = self.actions_map_sub[name][2]
                         if action == "copy":
@@ -1887,6 +1971,248 @@ class App(QMainWindow):
         
         return dialog
 
+    def show_config_dialog(self, x, y):
+        """Affiche le dialogue de configuration"""
+        if self.tracker:
+            self.tracker.update_pos()
+            x, y = self.tracker.last_x, self.tracker.last_y
+        
+        dialog = QDialog(self.tracker)
+        dialog.setWindowTitle("⚙️ Configuration")
+        dialog.setWindowFlags(Qt.WindowType.Dialog)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        # Appliquer une palette sombre au dialogue
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Base, QColor(35, 35, 35))
+        palette.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(25, 25, 25))
+        palette.setColor(QPalette.ColorRole.ToolTipText, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Link, QColor(42, 130, 218))
+        palette.setColor(QPalette.ColorRole.Highlight, QColor(42, 130, 218))
+        palette.setColor(QPalette.ColorRole.HighlightedText, QColor(35, 35, 35))
+        dialog.setPalette(palette)
+        
+        dialog.setFixedSize(400, 580)
+        
+        if x is None or y is None:
+            screen = QApplication.primaryScreen().geometry()
+            x = screen.center().x() - dialog.width() // 2
+            y = screen.center().y() - dialog.height() // 2
+        dialog.move(x, y)
+        
+        content = QWidget()
+        content.setStyleSheet(DIALOG_STYLE)
+        
+        layout = QVBoxLayout(content)
+        layout.setSpacing(12)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Titre
+        title = QLabel("⚙️ Configuration")
+        title.setStyleSheet("font-size: 18px; font-weight: bold; color: white;")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+        
+        # --- Couleurs des zones ---
+        colors_label = QLabel("🎨 Couleurs des zones")
+        colors_label.setStyleSheet("font-weight: bold; color: white; margin-top: 10px;")
+        layout.addWidget(colors_label)
+        
+        # Variables pour stocker les couleurs sélectionnées
+        selected_colors = {
+            "copy": ACTION_ZONE_COLORS["copy"],
+            "term": ACTION_ZONE_COLORS["term"],
+            "exec": ACTION_ZONE_COLORS["exec"]
+        }
+        
+        def create_color_button(action_name, label_text, rgb):
+            """Crée un bouton coloré qui ouvre un color picker"""
+            layout_h = QHBoxLayout()
+            label = QLabel(label_text)
+            label.setFixedWidth(100)
+            
+            button = QPushButton()
+            button.setFixedHeight(30)
+            button.setFixedWidth(150)
+            
+            def update_button_color():
+                r, g, b = selected_colors[action_name]
+                button.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: rgb({r}, {g}, {b});
+                        border: 2px solid rgba(255, 255, 255, 100);
+                        border-radius: 4px;
+                    }}
+                    QPushButton:hover {{
+                        border: 2px solid rgba(255, 255, 255, 200);
+                    }}
+                """)
+                button.setText(f"RGB({r}, {g}, {b})")
+            
+            def pick_color():
+                r, g, b = selected_colors[action_name]
+                initial_color = QColor(r, g, b)
+                color = QColorDialog.getColor(initial_color, dialog, f"Choisir la couleur pour {label_text}")
+                if color.isValid():
+                    selected_colors[action_name] = (color.red(), color.green(), color.blue())
+                    update_button_color()
+            
+            button.clicked.connect(pick_color)
+            update_button_color()
+            
+            layout_h.addWidget(label)
+            layout_h.addWidget(button)
+            layout_h.addStretch()
+            return layout_h
+        
+        # Boutons pour chaque action
+        copy_layout = create_color_button("copy", "✂️ Copie", ACTION_ZONE_COLORS["copy"])
+        layout.addLayout(copy_layout)
+        
+        term_layout = create_color_button("term", "💻 Terminal", ACTION_ZONE_COLORS["term"])
+        layout.addLayout(term_layout)
+        
+        exec_layout = create_color_button("exec", "🚀 Exécution", ACTION_ZONE_COLORS["exec"])
+        layout.addLayout(exec_layout)
+        
+        # --- Opacités ---
+        opacity_label = QLabel("🔆 Opacités")
+        opacity_label.setStyleSheet("font-weight: bold; color: white; margin-top: 10px;")
+        layout.addWidget(opacity_label)
+        
+        # Slider pour opacité du menu
+        menu_opacity_layout = QVBoxLayout()
+        menu_opacity_label = QLabel(f"Opacité générale {MENU_OPACITY}")
+        menu_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        menu_opacity_slider.setMinimum(0)
+        menu_opacity_slider.setMaximum(100)
+        menu_opacity_slider.setValue(MENU_OPACITY)
+        menu_opacity_slider.valueChanged.connect(lambda v: menu_opacity_label.setText(f"Opacité générale {v}"))
+        menu_opacity_layout.addWidget(menu_opacity_label)
+        menu_opacity_layout.addWidget(menu_opacity_slider)
+        layout.addLayout(menu_opacity_layout)
+        
+        # Slider pour opacité de base
+        basic_opacity_layout = QVBoxLayout()
+        basic_opacity_label = QLabel(f"Opacité des zones d'action {ZONE_BASIC_OPACITY}")
+        basic_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        basic_opacity_slider.setMinimum(0)
+        basic_opacity_slider.setMaximum(100)
+        basic_opacity_slider.setValue(ZONE_BASIC_OPACITY)
+        basic_opacity_slider.valueChanged.connect(lambda v: basic_opacity_label.setText(f"Opacité des zones d'action {v}"))
+        basic_opacity_layout.addWidget(basic_opacity_label)
+        basic_opacity_layout.addWidget(basic_opacity_slider)
+        layout.addLayout(basic_opacity_layout)
+        
+        # Slider pour opacité au survol
+        hover_opacity_layout = QVBoxLayout()
+        hover_opacity_label = QLabel(f"Opacité des zones d'action au survol {ZONE_HOVER_OPACITY}")
+        hover_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        hover_opacity_slider.setMinimum(0)
+        hover_opacity_slider.setMaximum(100)
+        hover_opacity_slider.setValue(ZONE_HOVER_OPACITY)
+        hover_opacity_slider.valueChanged.connect(lambda v: hover_opacity_label.setText(f"Opacité des zones d'action au survol {v}"))
+        hover_opacity_layout.addWidget(hover_opacity_label)
+        hover_opacity_layout.addWidget(hover_opacity_slider)
+        layout.addLayout(hover_opacity_layout)
+        
+        # --- Options ---
+        options_label = QLabel("⚡ Options")
+        options_label.setStyleSheet("font-weight: bold; color: white; margin-top: 10px;")
+        layout.addWidget(options_label)
+        
+        # Checkbox pour l'icône centrale
+        icon_checkbox = QCheckBox("Afficher l'icône du clip survolé au centre")
+        icon_checkbox.setChecked(SHOW_CENTRAL_ICON)
+        layout.addWidget(icon_checkbox)
+        
+        # Checkbox pour le néon central
+        neon_checkbox = QCheckBox("Afficher le néon cosmétique au centre")
+        neon_checkbox.setChecked(CENTRAL_NEON)
+        layout.addWidget(neon_checkbox)
+        
+        # Boutons Sauvegarder et Annuler
+        layout.addStretch()
+        buttons_layout = QHBoxLayout()
+        
+        # Bouton Annuler
+        cancel_button = QPushButton("❌")
+        cancel_button.setFixedHeight(40)
+        cancel_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(200, 100, 100, 100);
+                border: 1px solid rgba(255, 100, 100, 150);
+                border-radius: 6px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 100, 100, 150);
+            }
+        """)
+        cancel_button.clicked.connect(dialog.reject)
+        
+        # Bouton Sauvegarder
+        save_button = QPushButton("💾")
+        save_button.setFixedHeight(40)
+        save_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(100, 200, 100, 100);
+                border: 1px solid rgba(100, 255, 100, 150);
+                border-radius: 6px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: rgba(100, 255, 100, 150);
+            }
+        """)
+        
+        def save_and_close():
+            global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, ACTION_ZONE_COLORS, MENU_OPACITY
+            
+            # Mettre à jour les variables globales
+            ACTION_ZONE_COLORS["copy"] = selected_colors["copy"]
+            ACTION_ZONE_COLORS["term"] = selected_colors["term"]
+            ACTION_ZONE_COLORS["exec"] = selected_colors["exec"]
+            ZONE_BASIC_OPACITY = basic_opacity_slider.value()
+            ZONE_HOVER_OPACITY = hover_opacity_slider.value()
+            MENU_OPACITY = menu_opacity_slider.value()
+            SHOW_CENTRAL_ICON = icon_checkbox.isChecked()
+            CENTRAL_NEON = neon_checkbox.isChecked()
+            
+            # Sauvegarder dans le fichier
+            save_config()
+            
+            # Fermer le dialogue
+            dialog.accept()
+        
+        save_button.clicked.connect(save_and_close)
+        
+        buttons_layout.addWidget(cancel_button)
+        buttons_layout.addWidget(save_button)
+        layout.addLayout(buttons_layout)
+        
+        dialog_layout = QVBoxLayout(dialog)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        dialog_layout.addWidget(content)
+        
+        dialog.exec()
+        
+        # Réactiver le mouse tracking du menu radial après fermeture
+        if self.current_popup:
+            self.current_popup.setMouseTracking(True)
+        
+        # Si le dialogue a été accepté (sauvegarde), rafraîchir le menu
+        if dialog.result() == QDialog.DialogCode.Accepted:
+            self.refresh_menu()
+
     def new_clip(self, x, y):
         if self.tracker:
             self.tracker.update_pos()
@@ -1923,6 +2249,7 @@ class App(QMainWindow):
                 elif action == "exec":
                     self.actions_map_sub[name] = [(execute_command, [value], {}), value, action]
                 
+                # append_to_actions_file(CLIP_NOTES_FILE, name, value)
                 append_to_actions_file_json(CLIP_NOTES_FILE_JSON, name, value, action)
                 
                 dialog.accept()
@@ -2030,18 +2357,20 @@ class App(QMainWindow):
         special_button_tooltips = {
             "➕": "Ajouter",
             "✏️": "Modifier",
-            "➖": "Supprimer"
+            "➖": "Supprimer",
+            "⚙️": "Configuration"
         }
         
         self.actions_map_sub = {
             "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
             "✏️": [(self.update_clip, [x,y], {}), special_button_tooltips["✏️"], None],
             "➖": [(self.delete_clip, [x,y], {}), special_button_tooltips["➖"], None],
+            "⚙️": [(self.show_config_dialog, [x,y], {}), special_button_tooltips["⚙️"], None],
         }
         populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
 
         # Séparer les boutons spéciaux des autres
-        special_buttons = ["➖", "✏️", "➕"]
+        special_buttons = SPECIAL_BUTTONS
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Trier seulement les clips (pas les boutons spéciaux)
@@ -2062,6 +2391,9 @@ class App(QMainWindow):
         self.current_popup = RadialMenu(x, y, self.buttons_sub, sub=True, tracker=self.tracker, app_instance=self)
         self.current_popup.show()
         self.current_popup.animate_open()
+        
+        # Appliquer l'opacité configurée
+        self.current_popup.set_widget_opacity(MENU_OPACITY / 100.0)
         
         # ===== NÉON BLEU MENU PRINCIPAL =====
         # Activer le néon bleu clignotant dès l'ouverture
