@@ -19,11 +19,70 @@ from ui import EmojiSelector
 # 🗑️ 📝
 # Constantes de configuration
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-# CLIP_NOTES_FILE = os.path.join(SCRIPT_DIR, "clip_notes.txt")
 CLIP_NOTES_FILE_JSON = os.path.join(SCRIPT_DIR, "clip_notes.json")
 EMOJIS_FILE = os.path.join(SCRIPT_DIR, "emojis.txt")
 THUMBNAILS_DIR = os.path.join(SCRIPT_DIR, "thumbnails")
-NEON_PRINCIPAL=False
+
+
+# Palette de couleurs disponibles (RGB)
+COLOR_PALETTE = {
+    # Rouges
+    "rouge": (255, 0, 0),
+    "rouge clair": (255, 100, 100),
+    "rose": (255, 192, 203),
+    "rose pale": (255, 200, 200),
+    "rouge fonce": (200, 0, 0),
+    # Oranges
+    "orange": (255, 150, 100),
+    "orange vif": (255, 100, 0),
+    "orange clair": (255, 200, 150),
+    "peche": (255, 218, 185),
+    # Jaunes
+    "jaune": (255, 255, 0),
+    "jaune clair": (255, 255, 150),
+    "jaune pale": (255, 255, 200),
+    "or": (255, 215, 0),
+    # Verts
+    "vert": (100, 255, 150),
+    "vert vif": (0, 255, 0),
+    "vert clair": (150, 255, 150),
+    "vert pale": (200, 255, 200),
+    "vert fonce": (0, 150, 0),
+    "vert menthe": (152, 255, 152),
+    # Bleus
+    "bleu": (100, 150, 255),
+    "bleu vif": (0, 0, 255),
+    "bleu clair": (150, 200, 255),
+    "bleu pale": (200, 200, 255),
+    "cyan": (0, 255, 255),
+    "cyan pale": (200, 255, 255),
+    "bleu fonce": (0, 0, 200),
+    # Violets
+    "violet": (150, 100, 255),
+    "violet clair": (200, 150, 255),
+    "mauve": (224, 176, 255),
+    "magenta": (255, 0, 255),
+    # Gris
+    "gris": (150, 150, 150),
+    "gris clair": (200, 200, 200),
+    "gris fonce": (100, 100, 100),
+}
+
+# Couleurs des zones par action
+ACTION_ZONE_COLORS = {
+    "copy": "orange",
+    "term": "jaune",
+    "exec": "bleu",
+}
+
+# Afficher le néon cosmétique au centre
+CENTRAL_NEON=False
+# Opacité des zones d'action (copie, terminal ou exécution)
+ZONE_BASIC_OPACITY = 15
+# Opacité des zones d'action (copie, terminal ou exécution) en survol (hover)
+ZONE_HOVER_OPACITY = 45
+# Afficher l'icône du clip survolé au centre
+SHOW_CENTRAL_ICON = True
 
 # Créer le dossier des miniatures s'il n'existe pas
 os.makedirs(THUMBNAILS_DIR, exist_ok=True)
@@ -107,11 +166,9 @@ DIALOG_STYLE = """
 os.environ.pop("XDG_SESSION_TYPE", None)
 
 LOCK_FILE = os.path.join(SCRIPT_DIR, ".clipnotes.lock")
-
 def create_lock_file():
     with open(LOCK_FILE, 'w') as f:
         f.write(str(os.getpid()))
-
 def remove_lock_file():
     try:
         if os.path.exists(LOCK_FILE):
@@ -287,27 +344,6 @@ class CursorTracker(QWidget):
         # Interpolation linéaire entre correction_top et correction_bottom
         y_offset = self.y_correction_top + (self.y_correction_bottom - self.y_correction_top) * y_ratio
         self.last_y = int(pos.y() + y_offset)
-
-    # def update_pos(self):
-    #     pos = QCursor.pos()
-        # if pos.x() < self.screen_mid_x / 2:  # Quart gauche (0-25%)
-        #     self.last_x = pos.x() + 180
-        # elif pos.x() < self.screen_mid_x:  # Entre quart et milieu (25-50%)
-        #     self.last_x = pos.x() + 80
-        # elif pos.x() < self.screen_mid_x + (self.screen_mid_x / 2):  # Entre milieu et 3/4 (50-75%)
-        #     self.last_x = pos.x() - 80
-        # else:  # Quart droit (75-100%)
-        #     self.last_x = pos.x() - 150
-        
-        # # Correction Y
-        # if pos.y() < self.screen_mid_y / 2:  # Quart supérieur
-        #     self.last_y = pos.y() + 180
-        # elif pos.y() < self.screen_mid_y:  # Entre quart et milieu
-        #     self.last_y = pos.y() + 220
-        # elif pos.y() > self.screen_mid_y:  # En dessous du milieu
-        #     self.last_y = pos.y() + 80
-        # else:
-        #     self.last_y = pos.y()
     
     def mousePressEvent(self, event):
         if self.on_click_callback:
@@ -464,6 +500,8 @@ class RadialMenu(QWidget):
         self._button_actions = []  # Liste des actions pour chaque bouton
         self._button_labels = []  # Liste des labels pour chaque bouton
         self._hovered_action = None  # Action survolée (None, "copy", "term", ou "exec")
+        self._hovered_button_index = None  # Index du bouton survolé
+        self._central_icon = None  # Pixmap de l'icône centrale à afficher
         self._action_badges = {}  # Dictionnaire des badges globaux par action
         
         # Activer le tracking de la souris pour détecter le hover
@@ -478,11 +516,10 @@ class RadialMenu(QWidget):
 
     def _create_buttons(self, buttons):
         """Crée les boutons pour le menu radial"""
-        # Couleurs par type d'action (plus légères et transparentes)
+        # Couleurs par type d'action (résout les noms depuis COLOR_PALETTE)
         action_colors = {
-            "copy": QColor(255, 150, 100, 25),   # Orange transparent
-            "term": QColor(100, 255, 150, 25),   # Vert transparent
-            "exec": QColor(100, 150, 255, 25),   # Bleu transparent
+            action: QColor(*COLOR_PALETTE[color_name], 25)
+            for action, color_name in ACTION_ZONE_COLORS.items()
         }
         
         # Tooltips pour les boutons spéciaux
@@ -525,6 +562,9 @@ class RadialMenu(QWidget):
             by = center_offset + self.radius * math.sin(angle) - self.btn_size // 2
 
             btn = QPushButton("", self)
+            # Activer le hover tracking pour ce bouton
+            btn.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+            
             # Déterminer le type de label et utiliser la fonction appropriée
             if "/" in label:
                 # C'est un chemin d'image - légèrement plus petit pour voir le hover
@@ -674,13 +714,40 @@ class RadialMenu(QWidget):
     def eventFilter(self, watched, event):
         """Gère les événements de hover sur les boutons"""
         if event.type() == QEvent.Type.Enter:
+            # Trouver l'index du bouton survolé
+            if watched in self.buttons and SHOW_CENTRAL_ICON:
+                button_index = self.buttons.index(watched)
+                self._hovered_button_index = button_index
+                
+                # Créer l'icône centrale pour ce bouton
+                if button_index < len(self._button_labels):
+                    label = self._button_labels[button_index]
+                    # Créer un pixmap adapté au type de label
+                    if "/" in label:
+                        # C'est un chemin d'image
+                        self._central_icon = image_pixmap(label, 64)
+                    elif is_emoji(label):
+                        # C'est un emoji
+                        self._central_icon = emoji_pixmap(label, 48)
+                    else:
+                        # C'est du texte simple
+                        self._central_icon = text_pixmap(label, 48)
+                    self.update()
+            
             # Afficher le message de hover dans la fenêtre tooltip
             if watched in self._tooltips:
                 tooltip_text = self._tooltips[watched]
                 # Afficher dans la fenêtre tooltip en dessous (durée infinie)
                 self.tooltip_window.show_message(tooltip_text, 0)
                 self._update_tooltip_position()
+                
         elif event.type() == QEvent.Type.Leave:
+            # Effacer l'icône centrale quand on quitte le bouton
+            if watched in self.buttons and SHOW_CENTRAL_ICON:
+                self._central_icon = None
+                self._hovered_button_index = None
+                self.update()
+            
             # Masquer le message quand on quitte le bouton
             self.tooltip_window.hide()
         
@@ -793,6 +860,13 @@ class RadialMenu(QWidget):
             self.tooltip_window.hide()
             self.handle_click_outside()
     
+    def leaveEvent(self, event):
+        """Efface l'icône centrale quand la souris quitte le widget"""
+        if SHOW_CENTRAL_ICON and self._central_icon is not None:
+            self._central_icon = None
+            self._hovered_button_index = None
+            self.update()
+    
     def mouseMoveEvent(self, event):
         """Détecte quelle action est survolée par la souris (zone angulaire complète)"""
         if not self.buttons:
@@ -808,8 +882,10 @@ class RadialMenu(QWidget):
         
         # Si on est trop près du centre ou au-delà de la zone externe, pas de hover
         if distance < 30 or distance > self.radius + self.btn_size + 10:
-            if self._hovered_action is not None:
+            if self._hovered_action is not None or self._central_icon is not None:
                 self._hovered_action = None
+                self._hovered_button_index = None
+                self._central_icon = None
                 # Masquer tous les badges
                 for badge in self._action_badges.values():
                     badge.setVisible(False)
@@ -900,32 +976,39 @@ class RadialMenu(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(circle_rect)
         
-        # Dessiner les zones colorées de tous les boutons qui ont l'action survolée
-        if self._hovered_action is not None:
-            # Trouver la couleur correspondante (plus légère et transparente)
-            action_colors = {
-                "copy": QColor(255, 150, 100, 25),
-                "term": QColor(100, 255, 150, 25),
-                "exec": QColor(100, 150, 255, 25),
-            }
-            color = action_colors.get(self._hovered_action)
-            
-            if color is not None:
-                angle_step = 360 / len(self.buttons)
+        # Dessiner les zones colorées pour TOUS les boutons avec des actions
+        # Toutes les zones sont toujours visibles avec une opacité de base légère
+        action_colors_base = {
+            action: QColor(*COLOR_PALETTE[color_name], ZONE_BASIC_OPACITY)
+            for action, color_name in ACTION_ZONE_COLORS.items()
+        }
+
+        action_colors_hover = {
+            action: QColor(*COLOR_PALETTE[color_name], ZONE_HOVER_OPACITY)
+            for action, color_name in ACTION_ZONE_COLORS.items()
+        }
+        
+        angle_step = 360 / len(self.buttons)
+        
+        # Dessiner toutes les zones
+        for i, action in enumerate(self._button_actions):
+            if action in action_colors_base:
+                # Choisir la couleur selon si c'est survolé ou non
+                if action == self._hovered_action:
+                    color = action_colors_hover[action]
+                else:
+                    color = action_colors_base[action]
                 
-                # Dessiner une tranche pour chaque bouton ayant cette action
-                for i, action in enumerate(self._button_actions):
-                    if action == self._hovered_action:
-                        # Calculer l'angle de ce bouton
-                        button_angle = i * angle_step
-                        
-                        # Convertir en angle Qt (0° à droite, sens anti-horaire)
-                        start_angle = -button_angle - (angle_step / 2)
-                        
-                        painter.setBrush(color)
-                        painter.setPen(Qt.PenStyle.NoPen)
-                        # drawPie utilise des "16èmes de degrés"
-                        painter.drawPie(circle_rect, int(start_angle * 16), int(angle_step * 16))
+                # Calculer l'angle de ce bouton
+                button_angle = i * angle_step
+                
+                # Convertir en angle Qt (0° à droite, sens anti-horaire)
+                start_angle = -button_angle - (angle_step / 2)
+                
+                painter.setBrush(color)
+                painter.setPen(Qt.PenStyle.NoPen)
+                # drawPie utilise des "16èmes de degrés"
+                painter.drawPie(circle_rect, int(start_angle * 16), int(angle_step * 16))
 
         if self.neon_enabled:
             scaled_neon_radius = self._neon_radius * self._scale_factor
@@ -936,7 +1019,22 @@ class RadialMenu(QWidget):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawEllipse(QPointF(center), scaled_neon_radius, scaled_neon_radius)
 
-        if self._central_text:
+        if self._central_icon:
+            # Afficher l'icône centrale du bouton survolé
+            icon_size = int(64 * self._scale_factor)  # Taille scalée
+            icon_x = center.x() - icon_size // 2
+            icon_y = center.y() - icon_size // 2
+            
+            # Créer un pixmap scalé
+            scaled_icon = self._central_icon.scaled(
+                icon_size, 
+                icon_size, 
+                Qt.AspectRatioMode.KeepAspectRatio, 
+                Qt.TransformationMode.SmoothTransformation
+            )
+            painter.drawPixmap(int(icon_x), int(icon_y), scaled_icon)
+        elif self._central_text:
+            # Afficher le texte central (mode édition/suppression)
             painter.setPen(QColor(255, 255, 255))
             font = QFont("Arial", int(24 * self._scale_factor))
             painter.setFont(font)
@@ -1164,7 +1262,7 @@ class App(QMainWindow):
         self.current_popup.set_neon_color("cyan")
         # ===== NÉON BLEU MENU PRINCIPAL =====
         # Pour activer le néon bleu clignotant sur le menu principal :
-        self.current_popup.toggle_neon(NEON_PRINCIPAL)
+        self.current_popup.toggle_neon(CENTRAL_NEON)
         # self.current_popup.timer.start(80)  # 100ms = clignotement lent (50ms = rapide)
         # Pour désactiver, changez True en False et commentez la ligne timer.start()
         # ====================================
@@ -1825,7 +1923,6 @@ class App(QMainWindow):
                 elif action == "exec":
                     self.actions_map_sub[name] = [(execute_command, [value], {}), value, action]
                 
-                # append_to_actions_file(CLIP_NOTES_FILE, name, value)
                 append_to_actions_file_json(CLIP_NOTES_FILE_JSON, name, value, action)
                 
                 dialog.accept()
@@ -1968,7 +2065,7 @@ class App(QMainWindow):
         
         # ===== NÉON BLEU MENU PRINCIPAL =====
         # Activer le néon bleu clignotant dès l'ouverture
-        self.current_popup.toggle_neon(NEON_PRINCIPAL)
+        self.current_popup.toggle_neon(CENTRAL_NEON)
         self.current_popup.timer.start(80)  # 100ms = clignotement lent
         # ====================================
 
