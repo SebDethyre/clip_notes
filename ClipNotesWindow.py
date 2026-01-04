@@ -78,6 +78,7 @@ COLOR_PALETTE = {
     "Magenta": (255, 0, 255),
     
     # Gris
+    "Gris menu": (50, 50, 50),      # Gris par défaut du menu
     "Gris": (150, 150, 150),
     "Gris clair": (200, 200, 200),
     "Gris foncé": (100, 100, 100),
@@ -89,6 +90,12 @@ ACTION_ZONE_COLORS = {
     "term": (100, 255, 150),  # Vert par défaut
     "exec": (100, 150, 255),  # Bleu par défaut
 }
+
+# Couleur du fond du menu radial (RGB)
+MENU_BACKGROUND_COLOR = (50, 50, 50)
+
+# Couleur du néon cosmétique (RGB)
+NEON_COLOR = (0, 255, 255)  # Cyan par défaut
 
 # Créer le dossier des miniatures s'il n'existe pas
 os.makedirs(THUMBNAILS_DIR, exist_ok=True)
@@ -146,7 +153,7 @@ def create_thumbnail(image_path, size=48):
 
 def load_config():
     """Charge la configuration depuis le fichier JSON"""
-    global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, ACTION_ZONE_COLORS, MENU_OPACITY
+    global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, ACTION_ZONE_COLORS, MENU_OPACITY, MENU_BACKGROUND_COLOR, NEON_COLOR
     
     if not os.path.exists(CONFIG_FILE):
         return
@@ -160,6 +167,14 @@ def load_config():
         ZONE_HOVER_OPACITY = config.get('zone_hover_opacity', ZONE_HOVER_OPACITY)
         SHOW_CENTRAL_ICON = config.get('show_central_icon', SHOW_CENTRAL_ICON)
         MENU_OPACITY = config.get('menu_opacity', MENU_OPACITY)
+        
+        # Charger la couleur du fond du menu
+        menu_bg = config.get('menu_background_color', MENU_BACKGROUND_COLOR)
+        MENU_BACKGROUND_COLOR = tuple(menu_bg) if isinstance(menu_bg, list) else menu_bg
+        
+        # Charger la couleur du néon
+        neon_col = config.get('neon_color', NEON_COLOR)
+        NEON_COLOR = tuple(neon_col) if isinstance(neon_col, list) else neon_col
         
         # Charger les couleurs et migrer l'ancien format si nécessaire
         loaded_colors = config.get('action_zone_colors', ACTION_ZONE_COLORS)
@@ -204,7 +219,9 @@ def save_config():
         'zone_hover_opacity': ZONE_HOVER_OPACITY,
         'show_central_icon': SHOW_CENTRAL_ICON,
         'action_zone_colors': ACTION_ZONE_COLORS,
-        'menu_opacity': MENU_OPACITY
+        'menu_opacity': MENU_OPACITY,
+        'menu_background_color': MENU_BACKGROUND_COLOR,
+        'neon_color': NEON_COLOR
     }
     
     try:
@@ -570,7 +587,7 @@ class RadialMenu(QWidget):
         self._neon_radius = self.keyframes[0]  
         self.neon_enabled = False
         self._neon_opacity = 120
-        self._neon_color = "cyan"
+        self._neon_color = NEON_COLOR
         self._widget_opacity = 1.0
         self._scale_factor = 0.1  # Démarrer petit pour l'animation
 
@@ -868,46 +885,7 @@ class RadialMenu(QWidget):
 
     def set_widget_opacity(self, value):
         self._widget_opacity = value
-        for i, btn in enumerate(self.buttons):
-            # Vérifier si c'est un bouton spécial (➕ ✏️ ➖)
-            label = self._button_labels[i] if i < len(self._button_labels) else ""
-            if label in SPECIAL_BUTTONS:
-                # Les boutons spéciaux restent transparents MAIS colorés au hover
-                btn.setStyleSheet(f"""
-                    QPushButton {{
-                        background-color: transparent;
-                        border-radius: {self.btn_size // 2}px;
-                        border: none;
-                    }}
-                    QPushButton:hover {{
-                        background-color: rgba(255, 255, 255, {int(100 * value)});
-                    }}
-                """)
-            elif "/" in label:
-                # Boutons avec images - pas de padding
-                btn.setStyleSheet(f"""
-                    QPushButton {{
-                        background-color: transparent;
-                        border-radius: {self.btn_size // 2}px;
-                        border: none;
-                        padding: 0px;
-                    }}
-                    QPushButton:hover {{
-                        background-color: rgba(255, 255, 255, {int(30 * value)});
-                    }}
-                """)
-            else:
-                # Les autres boutons ont un fond avec opacité
-                btn.setStyleSheet(f"""
-                    QPushButton {{
-                        background-color: rgba(255, 255, 255, {int(10 * value)});
-                        border-radius: {self.btn_size // 2}px;
-                        border: none;
-                    }}
-                    QPushButton:hover {{
-                        background-color: rgba(255, 255, 255, {int(100 * value)});
-                    }}
-                """)
+        # Ne plus modifier le style des boutons - l'opacité n'affecte que le fond maintenant
         self.update()
 
     def toggle_neon(self, enabled: bool):
@@ -1056,7 +1034,7 @@ class RadialMenu(QWidget):
         # Dessiner le fond global avec opacité contrôlée par MENU_OPACITY
         # _widget_opacity va de 0.0 à 1.0, on le convertit en alpha 0-255
         background_alpha = int(255 * self._widget_opacity)
-        painter.setBrush(QColor(50, 50, 50, background_alpha))
+        painter.setBrush(QColor(*MENU_BACKGROUND_COLOR, background_alpha))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(circle_rect)
         
@@ -1343,10 +1321,10 @@ class App(QMainWindow):
         
         # Réinitialiser le state
         self.current_popup.set_central_text("")
-        self.current_popup.set_neon_color("cyan")
+        self.current_popup.set_neon_color(NEON_COLOR)
         # ===== NÉON BLEU MENU PRINCIPAL =====
         # Pour activer le néon bleu clignotant sur le menu principal :
-        self.current_popup.toggle_neon(NEON_PRINCIPAL)
+        self.current_popup.toggle_neon(CENTRAL_NEON)
         # self.current_popup.timer.start(80)  # 100ms = clignotement lent (50ms = rapide)
         # Pour désactiver, changez True en False et commentez la ligne timer.start()
         # ====================================
@@ -1375,6 +1353,12 @@ class App(QMainWindow):
         
         # Mettre à jour les boutons du menu existant
         self.current_popup.update_buttons(self.buttons_sub)
+        
+        # Réappliquer l'opacité configurée
+        self.current_popup.set_widget_opacity(MENU_OPACITY / 100.0)
+        
+        # Réappliquer le néon central configuré
+        self.current_popup.toggle_neon(CENTRAL_NEON)
         
         # CRITIQUE: Forcer le mouse tracking après le refresh
         self.current_popup.setMouseTracking(True)
@@ -1998,7 +1982,7 @@ class App(QMainWindow):
         palette.setColor(QPalette.ColorRole.HighlightedText, QColor(35, 35, 35))
         dialog.setPalette(palette)
         
-        dialog.setFixedSize(400, 580)
+        dialog.setFixedSize(400, 680)
         
         if x is None or y is None:
             screen = QApplication.primaryScreen().geometry()
@@ -2098,6 +2082,50 @@ class App(QMainWindow):
         menu_opacity_layout.addWidget(menu_opacity_slider)
         layout.addLayout(menu_opacity_layout)
         
+        # Couleur du fond du menu
+        menu_bg_color_layout = QHBoxLayout()
+        menu_bg_color_label = QLabel("Couleur du fond")
+        menu_bg_color_label.setFixedWidth(150)
+        
+        menu_bg_color_button = QPushButton()
+        menu_bg_color_button.setFixedHeight(30)
+        menu_bg_color_button.setFixedWidth(150)
+        
+        # Variable pour stocker la couleur du fond du menu
+        selected_menu_bg_color = list(MENU_BACKGROUND_COLOR)
+        
+        def update_menu_bg_button():
+            r, g, b = selected_menu_bg_color
+            menu_bg_color_button.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: rgb({r}, {g}, {b});
+                    border: 2px solid rgba(255, 255, 255, 100);
+                    border-radius: 4px;
+                }}
+                QPushButton:hover {{
+                    border: 2px solid rgba(255, 255, 255, 200);
+                }}
+            """)
+            menu_bg_color_button.setText(f"RGB({r}, {g}, {b})")
+        
+        def pick_menu_bg_color():
+            r, g, b = selected_menu_bg_color
+            initial_color = QColor(r, g, b)
+            color = QColorDialog.getColor(initial_color, dialog, "Choisir la couleur du fond du menu")
+            if color.isValid():
+                selected_menu_bg_color[0] = color.red()
+                selected_menu_bg_color[1] = color.green()
+                selected_menu_bg_color[2] = color.blue()
+                update_menu_bg_button()
+        
+        menu_bg_color_button.clicked.connect(pick_menu_bg_color)
+        update_menu_bg_button()
+        
+        menu_bg_color_layout.addWidget(menu_bg_color_label)
+        menu_bg_color_layout.addWidget(menu_bg_color_button)
+        menu_bg_color_layout.addStretch()
+        layout.addLayout(menu_bg_color_layout)
+        
         # Slider pour opacité de base
         basic_opacity_layout = QVBoxLayout()
         basic_opacity_label = QLabel(f"Opacité des zones d'action {ZONE_BASIC_OPACITY}")
@@ -2137,6 +2165,50 @@ class App(QMainWindow):
         neon_checkbox.setChecked(CENTRAL_NEON)
         layout.addWidget(neon_checkbox)
         
+        # Couleur du néon
+        neon_color_layout = QHBoxLayout()
+        neon_color_label = QLabel("Couleur du néon")
+        neon_color_label.setFixedWidth(150)
+        
+        neon_color_button = QPushButton()
+        neon_color_button.setFixedHeight(30)
+        neon_color_button.setFixedWidth(150)
+        
+        # Variable pour stocker la couleur du néon
+        selected_neon_color = list(NEON_COLOR)
+        
+        def update_neon_button():
+            r, g, b = selected_neon_color
+            neon_color_button.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: rgb({r}, {g}, {b});
+                    border: 2px solid rgba(255, 255, 255, 100);
+                    border-radius: 4px;
+                }}
+                QPushButton:hover {{
+                    border: 2px solid rgba(255, 255, 255, 200);
+                }}
+            """)
+            neon_color_button.setText(f"RGB({r}, {g}, {b})")
+        
+        def pick_neon_color():
+            r, g, b = selected_neon_color
+            initial_color = QColor(r, g, b)
+            color = QColorDialog.getColor(initial_color, dialog, "Choisir la couleur du néon")
+            if color.isValid():
+                selected_neon_color[0] = color.red()
+                selected_neon_color[1] = color.green()
+                selected_neon_color[2] = color.blue()
+                update_neon_button()
+        
+        neon_color_button.clicked.connect(pick_neon_color)
+        update_neon_button()
+        
+        neon_color_layout.addWidget(neon_color_label)
+        neon_color_layout.addWidget(neon_color_button)
+        neon_color_layout.addStretch()
+        layout.addLayout(neon_color_layout)
+        
         # Boutons Sauvegarder et Annuler
         layout.addStretch()
         buttons_layout = QHBoxLayout()
@@ -2175,7 +2247,7 @@ class App(QMainWindow):
         """)
         
         def save_and_close():
-            global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, ACTION_ZONE_COLORS, MENU_OPACITY
+            global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, ACTION_ZONE_COLORS, MENU_OPACITY, MENU_BACKGROUND_COLOR, NEON_COLOR
             
             # Mettre à jour les variables globales
             ACTION_ZONE_COLORS["copy"] = selected_colors["copy"]
@@ -2184,6 +2256,8 @@ class App(QMainWindow):
             ZONE_BASIC_OPACITY = basic_opacity_slider.value()
             ZONE_HOVER_OPACITY = hover_opacity_slider.value()
             MENU_OPACITY = menu_opacity_slider.value()
+            MENU_BACKGROUND_COLOR = tuple(selected_menu_bg_color)
+            NEON_COLOR = tuple(selected_neon_color)
             SHOW_CENTRAL_ICON = icon_checkbox.isChecked()
             CENTRAL_NEON = neon_checkbox.isChecked()
             

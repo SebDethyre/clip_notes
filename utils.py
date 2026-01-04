@@ -70,8 +70,14 @@ colors = {
     "rose": (255, 192, 203)
 }
 
-def couleur_avec_opacite(nom_couleur, opacite):
-    r, g, b = colors[nom_couleur]
+def couleur_avec_opacite(couleur, opacite):
+    """Accepte soit un nom de couleur (str) soit un tuple RGB (r, g, b)"""
+    if isinstance(couleur, str):
+        # Ancien format : nom de couleur
+        r, g, b = colors[couleur]
+    else:
+        # Nouveau format : tuple RGB
+        r, g, b = couleur
     return QColor(r, g, b, opacite)
 
 def emoji_pixmap(emoji_char, size=32):
