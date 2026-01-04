@@ -97,6 +97,9 @@ MENU_BACKGROUND_COLOR = (50, 50, 50)
 # Couleur du néon cosmétique (RGB)
 NEON_COLOR = (0, 255, 255)  # Cyan par défaut
 
+# Vitesse du battement du néon (en millisecondes)
+NEON_SPEED = 80  # Plus petit = plus rapide
+
 # Créer le dossier des miniatures s'il n'existe pas
 os.makedirs(THUMBNAILS_DIR, exist_ok=True)
 
@@ -153,7 +156,7 @@ def create_thumbnail(image_path, size=48):
 
 def load_config():
     """Charge la configuration depuis le fichier JSON"""
-    global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, ACTION_ZONE_COLORS, MENU_OPACITY, MENU_BACKGROUND_COLOR, NEON_COLOR
+    global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, ACTION_ZONE_COLORS, MENU_OPACITY, MENU_BACKGROUND_COLOR, NEON_COLOR, NEON_SPEED
     
     if not os.path.exists(CONFIG_FILE):
         return
@@ -167,6 +170,7 @@ def load_config():
         ZONE_HOVER_OPACITY = config.get('zone_hover_opacity', ZONE_HOVER_OPACITY)
         SHOW_CENTRAL_ICON = config.get('show_central_icon', SHOW_CENTRAL_ICON)
         MENU_OPACITY = config.get('menu_opacity', MENU_OPACITY)
+        NEON_SPEED = config.get('neon_speed', NEON_SPEED)
         
         # Charger la couleur du fond du menu
         menu_bg = config.get('menu_background_color', MENU_BACKGROUND_COLOR)
@@ -221,7 +225,8 @@ def save_config():
         'action_zone_colors': ACTION_ZONE_COLORS,
         'menu_opacity': MENU_OPACITY,
         'menu_background_color': MENU_BACKGROUND_COLOR,
-        'neon_color': NEON_COLOR
+        'neon_color': NEON_COLOR,
+        'neon_speed': NEON_SPEED
     }
     
     try:
@@ -1359,6 +1364,10 @@ class App(QMainWindow):
         
         # Réappliquer le néon central configuré
         self.current_popup.toggle_neon(CENTRAL_NEON)
+        if CENTRAL_NEON:
+            # Redémarrer le timer avec la nouvelle vitesse
+            self.current_popup.timer.stop()
+            self.current_popup.timer.start(NEON_SPEED)
         
         # CRITIQUE: Forcer le mouse tracking après le refresh
         self.current_popup.setMouseTracking(True)
@@ -1982,7 +1991,7 @@ class App(QMainWindow):
         palette.setColor(QPalette.ColorRole.HighlightedText, QColor(35, 35, 35))
         dialog.setPalette(palette)
         
-        dialog.setFixedSize(400, 680)
+        dialog.setFixedSize(400, 720)
         
         if x is None or y is None:
             screen = QApplication.primaryScreen().geometry()
@@ -2209,6 +2218,18 @@ class App(QMainWindow):
         neon_color_layout.addStretch()
         layout.addLayout(neon_color_layout)
         
+        # Slider pour la vitesse du néon
+        neon_speed_layout = QVBoxLayout()
+        neon_speed_label = QLabel(f"Vitesse du néon: {NEON_SPEED}ms")
+        neon_speed_slider = QSlider(Qt.Orientation.Horizontal)
+        neon_speed_slider.setMinimum(20)   # Très rapide
+        neon_speed_slider.setMaximum(200)  # Très lent
+        neon_speed_slider.setValue(NEON_SPEED)
+        neon_speed_slider.valueChanged.connect(lambda v: neon_speed_label.setText(f"Vitesse du néon: {v}ms"))
+        neon_speed_layout.addWidget(neon_speed_label)
+        neon_speed_layout.addWidget(neon_speed_slider)
+        layout.addLayout(neon_speed_layout)
+        
         # Boutons Sauvegarder et Annuler
         layout.addStretch()
         buttons_layout = QHBoxLayout()
@@ -2247,7 +2268,7 @@ class App(QMainWindow):
         """)
         
         def save_and_close():
-            global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, ACTION_ZONE_COLORS, MENU_OPACITY, MENU_BACKGROUND_COLOR, NEON_COLOR
+            global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, ACTION_ZONE_COLORS, MENU_OPACITY, MENU_BACKGROUND_COLOR, NEON_COLOR, NEON_SPEED
             
             # Mettre à jour les variables globales
             ACTION_ZONE_COLORS["copy"] = selected_colors["copy"]
@@ -2258,6 +2279,7 @@ class App(QMainWindow):
             MENU_OPACITY = menu_opacity_slider.value()
             MENU_BACKGROUND_COLOR = tuple(selected_menu_bg_color)
             NEON_COLOR = tuple(selected_neon_color)
+            NEON_SPEED = neon_speed_slider.value()
             SHOW_CENTRAL_ICON = icon_checkbox.isChecked()
             CENTRAL_NEON = neon_checkbox.isChecked()
             
@@ -2472,7 +2494,7 @@ class App(QMainWindow):
         # ===== NÉON BLEU MENU PRINCIPAL =====
         # Activer le néon bleu clignotant dès l'ouverture
         self.current_popup.toggle_neon(CENTRAL_NEON)
-        self.current_popup.timer.start(80)  # 100ms = clignotement lent
+        self.current_popup.timer.start(NEON_SPEED)
         # ====================================
 
 if __name__ == "__main__":
