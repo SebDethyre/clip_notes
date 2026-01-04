@@ -2165,12 +2165,12 @@ class App(QMainWindow):
         layout.addWidget(options_label)
         
         # Checkbox pour l'icône centrale
-        icon_checkbox = QCheckBox("Afficher l'icône du clip survolé au centre")
+        icon_checkbox = QCheckBox("Afficher l'icône du clip survolé")
         icon_checkbox.setChecked(SHOW_CENTRAL_ICON)
         layout.addWidget(icon_checkbox)
         
         # Checkbox pour le néon central
-        neon_checkbox = QCheckBox("Afficher le néon cosmétique au centre")
+        neon_checkbox = QCheckBox("Afficher le néon cosmétique")
         neon_checkbox.setChecked(CENTRAL_NEON)
         layout.addWidget(neon_checkbox)
         
