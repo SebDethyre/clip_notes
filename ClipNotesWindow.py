@@ -2222,7 +2222,7 @@ class App(QMainWindow):
         neon_speed_layout = QVBoxLayout()
         neon_speed_label = QLabel(f"Vitesse du néon: {NEON_SPEED}ms")
         neon_speed_slider = QSlider(Qt.Orientation.Horizontal)
-        neon_speed_slider.setMinimum(20)   # Très rapide
+        neon_speed_slider.setMinimum(1)   # Très rapide
         neon_speed_slider.setMaximum(200)  # Très lent
         neon_speed_slider.setValue(NEON_SPEED)
         neon_speed_slider.valueChanged.connect(lambda v: neon_speed_label.setText(f"Vitesse du néon: {v}ms"))
