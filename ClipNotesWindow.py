@@ -27,7 +27,7 @@ CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.json")
 STORED_CLIPS_FILE = os.path.join(SCRIPT_DIR, "stored_clips.json")
 
 NEON_PRINCIPAL=False
-CENTRAL_NEON = False  # Afficher le néon cosmétique au centre
+CENTRAL_NEON = False  # Afficher le néon au centre
 ZONE_BASIC_OPACITY = 15
 ZONE_HOVER_OPACITY = 45
 SHOW_CENTRAL_ICON = True  # Afficher l'icône du clip survolé au centre
@@ -96,7 +96,7 @@ ACTION_ZONE_COLORS = {
 # Couleur du fond du menu radial (RGB)
 MENU_BACKGROUND_COLOR = (50, 50, 50)
 
-# Couleur du néon cosmétique (RGB)
+# Couleur du néon central (RGB)
 NEON_COLOR = (0, 255, 255)  # Cyan par défaut
 
 # Vitesse du battement du néon (en millisecondes)
@@ -499,7 +499,6 @@ class CursorTracker(QWidget):
             self.on_click_callback()
         else:
             self.close()
-
 
 
 # === NOUVELLE CLASSE: FENÊTRE TOOLTIP INVISIBLE ===
@@ -2651,7 +2650,7 @@ class App(QMainWindow):
         palette.setColor(QPalette.ColorRole.HighlightedText, QColor(35, 35, 35))
         dialog.setPalette(palette)
         
-        dialog.setFixedSize(400, 720)
+        dialog.setFixedSize(400, 740)
         
         if x is None or y is None:
             screen = QApplication.primaryScreen().geometry()
@@ -2667,94 +2666,21 @@ class App(QMainWindow):
         layout.setContentsMargins(20, 20, 20, 20)
         
         # Titre
-        title = QLabel("⚙️ Configuration")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: white;")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
+        # title = QLabel("⚙️ Configuration")
+        # title.setStyleSheet("font-size: 18px; font-weight: bold; color: white;")
+        # title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # layout.addWidget(title)
         
         # --- Couleurs des zones ---
-        colors_label = QLabel("🎨 Couleurs des zones")
+        colors_label = QLabel("🎨 Couleurs")
         colors_label.setStyleSheet("font-weight: bold; color: white; margin-top: 10px;")
         layout.addWidget(colors_label)
-        
-        # Variables pour stocker les couleurs sélectionnées
-        selected_colors = {
-            "copy": ACTION_ZONE_COLORS["copy"],
-            "term": ACTION_ZONE_COLORS["term"],
-            "exec": ACTION_ZONE_COLORS["exec"]
-        }
-        
-        def create_color_button(action_name, label_text, rgb):
-            """Crée un bouton coloré qui ouvre un color picker"""
-            layout_h = QHBoxLayout()
-            label = QLabel(label_text)
-            label.setFixedWidth(100)
-            
-            button = QPushButton()
-            button.setFixedHeight(30)
-            button.setFixedWidth(150)
-            
-            def update_button_color():
-                r, g, b = selected_colors[action_name]
-                button.setStyleSheet(f"""
-                    QPushButton {{
-                        background-color: rgb({r}, {g}, {b});
-                        border: 2px solid rgba(255, 255, 255, 100);
-                        border-radius: 4px;
-                    }}
-                    QPushButton:hover {{
-                        border: 2px solid rgba(255, 255, 255, 200);
-                    }}
-                """)
-                button.setText(f"RGB({r}, {g}, {b})")
-            
-            def pick_color():
-                r, g, b = selected_colors[action_name]
-                initial_color = QColor(r, g, b)
-                color = QColorDialog.getColor(initial_color, dialog, f"Choisir la couleur pour {label_text}")
-                if color.isValid():
-                    selected_colors[action_name] = (color.red(), color.green(), color.blue())
-                    update_button_color()
-            
-            button.clicked.connect(pick_color)
-            update_button_color()
-            
-            layout_h.addWidget(label)
-            layout_h.addWidget(button)
-            layout_h.addStretch()
-            return layout_h
-        
-        # Boutons pour chaque action
-        copy_layout = create_color_button("copy", "✂️ Copie", ACTION_ZONE_COLORS["copy"])
-        layout.addLayout(copy_layout)
-        
-        term_layout = create_color_button("term", "💻 Terminal", ACTION_ZONE_COLORS["term"])
-        layout.addLayout(term_layout)
-        
-        exec_layout = create_color_button("exec", "🚀 Exécution", ACTION_ZONE_COLORS["exec"])
-        layout.addLayout(exec_layout)
-        
-        # --- Opacités ---
-        opacity_label = QLabel("🔆 Opacités")
-        opacity_label.setStyleSheet("font-weight: bold; color: white; margin-top: 10px;")
-        layout.addWidget(opacity_label)
-        
-        # Slider pour opacité du menu
-        menu_opacity_layout = QVBoxLayout()
-        menu_opacity_label = QLabel(f"Opacité générale {MENU_OPACITY}")
-        menu_opacity_slider = QSlider(Qt.Orientation.Horizontal)
-        menu_opacity_slider.setMinimum(0)
-        menu_opacity_slider.setMaximum(100)
-        menu_opacity_slider.setValue(MENU_OPACITY)
-        menu_opacity_slider.valueChanged.connect(lambda v: menu_opacity_label.setText(f"Opacité générale {v}"))
-        menu_opacity_layout.addWidget(menu_opacity_label)
-        menu_opacity_layout.addWidget(menu_opacity_slider)
-        layout.addLayout(menu_opacity_layout)
-        
+               
         # Couleur du fond du menu
         menu_bg_color_layout = QHBoxLayout()
-        menu_bg_color_label = QLabel("Couleur du fond")
-        menu_bg_color_label.setFixedWidth(150)
+        menu_bg_color_label = QLabel("🔘 Général")
+        # menu_bg_color_label.setStyleSheet("margin-top: 10px;")
+        menu_bg_color_label.setFixedWidth(140)
         
         menu_bg_color_button = QPushButton()
         menu_bg_color_button.setFixedHeight(30)
@@ -2775,12 +2701,12 @@ class App(QMainWindow):
                     border: 2px solid rgba(255, 255, 255, 200);
                 }}
             """)
-            menu_bg_color_button.setText(f"RGB({r}, {g}, {b})")
+            # menu_bg_color_button.setText(f"RGB({r}, {g}, {b})")
         
         def pick_menu_bg_color():
             r, g, b = selected_menu_bg_color
             initial_color = QColor(r, g, b)
-            color = QColorDialog.getColor(initial_color, dialog, "Choisir la couleur du fond du menu")
+            color = QColorDialog.getColor(initial_color, dialog, "Couleur de fond du menu")
             if color.isValid():
                 selected_menu_bg_color[0] = color.red()
                 selected_menu_bg_color[1] = color.green()
@@ -2792,31 +2718,123 @@ class App(QMainWindow):
         
         menu_bg_color_layout.addWidget(menu_bg_color_label)
         menu_bg_color_layout.addWidget(menu_bg_color_button)
+        menu_bg_color_layout.setContentsMargins(20, 0, 0, 0)
         menu_bg_color_layout.addStretch()
         layout.addLayout(menu_bg_color_layout)
+
+        colors_zones_label = QLabel("zones par actions")
+        colors_zones_label.setStyleSheet("font-style: italic; color: white; margin-left: 35px;")
+        layout.addWidget(colors_zones_label)
+
+        # Variables pour stocker les couleurs sélectionnées
+        selected_colors = {
+            "copy": ACTION_ZONE_COLORS["copy"],
+            "term": ACTION_ZONE_COLORS["term"],
+            "exec": ACTION_ZONE_COLORS["exec"]
+        }
         
+        def create_color_button(action_name, label_text, rgb):
+            """Crée un bouton coloré qui ouvre un color picker"""
+            layout_h = QHBoxLayout()
+            label = QLabel(label_text)
+            label.setFixedWidth(140)
+            
+            button = QPushButton()
+            button.setFixedHeight(30)
+            button.setFixedWidth(150)
+            
+            def update_button_color():
+                r, g, b = selected_colors[action_name]
+                button.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: rgb({r}, {g}, {b});
+                        border: 2px solid rgba(255, 255, 255, 100);
+                        border-radius: 4px;
+                    }}
+                    QPushButton:hover {{
+                        border: 2px solid rgba(255, 255, 255, 200);
+                    }}
+                """)
+                # button.setText(f"RGB({r}, {g}, {b})")
+            
+            def pick_color():
+                r, g, b = selected_colors[action_name]
+                initial_color = QColor(r, g, b)
+                color = QColorDialog.getColor(initial_color, dialog, f"Couleur pour {label_text}")
+                if color.isValid():
+                    selected_colors[action_name] = (color.red(), color.green(), color.blue())
+                    update_button_color()
+            
+            button.clicked.connect(pick_color)
+            update_button_color()
+            
+            layout_h.addWidget(label)
+            layout_h.addWidget(button)
+            layout_h.setContentsMargins(20, 0, 0, 0)
+            layout_h.addStretch()
+            return layout_h
+        
+        # Boutons pour chaque action
+        copy_layout = create_color_button("copy", "✂️ Copie", ACTION_ZONE_COLORS["copy"])
+        layout.addLayout(copy_layout)
+        
+        term_layout = create_color_button("term", "💻 Terminal", ACTION_ZONE_COLORS["term"])
+        layout.addLayout(term_layout)
+        
+        exec_layout = create_color_button("exec", "🚀 Exécution", ACTION_ZONE_COLORS["exec"])
+        layout.addLayout(exec_layout)
+
+        # --- Opacités ---
+        opacity_label = QLabel("🔆 Opacités")
+        opacity_label.setStyleSheet("font-weight: bold; color: white; margin-top: 10px;")
+        layout.addWidget(opacity_label)
+        
+        # Slider pour opacité du menu
+        menu_opacity_layout = QVBoxLayout()
+        menu_opacity_label = QLabel(f"Opacité générale ➤ <b>{MENU_OPACITY}</b>")
+        # menu_opacity_label.setStyleSheet("color: white; margin-left: 20px;")
+        menu_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        menu_opacity_slider.setMinimum(0)
+        menu_opacity_slider.setMaximum(100)
+        menu_opacity_slider.setValue(MENU_OPACITY)
+        menu_opacity_slider.valueChanged.connect(
+            lambda v: menu_opacity_label.setText(f"Opacité générale ➤ <b>{v}</b>")
+        )
+        menu_opacity_layout.addWidget(menu_opacity_label)
+        menu_opacity_layout.addWidget(menu_opacity_slider)
+        menu_opacity_layout.setContentsMargins(20, 0, 20, 0)
+        layout.addLayout(menu_opacity_layout)
+               
         # Slider pour opacité de base
         basic_opacity_layout = QVBoxLayout()
-        basic_opacity_label = QLabel(f"Opacité des zones d'action {ZONE_BASIC_OPACITY}")
+        basic_opacity_label = QLabel(f"Opacité des zones ➤ <b>{ZONE_BASIC_OPACITY}</b>")
+        # basic_opacity_label.setStyleSheet("color: white; margin-left: 20px;")
         basic_opacity_slider = QSlider(Qt.Orientation.Horizontal)
         basic_opacity_slider.setMinimum(0)
         basic_opacity_slider.setMaximum(100)
         basic_opacity_slider.setValue(ZONE_BASIC_OPACITY)
-        basic_opacity_slider.valueChanged.connect(lambda v: basic_opacity_label.setText(f"Opacité des zones d'action {v}"))
+        basic_opacity_slider.valueChanged.connect(
+            lambda v: basic_opacity_label.setText(f"Opacité des zones ➤ <b>{v}</b>")
+        )
         basic_opacity_layout.addWidget(basic_opacity_label)
         basic_opacity_layout.addWidget(basic_opacity_slider)
+        basic_opacity_layout.setContentsMargins(20, 0, 20, 0)
         layout.addLayout(basic_opacity_layout)
         
         # Slider pour opacité au survol
         hover_opacity_layout = QVBoxLayout()
-        hover_opacity_label = QLabel(f"Opacité des zones d'action au survol {ZONE_HOVER_OPACITY}")
+        hover_opacity_label = QLabel(f"Opacité des zones au survol ➤ <b>{ZONE_HOVER_OPACITY}</b>")
+        # hover_opacity_label.setStyleSheet("color: white; margin-left: 20px;")
         hover_opacity_slider = QSlider(Qt.Orientation.Horizontal)
         hover_opacity_slider.setMinimum(0)
         hover_opacity_slider.setMaximum(100)
         hover_opacity_slider.setValue(ZONE_HOVER_OPACITY)
-        hover_opacity_slider.valueChanged.connect(lambda v: hover_opacity_label.setText(f"Opacité des zones d'action au survol {v}"))
+        hover_opacity_slider.valueChanged.connect(
+            lambda v: hover_opacity_label.setText(f"Opacité des zones au survol ➤ <b>{v}</b>")
+        )
         hover_opacity_layout.addWidget(hover_opacity_label)
         hover_opacity_layout.addWidget(hover_opacity_slider)
+        hover_opacity_layout.setContentsMargins(20, 0, 20, 0)
         layout.addLayout(hover_opacity_layout)
         
         # --- Options ---
@@ -2827,17 +2845,41 @@ class App(QMainWindow):
         # Checkbox pour l'icône centrale
         icon_checkbox = QCheckBox("Afficher l'icône du clip survolé")
         icon_checkbox.setChecked(SHOW_CENTRAL_ICON)
+        icon_checkbox.setStyleSheet("""
+            QCheckBox::indicator {
+                background-color: white;
+                border: 1px solid black;
+                width: 14px;
+                height: 14px;
+                margin-left: 20px;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #ff8c00;
+            }
+            """)
         layout.addWidget(icon_checkbox)
         
         # Checkbox pour le néon central
-        neon_checkbox = QCheckBox("Afficher le néon cosmétique")
+        neon_checkbox = QCheckBox("Afficher le néon central")
         neon_checkbox.setChecked(CENTRAL_NEON)
+        neon_checkbox.setStyleSheet("""
+            QCheckBox::indicator {
+                background-color: white;
+                border: 1px solid black;
+                width: 14px;
+                height: 14px;
+                margin-left: 20px;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #ff8c00;
+            }
+            """)
         layout.addWidget(neon_checkbox)
         
         # Couleur du néon
         neon_color_layout = QHBoxLayout()
         neon_color_label = QLabel("Couleur du néon")
-        neon_color_label.setFixedWidth(150)
+        neon_color_label.setFixedWidth(140)
         
         neon_color_button = QPushButton()
         neon_color_button.setFixedHeight(30)
@@ -2858,12 +2900,12 @@ class App(QMainWindow):
                     border: 2px solid rgba(255, 255, 255, 200);
                 }}
             """)
-            neon_color_button.setText(f"RGB({r}, {g}, {b})")
+            # neon_color_button.setText(f"RGB({r}, {g}, {b})")
         
         def pick_neon_color():
             r, g, b = selected_neon_color
             initial_color = QColor(r, g, b)
-            color = QColorDialog.getColor(initial_color, dialog, "Choisir la couleur du néon")
+            color = QColorDialog.getColor(initial_color, dialog, "Couleur du néon")
             if color.isValid():
                 selected_neon_color[0] = color.red()
                 selected_neon_color[1] = color.green()
@@ -2875,20 +2917,24 @@ class App(QMainWindow):
         
         neon_color_layout.addWidget(neon_color_label)
         neon_color_layout.addWidget(neon_color_button)
+        neon_color_layout.setContentsMargins(20, 0, 0, 0)
         neon_color_layout.addStretch()
         layout.addLayout(neon_color_layout)
         
         # Slider pour la vitesse du néon
         neon_speed_layout = QVBoxLayout()
-        neon_speed_label = QLabel(f"Vitesse du néon: {NEON_SPEED}ms")
+        neon_speed_label = QLabel(f"Vitesse du néon ➤ <b>{NEON_SPEED}</b> ms")
         neon_speed_slider = QSlider(Qt.Orientation.Horizontal)
         # Bornes des vitesses
         neon_speed_slider.setMinimum(1)
         neon_speed_slider.setMaximum(200)
         neon_speed_slider.setValue(NEON_SPEED)
-        neon_speed_slider.valueChanged.connect(lambda v: neon_speed_label.setText(f"Vitesse du néon: {v}ms"))
+        neon_speed_slider.valueChanged.connect(
+            lambda v: neon_speed_label.setText(f"Vitesse du néon ➤ <b>{v}</b> ms")
+        )
         neon_speed_layout.addWidget(neon_speed_label)
         neon_speed_layout.addWidget(neon_speed_slider)
+        neon_speed_layout.setContentsMargins(20, 0, 20, 0)
         layout.addLayout(neon_speed_layout)
         
         # Boutons Sauvegarder et Annuler
@@ -3176,7 +3222,7 @@ if __name__ == "__main__":
     global tracker
     tracker = CursorTracker()
     tracker.show()
-    #     # AJOUTER LA FENÊTRE DE CALIBRATION
+    ## AJOUTER LA FENÊTRE DE CALIBRATION
     # calibration_window = CalibrationWindow(tracker)
     # calibration_window.show()
     
