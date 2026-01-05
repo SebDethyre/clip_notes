@@ -6,8 +6,8 @@ import os
 import getpass
 import json
 from PyQt6.QtGui import QCursor
-from PyQt6.QtGui import QPainter, QColor, QIcon, QRadialGradient, QFont, QPalette, QPixmap, QPainterPath
-from PyQt6.QtCore import Qt, QSize, QTimer, QPropertyAnimation, QRect, QEasingCurve, QVariantAnimation, QEvent, QPointF
+from PyQt6.QtGui import QPainter, QColor, QIcon, QRadialGradient, QFont, QPalette, QPixmap, QPainterPath, QPen
+from PyQt6.QtCore import Qt, QSize, QTimer, QPropertyAnimation, QRect, QEasingCurve, QVariantAnimation, QEvent, QPointF, QObject
 from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QMainWindow, QVBoxLayout, QHBoxLayout, QSlider
 from PyQt6.QtWidgets import QDialog, QLineEdit, QMessageBox, QTextEdit, QToolTip, QLabel, QFileDialog, QComboBox, QCheckBox, QColorDialog, QScrollArea
 from PIL import Image, ImageDraw
@@ -586,6 +586,43 @@ class TooltipWindow(QWidget):
         self.move(tooltip_x, tooltip_y)
 
 
+class RadialKeyboardListener(QObject):
+    """Listener global pour intercepter les événements clavier"""
+    def __init__(self, radial_menu):
+        super().__init__()
+        self.radial_menu = radial_menu
+
+    def eventFilter(self, obj, event):
+        # Seulement si le menu est visible
+        if not self.radial_menu.isVisible():
+            return False
+
+        if event.type() == QEvent.Type.KeyPress:
+            key = event.key()
+
+            # Flèche droite
+            if key == Qt.Key.Key_Right:
+                self.radial_menu._handle_key_right()
+                return True
+            
+            # Flèche gauche
+            elif key == Qt.Key.Key_Left:
+                self.radial_menu._handle_key_left()
+                return True
+            
+            # Entrée
+            elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
+                self.radial_menu._handle_key_enter()
+                return True
+            
+            # Escape
+            elif key == Qt.Key.Key_Escape:
+                self.radial_menu._handle_key_escape()
+                return True
+
+        return False
+
+
 class RadialMenu(QWidget):
     def __init__(self, x, y, buttons, parent=None, sub=False, tracker=None, app_instance=None):
         super().__init__(parent)  # Ne jamais utiliser tracker comme parent
@@ -653,12 +690,20 @@ class RadialMenu(QWidget):
         self._central_icon = None  # Pixmap de l'icône centrale à afficher
         self._action_badges = {}  # Dictionnaire des badges globaux par action
         
+        # Navigation au clavier
+        self._focused_index = -1  # -1 = pas de focus visible
+        self._keyboard_used = False  # Pour savoir si le clavier a été utilisé
+        
         # Activer le tracking de la souris pour détecter le hover
         self.setMouseTracking(True)
         
         
         # === NOUVELLE FENÊTRE TOOLTIP ===
         self.tooltip_window = TooltipWindow(parent=self)
+        
+        # === LISTENER CLAVIER ===
+        self.keyboard_listener = RadialKeyboardListener(self)
+        QApplication.instance().installEventFilter(self.keyboard_listener)
         
         # Créer les boutons initiaux
         self._create_buttons(buttons)
@@ -858,6 +903,10 @@ class RadialMenu(QWidget):
         
         # Repositionner la fenêtre tooltip
         self._update_tooltip_position()
+        
+        # Réinitialiser le focus clavier
+        self._focused_index = -1
+        self._keyboard_used = False
         
         self.update()
 
@@ -1070,6 +1119,83 @@ class RadialMenu(QWidget):
             
             self.update()
     
+    def _handle_key_right(self):
+        """Gère la flèche droite"""
+        if not self.buttons:
+            return
+        
+        # Première utilisation : initialiser le focus
+        if not self._keyboard_used:
+            self._keyboard_used = True
+            self._initialize_focus()
+        else:
+            # Aller au bouton suivant (sens horaire)
+            self._focused_index = (self._focused_index + 1) % len(self.buttons)
+        
+        self._show_focused_button_info()
+        self.update()
+    
+    def _handle_key_left(self):
+        """Gère la flèche gauche"""
+        if not self.buttons:
+            return
+        
+        # Première utilisation : initialiser le focus
+        if not self._keyboard_used:
+            self._keyboard_used = True
+            self._initialize_focus()
+        else:
+            # Aller au bouton précédent (sens anti-horaire)
+            self._focused_index = (self._focused_index - 1) % len(self.buttons)
+        
+        self._show_focused_button_info()
+        self.update()
+    
+    def _handle_key_enter(self):
+        """Gère la touche Entrée"""
+        if 0 <= self._focused_index < len(self.buttons):
+            self.buttons[self._focused_index].click()
+    
+    def _handle_key_escape(self):
+        """Gère la touche Escape"""
+        self.handle_click_outside()
+    
+    def _initialize_focus(self):
+        """Initialise le focus sur le premier clip ou sur ➕"""
+        # Les 5 boutons spéciaux sont toujours présents : 📦 ⚙️ ➖ ✏️ ➕
+        # S'il y a plus de 5 boutons, les clips commencent à l'index 5
+        if len(self.buttons) > 5:
+            # Il y a des clips, aller au premier clip
+            self._focused_index = 5
+        else:
+            # Pas de clips, trouver le bouton ➕
+            for i, label in enumerate(self._button_labels):
+                if label == "➕":
+                    self._focused_index = i
+                    break
+    
+    def _show_focused_button_info(self):
+        """Affiche les infos du bouton focusé"""
+        if not (0 <= self._focused_index < len(self.buttons)):
+            return
+        
+        # Afficher le tooltip
+        focused_button = self.buttons[self._focused_index]
+        if focused_button in self._tooltips:
+            tooltip_text = self._tooltips[focused_button]
+            self.tooltip_window.show_message(tooltip_text, 0)
+            self._update_tooltip_position()
+        
+        # Afficher l'icône centrale si activé
+        if SHOW_CENTRAL_ICON and self._focused_index < len(self._button_labels):
+            label = self._button_labels[self._focused_index]
+            if "/" in label:
+                self._central_icon = image_pixmap(label, 64)
+            elif is_emoji(label):
+                self._central_icon = emoji_pixmap(label, 48)
+            else:
+                self._central_icon = text_pixmap(label, 48)
+    
     def reveal_buttons(self):
         for btn in self.buttons:
             btn.setVisible(True)
@@ -1164,6 +1290,32 @@ class RadialMenu(QWidget):
             font = QFont("Arial", int(24 * self._scale_factor))
             painter.setFont(font)
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._central_text)
+        
+        # Dessiner le cercle de focus (seulement si le clavier a été utilisé)
+        if self._focused_index >= 0 and self._focused_index < len(self.buttons):
+            # Calculer la position du bouton focusé
+            angle_step = 360 / len(self.buttons)
+            angle = math.radians(self._focused_index * angle_step)
+            center_offset = self.widget_size // 2
+            
+            # Position du centre du bouton focusé (scalée)
+            btn_center_x = center_offset + (self.radius * math.cos(angle)) * self._scale_factor
+            btn_center_y = center_offset + (self.radius * math.sin(angle)) * self._scale_factor
+            
+            # Rayon du cercle de focus
+            focus_radius = int((self.btn_size // 2 + 5) * self._scale_factor)
+            
+            # Dessiner le cercle de fond
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(255, 255, 255, 60))
+            painter.drawEllipse(QPointF(btn_center_x, btn_center_y), focus_radius, focus_radius)
+            
+            # Dessiner le contour
+            pen = QPen(QColor(255, 255, 255, 200))
+            pen.setWidth(3)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(QPointF(btn_center_x, btn_center_y), focus_radius, focus_radius)
 
 
     def handle_click_outside(self):
@@ -1311,6 +1463,10 @@ class RadialMenu(QWidget):
     
     def _on_close_finished(self):
         """Appelé quand l'animation de fermeture est terminée"""
+        # Désinstaller le listener clavier
+        if hasattr(self, 'keyboard_listener'):
+            QApplication.instance().removeEventFilter(self.keyboard_listener)
+        
         # Fermer la fenêtre tooltip
         self.tooltip_window.close()
         if self.tracker:
