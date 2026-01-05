@@ -1925,14 +1925,13 @@ class App(QMainWindow):
         layout.addWidget(value_input)
         layout.addWidget(submit_button)
         layout.addWidget(help_label)
-        
+
         def get_pictures_directory():
             """
             Retourne le répertoire Images/Pictures de l'utilisateur de manière robuste.
             """
             home = os.path.expanduser("~")
-
-            # 1️⃣ Essayer via xdg-user-dir (le plus fiable)
+            # 1 via xdg-user-dir
             try:
                 result = subprocess.run(
                     ["xdg-user-dir", "PICTURES"],
@@ -1945,8 +1944,7 @@ class App(QMainWindow):
                     return path
             except Exception:
                 pass
-
-            # 2️⃣ Fallbacks classiques
+            # 2 Fallbacks classiques
             candidates = [
                 os.path.join(home, "Pictures"),
                 os.path.join(home, "Images"),
@@ -1955,8 +1953,7 @@ class App(QMainWindow):
             for path in candidates:
                 if os.path.isdir(path):
                     return path
-
-            # 3️⃣ Dernier recours : HOME
+            # 3 Dernier recours : HOME
             return home
         
         def open_image_selector():

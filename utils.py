@@ -19,16 +19,16 @@ def is_emoji(s):
         return False
     
     # Liste de caractères spéciaux souvent utilisés comme emojis
-    special_chars = {
-        '⭕', '➕', '➖', '✖', '✔', '✓', '❌', '⚠', '⚡', '★', '☆',
-        '♥', '♦', '♣', '♠', '◆', '◇', '○', '●', '◎', '◉', '□', '■',
-        '▲', '▼', '◀', '▶', '△', '▽', '◁', '▷', '☐', '☑', '☒',
-        '+', '-', '×', '÷', '=', '≠', '≈', '~', '*', '#', '@', '&',
-        '!', '?', '$', '%', '^', '<', '>', '|', '\\'
-    }
+    # special_chars = {
+    #     '⭕', '➕', '➖', '✖', '✔', '✓', '❌', '⚠', '⚡', '★', '☆',
+    #     '♥', '♦', '♣', '♠', '◆', '◇', '○', '●', '◎', '◉', '□', '■',
+    #     '▲', '▼', '◀', '▶', '△', '▽', '◁', '▷', '☐', '☑', '☒',
+    #     '+', '-', '×', '÷', '=', '≠', '≈', '~', '*', '#', '@', '&',
+    #     '!', '?', '$', '%', '^', '<', '>', '|', '\\'
+    # }
     
-    if s in special_chars:
-        return True
+    # if s in special_chars:
+    #     return True
     
     # Approche ultra-permissive : toutes les plages Unicode possibles d'emojis et symboles
     for char in s:
