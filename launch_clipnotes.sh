@@ -1,5 +1,5 @@
 #!/bin/bash
-source ~/command_builder_venv/bin/activate
+source ~/clip_notes_venv/bin/activate
 cd ~/repo_seb_dethyre/clip_notes
 
 LOCK_FILE=".clipnotes.lock"
