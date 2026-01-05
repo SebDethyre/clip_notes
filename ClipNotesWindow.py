@@ -596,6 +596,11 @@ class RadialKeyboardListener(QObject):
         # Seulement si le menu est visible
         if not self.radial_menu.isVisible():
             return False
+        
+        # Ne pas traiter les événements si un dialogue est ouvert
+        app = QApplication.instance()
+        if app.activeModalWidget() or app.activePopupWidget():
+            return False
 
         if event.type() == QEvent.Type.KeyPress:
             key = event.key()
@@ -904,9 +909,10 @@ class RadialMenu(QWidget):
         # Repositionner la fenêtre tooltip
         self._update_tooltip_position()
         
-        # Réinitialiser le focus clavier
+        # Réinitialiser le focus visuel mais garder l'état du clavier
+        # Si l'utilisateur a déjà utilisé le clavier, on garde cet état
         self._focused_index = -1
-        self._keyboard_used = False
+        # Ne PAS réinitialiser _keyboard_used pour garder l'état entre sous-menus
         
         self.update()
 
