@@ -462,6 +462,7 @@ self.y_correction_bottom = 80   # Correction en bas
 
 2. **Outil de calibration** (en développement) :
    - Un script automatisé est en cours de développement pour calculer automatiquement les corrections optimales
+     > Voir `screen_cursor_calibration.py`
    - Cet outil affichera des repères visuels pour aider à mesurer les décalages
 
 **Note :** Ces valeurs sont spécifiques à votre configuration système. Si vous changez la résolution, la taille des barres ou le thème, vous devrez peut-être recalibrer.
