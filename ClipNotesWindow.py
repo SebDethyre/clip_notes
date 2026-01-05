@@ -2133,7 +2133,7 @@ class App(QMainWindow):
         palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
         dialog.setPalette(palette)
         
-        dialog.setFixedSize(750, 400)
+        dialog.setFixedSize(750, 500)
         dialog.move(x - 375, y - 200)
         
         layout = QVBoxLayout()
@@ -2169,21 +2169,18 @@ class App(QMainWindow):
             # En-tête
             header_layout = QHBoxLayout()
             
-            icon_header = QLabel("")  # Colonne vide pour l'icône
-            icon_header.setFixedWidth(50)
-            
             alias_header = QLabel("Alias")
-            alias_header.setStyleSheet("font-weight: bold; color: white;")
-            alias_header.setFixedWidth(150)
+            alias_header.setStyleSheet("font-weight: bold; color: black;")
+            alias_header.setFixedWidth(50)
             
             action_header = QLabel("Action")
-            action_header.setStyleSheet("font-weight: bold; color: white;")
+            action_header.setStyleSheet("font-weight: bold; color: black;")
             action_header.setFixedWidth(80)
             
             value_header = QLabel("Valeur")
-            value_header.setStyleSheet("font-weight: bold; color: white;")
+            value_header.setStyleSheet("font-weight: bold; color: black;")
             
-            header_layout.addWidget(icon_header)
+            # header_layout.addWidget(icon_header)
             header_layout.addWidget(alias_header)
             header_layout.addWidget(action_header)
             header_layout.addWidget(value_header)
@@ -2225,26 +2222,22 @@ class App(QMainWindow):
                     alias_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 else:
                     # C'est du texte
-                    pixmap = text_pixmap(alias, 32)
-                    alias_label.setPixmap(pixmap)
+                    # pixmap = text_pixmap(alias, 32)
+                    # alias_label.setPixmap(pixmap)
+                    alias_label.setText(alias)
+                    alias_label.setWordWrap(True)
                     alias_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                
-                # Nom de l'alias en texte
-                alias_text = QLabel(alias if "/" not in alias else os.path.basename(alias))
-                alias_text.setFixedWidth(150)
-                alias_text.setStyleSheet("color: white;")
-                alias_text.setWordWrap(True)
-                
+                              
                 # Action
                 action_label = QLabel(clip_data.get('action', 'copy'))
                 action_label.setFixedWidth(80)
-                action_label.setStyleSheet("color: lightblue;")
+                action_label.setStyleSheet("color: blue;")
                 
                 # String (tronquée si trop longue)
                 string = clip_data.get('string', '')
                 string_display = string[:50] + "..." if len(string) > 50 else string
                 string_label = QLabel(string_display)
-                string_label.setStyleSheet("color: lightgray;")
+                string_label.setStyleSheet("color: black;")
                 string_label.setWordWrap(True)
                 
                 # Bouton restaurer
@@ -2278,7 +2271,7 @@ class App(QMainWindow):
                 delete_btn.clicked.connect(lambda checked, a=alias: self.delete_stored_clip_and_refresh(a, dialog, x, y))
                 
                 clip_layout.addWidget(alias_label)
-                clip_layout.addWidget(alias_text)
+                # clip_layout.addWidget(alias_text)
                 clip_layout.addWidget(action_label)
                 clip_layout.addWidget(string_label)
                 clip_layout.addStretch()
@@ -2297,6 +2290,7 @@ class App(QMainWindow):
         close_button.setStyleSheet("""
             QPushButton {
                 background-color: rgba(100, 100, 100, 100);
+                color: white;
                 border: 1px solid rgba(150, 150, 150, 150);
                 border-radius: 6px;
                 font-size: 14px;
