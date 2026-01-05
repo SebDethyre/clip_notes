@@ -425,7 +425,6 @@ def remove_from_actions_file(path, name_to_remove):
                 f.write(line)
 
 def paperclip_copy(string):
-    print("doooooo")
     # Remplacer '\\n' par des sauts de ligne réels
     formatted_string = string.replace(r'\n', '\n')
     pyperclip.copy(formatted_string)
