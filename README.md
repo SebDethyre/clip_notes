@@ -20,8 +20,9 @@
 - **🖼️ Visuel** : Utilisez des emojis ou vos propres images comme icônes
 - **🎭 Personnalisable** : Couleurs, opacités, néons configurables
 - **💾 Organisé** : Système de stockage pour sauvegarder/restaurer des groupes de clips
+- **⌨️ Accessible** : Navigation complète au clavier (flèches + Entrée)
 - **🔒 Discret** : Fenêtre légère et transparente qui disparaît quand vous n'en avez pas besoin
-- **⌨️ Productif** : Accès par raccourci clavier, pas besoin de la souris
+- **🚀 Productif** : Accès ultra-rapide par raccourci clavier
 
 **Cas d'usage typiques :**
 - Développeurs : commandes git, snippets de code, URLs de repos, lancement d'applications
@@ -268,6 +269,49 @@ Le système de stockage permet de créer des collections de clips pour différen
 
 ---
 
+### ⌨️ Navigation au clavier
+
+ClipNotes est entièrement utilisable au clavier, sans jamais toucher la souris !
+
+**Touches disponibles :**
+- **Flèche droite (→)** : Passer au bouton suivant (sens horaire)
+- **Flèche gauche (←)** : Passer au bouton précédent (sens anti-horaire)
+- **Entrée** : Activer le bouton sélectionné
+- **Échap** : Fermer le menu
+
+**Comment ça marche :**
+
+1. **Ouvrir le menu** : Appuyez sur votre raccourci clavier (ex: `Super+V`)
+2. **Première navigation** : Appuyez sur `→` ou `←`
+   - Le focus s'initialise automatiquement :
+     - Sur le **premier clip** s'il y en a
+     - Sur le bouton **➕** s'il n'y a pas de clips
+3. **Naviguer** : Utilisez `→` et `←` pour parcourir tous les boutons
+4. **Activer** : Appuyez sur `Entrée` pour déclencher l'action du bouton sélectionné
+5. **Annuler** : Appuyez sur `Échap` pour fermer le menu
+
+**Indicateurs visuels :**
+- **Cercle de focus** : Un cercle blanc lumineux entoure le bouton actuellement sélectionné
+- **Icône centrale** : L'icône du bouton sélectionné apparaît en grand au centre du menu (si activé dans la config)
+- **Tooltip** : Le nom et le contenu du clip s'affichent en dessous du menu
+
+**Exemple de workflow 100% clavier :**
+```
+1. Super+V          → Ouvrir ClipNotes
+2. →                → Aller au premier clip
+3. → → →            → Naviguer jusqu'au clip voulu
+4. Entrée           → Copier le clip
+5. Ctrl+V           → Coller ailleurs
+```
+
+**Astuce :** La navigation au clavier est particulièrement utile quand :
+- Vous êtes en train de taper et ne voulez pas lâcher le clavier
+- Vous utilisez un laptop sans souris
+- Vous voulez gagner en rapidité (pas besoin de viser avec la souris)
+- Vous préférez garder les mains sur le clavier pour rester concentré
+
+---
+
 ### ⚙️ Configuration avancée
 
 Cliquez sur **⚙️** dans le menu principal pour accéder aux options :
@@ -462,7 +506,6 @@ self.y_correction_bottom = 80   # Correction en bas
 
 2. **Outil de calibration** (en développement) :
    - Un script automatisé est en cours de développement pour calculer automatiquement les corrections optimales
-     > Voir `screen_cursor_calibration.py`
    - Cet outil affichera des repères visuels pour aider à mesurer les décalages
 
 **Note :** Ces valeurs sont spécifiques à votre configuration système. Si vous changez la résolution, la taille des barres ou le thème, vous devrez peut-être recalibrer.
@@ -647,10 +690,11 @@ Les contributions sont les bienvenues ! N'hésitez pas à :
 - [x] Système de stockage/restauration de groupes de clips
 - [x] Personnalisation complète des couleurs et de l'apparence
 - [x] Support des images comme icônes
+- [x] Navigation complète au clavier (flèches + Entrée)
 - [ ] Historique avec recherche
 - [ ] Snippets de code avec coloration syntaxique
 - [ ] Synchronisation cloud (Dropbox, Google Drive)
-- [ ] Raccourcis clavier par clip
+- [ ] Raccourcis clavier individuels par clip
 - [ ] Mode sombre/clair configurable
 - [ ] Support multi-langues
 - [ ] Import/export de collections au format JSON
@@ -680,7 +724,8 @@ Développeur Full-Stack & Ingénieur Test Automation
 - Gestion de fichiers et persistence de données (JSON)
 - Traitement d'images (PIL/Pillow)
 - Automatisation système (subprocess, shell)
-- Conception UX/UI intuitive
+- Conception UX/UI intuitive (souris + clavier)
+- Event filtering et gestion des événements clavier globaux
 - Gestion d'état complexe
 - Documentation technique complète
 
