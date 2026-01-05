@@ -9,7 +9,7 @@ from PyQt6.QtGui import QCursor
 from PyQt6.QtGui import QPainter, QColor, QIcon, QRadialGradient, QFont, QPalette, QPixmap, QPainterPath
 from PyQt6.QtCore import Qt, QSize, QTimer, QPropertyAnimation, QRect, QEasingCurve, QVariantAnimation, QEvent, QPointF
 from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QMainWindow, QVBoxLayout, QHBoxLayout, QSlider
-from PyQt6.QtWidgets import QDialog, QLineEdit, QMessageBox, QTextEdit, QToolTip, QLabel, QFileDialog, QComboBox, QCheckBox, QColorDialog
+from PyQt6.QtWidgets import QDialog, QLineEdit, QMessageBox, QTextEdit, QToolTip, QLabel, QFileDialog, QComboBox, QCheckBox, QColorDialog, QScrollArea
 from PIL import Image, ImageDraw
 import hashlib
 
@@ -24,6 +24,8 @@ CLIP_NOTES_FILE_JSON = os.path.join(SCRIPT_DIR, "clip_notes.json")
 EMOJIS_FILE = os.path.join(SCRIPT_DIR, "emojis.txt")
 THUMBNAILS_DIR = os.path.join(SCRIPT_DIR, "thumbnails")
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.json")
+STORED_CLIPS_FILE = os.path.join(SCRIPT_DIR, "stored_clips.json")
+
 NEON_PRINCIPAL=False
 CENTRAL_NEON = False  # Afficher le néon cosmétique au centre
 ZONE_BASIC_OPACITY = 15
@@ -31,7 +33,7 @@ ZONE_HOVER_OPACITY = 45
 SHOW_CENTRAL_ICON = True  # Afficher l'icône du clip survolé au centre
 MENU_OPACITY = 100  # Opacité globale du menu radial (0-100)
 
-SPECIAL_BUTTONS = ["⚙️", "➖", "✏️", "➕"]
+SPECIAL_BUTTONS = ["⚙️", "➖", "✏️", "➕", "📦"]
 
 # Palette de couleurs disponibles (RGB)
 COLOR_PALETTE = {
@@ -235,6 +237,50 @@ def save_config():
         print(f"[Config] Configuration sauvegardée: {config}")
     except Exception as e:
         print(f"[Erreur] Impossible de sauvegarder la configuration: {e}")
+
+# ===== GESTION DES CLIPS STOCKÉS =====
+
+def load_stored_clips():
+    """Charge les clips stockés depuis le fichier JSON"""
+    if not os.path.exists(STORED_CLIPS_FILE):
+        return []
+    
+    try:
+        with open(STORED_CLIPS_FILE, 'r', encoding='utf-8') as f:
+            clips = json.load(f)
+        print(f"[Stored Clips] {len(clips)} clips chargés")
+        return clips
+    except Exception as e:
+        print(f"[Erreur] Impossible de charger les clips stockés: {e}")
+        return []
+
+def save_stored_clips(clips):
+    """Sauvegarde les clips stockés dans le fichier JSON"""
+    try:
+        with open(STORED_CLIPS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(clips, f, indent=4, ensure_ascii=False)
+        print(f"[Stored Clips] {len(clips)} clips sauvegardés")
+    except Exception as e:
+        print(f"[Erreur] Impossible de sauvegarder les clips stockés: {e}")
+
+def add_stored_clip(alias, action, string):
+    """Ajoute un clip au stockage"""
+    clips = load_stored_clips()
+    clips.append({
+        'alias': alias,
+        'action': action,
+        'string': string
+    })
+    save_stored_clips(clips)
+    return clips
+
+def remove_stored_clip(alias):
+    """Supprime un clip du stockage"""
+    clips = load_stored_clips()
+    clips = [clip for clip in clips if clip.get('alias') != alias]
+    save_stored_clips(clips)
+    return clips
+
 
 # Charger la configuration au démarrage
 load_config()
@@ -531,7 +577,7 @@ class TooltipWindow(QWidget):
             menu_radius: Rayon du menu (pour calculer la distance)
         """
         # Distance en pixels (environ 1cm = 38 pixels sur un écran standard)
-        distance_below = menu_radius + 20  # Rayon du menu + 50 pixels de marge
+        distance_below = menu_radius + 20  # Rayon du menu + marge
         
         # Calculer la position
         tooltip_x = menu_center_x - self.width() // 2
@@ -629,7 +675,8 @@ class RadialMenu(QWidget):
         special_tooltips = {
             "➕": "Ajouter",
             "✏️": "Modifier",
-            "➖": "Supprimer"
+            "➖": "Supprimer",
+            "📦": "Clips stockés"
         }
         
         angle_step = 360 / len(buttons)
@@ -916,6 +963,17 @@ class RadialMenu(QWidget):
         return handler
 
     def mousePressEvent(self, event):
+        # Calculer la distance au centre
+        center = self.rect().center()
+        dx = event.pos().x() - center.x()
+        dy = event.pos().y() - center.y()
+        distance = math.sqrt(dx * dx + dy * dy)
+        
+        # Si on clique au centre (distance < 30), revenir au menu principal
+        if distance < 30:
+            self.handle_click_outside()
+            return
+        
         if not any(btn.geometry().contains(event.pos()) for btn in self.buttons):
             # Masquer tous les badges
             for badge in self._action_badges.values():
@@ -1110,10 +1168,14 @@ class RadialMenu(QWidget):
 
     def handle_click_outside(self):
         """Gère le clic en dehors du menu (sur le tracker ou au centre)"""
-        # Si on est en mode modification ou suppression, revenir au menu de base
-        if self.app_instance and (self.app_instance.update_mode or self.app_instance.delete_mode):
+        # Si on est en mode modification, suppression ou stockage, revenir au menu de base
+        if self.app_instance and (self.app_instance.update_mode or self.app_instance.delete_mode or self.app_instance.store_mode):
             self.app_instance.update_mode = False
             self.app_instance.delete_mode = False
+            self.app_instance.store_mode = False
+            self.app_instance.refresh_menu()
+        # Si on est dans le menu de sélection 📦 (2 boutons seulement)
+        elif len(self.buttons) == 2:
             self.app_instance.refresh_menu()
         else:
             # Sinon, fermer normalement
@@ -1264,6 +1326,7 @@ class App(QMainWindow):
         self.buttons_sub = []
         self.update_mode = False
         self.delete_mode = False
+        self.store_mode = False
         
         # Créer une fenêtre tooltip pour l'application (utilisée dans les dialogues)
         self.tooltip_window = TooltipWindow()
@@ -1964,6 +2027,416 @@ class App(QMainWindow):
         
         return dialog
 
+    
+    # ===== MODE STOCKAGE DE CLIPS =====
+    
+    def store_clip_mode(self, x, y):
+        """Active le mode stockage de clips"""
+        if self.tracker:
+            self.tracker.update_pos()
+            x, y = self.tracker.last_x, self.tracker.last_y
+        
+        # Activer le mode stockage
+        self.store_mode = True
+        
+        # Filtrer les clips (sans les boutons d'action)
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in SPECIAL_BUTTONS}
+        
+        # Trier les clips
+        sorted_clips = sort_actions_map(clips_only)
+        
+        self.buttons_sub = []
+        for name, (action_data, value, action) in sorted_clips:
+            tooltip = value.replace(r'\n', '\n')
+            self.buttons_sub.append(
+                (
+                    name, 
+                    self.make_handler_store(name, value, action, x, y),
+                    tooltip,
+                    action
+                )
+            )
+        
+        if self.current_popup:
+            self.current_popup.update_buttons(self.buttons_sub)
+            self.current_popup.set_central_text("💾")
+            self.current_popup.set_neon_color("vert")
+            self.current_popup.toggle_neon(True)
+            self.current_popup.timer.start(50)
+    
+    def make_handler_store(self, name, value, action, x, y):
+        """Crée un handler pour stocker un clip"""
+        def handler():
+            if self.tracker:
+                self.tracker.update_pos()
+                x, y = self.tracker.last_x, self.tracker.last_y
+            
+            # Stocker le clip
+            add_stored_clip(name, action if action else "copy", value)
+            
+            # Supprimer le clip du menu radial
+            self.actions_map_sub.pop(name, None)
+            delete_from_json(CLIP_NOTES_FILE_JSON, name)
+            
+            # NE PAS supprimer le thumbnail - on en a besoin pour l'affichage dans le stockage
+            # if os.path.exists(name):
+            #     os.remove(name)
+            
+            # Afficher une confirmation brève
+            if self.current_popup:
+                self.current_popup.set_central_text("✓")
+                QTimer.singleShot(500, lambda: self.current_popup.set_central_text("💾"))
+            
+            # Rester en mode stockage et rafraîchir
+            self.store_clip_mode(x, y)
+            
+        return handler
+    
+    def show_storage_menu(self, x, y):
+        """Affiche un menu pour choisir entre stocker un clip ou voir les clips stockés"""
+        if self.tracker:
+            self.tracker.update_pos()
+            x, y = self.tracker.last_x, self.tracker.last_y
+        
+        # Remplacer temporairement les boutons par les 2 options
+        self.buttons_sub = [
+            ("💾", lambda: self.store_clip_mode(x, y), "Stocker un clip", None),
+            ("📋", lambda: self.show_stored_clips_dialog(x, y), "Voir les clips stockés", None)
+        ]
+        
+        if self.current_popup:
+            self.current_popup.update_buttons(self.buttons_sub)
+            self.current_popup.set_central_text("📦")
+    
+    def show_stored_clips_dialog(self, x, y):
+        """Affiche la fenêtre de dialogue avec la liste des clips stockés"""
+        if self.tracker:
+            self.tracker.update_pos()
+            x, y = self.tracker.last_x, self.tracker.last_y
+        
+        # Charger les clips stockés
+        stored_clips = load_stored_clips()
+        
+        dialog = QDialog(self.tracker)
+        dialog.setWindowTitle("📋 Clips stockés")
+        dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        # Appliquer une palette sombre
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Base, QColor(35, 35, 35))
+        palette.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
+        dialog.setPalette(palette)
+        
+        dialog.setFixedSize(750, 400)
+        dialog.move(x - 375, y - 200)
+        
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(10)
+        
+        # Titre
+        title_label = QLabel("📋 Clips stockés")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
+        layout.addWidget(title_label)
+        
+        # Zone de défilement pour la liste
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                background-color: rgba(35, 35, 35, 255);
+                border: 1px solid rgba(100, 100, 100, 150);
+                border-radius: 6px;
+            }
+        """)
+        
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setSpacing(5)
+        
+        if not stored_clips:
+            empty_label = QLabel("Aucun clip stocké")
+            empty_label.setStyleSheet("color: gray; padding: 20px; font-style: italic;")
+            empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            scroll_layout.addWidget(empty_label)
+        else:
+            # En-tête
+            header_layout = QHBoxLayout()
+            
+            icon_header = QLabel("")  # Colonne vide pour l'icône
+            icon_header.setFixedWidth(50)
+            
+            alias_header = QLabel("Alias")
+            alias_header.setStyleSheet("font-weight: bold; color: white;")
+            alias_header.setFixedWidth(150)
+            
+            action_header = QLabel("Action")
+            action_header.setStyleSheet("font-weight: bold; color: white;")
+            action_header.setFixedWidth(80)
+            
+            value_header = QLabel("Valeur")
+            value_header.setStyleSheet("font-weight: bold; color: white;")
+            
+            header_layout.addWidget(icon_header)
+            header_layout.addWidget(alias_header)
+            header_layout.addWidget(action_header)
+            header_layout.addWidget(value_header)
+            header_layout.addStretch()
+            
+            scroll_layout.addLayout(header_layout)
+            
+            # Ligne de séparation
+            separator = QLabel()
+            separator.setFixedHeight(1)
+            separator.setStyleSheet("background-color: rgba(100, 100, 100, 150);")
+            scroll_layout.addWidget(separator)
+            
+            # Liste des clips
+            for clip_data in stored_clips:
+                clip_layout = QHBoxLayout()
+                
+                alias = clip_data.get('alias', '')
+                
+                # Alias (image, emoji ou texte)
+                alias_label = QLabel()
+                alias_label.setFixedSize(50, 50)
+                
+                if "/" in alias:
+                    # C'est une image - vérifier si elle existe encore
+                    if os.path.exists(alias):
+                        pixmap = image_pixmap(alias, 48)
+                        alias_label.setPixmap(pixmap)
+                        alias_label.setScaledContents(True)
+                    else:
+                        # Image manquante - afficher un placeholder
+                        alias_label.setText("🖼️")
+                        alias_label.setStyleSheet("color: gray; font-size: 32px;")
+                        alias_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                elif is_emoji(alias):
+                    # C'est un emoji
+                    pixmap = emoji_pixmap(alias, 32)
+                    alias_label.setPixmap(pixmap)
+                    alias_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                else:
+                    # C'est du texte
+                    pixmap = text_pixmap(alias, 32)
+                    alias_label.setPixmap(pixmap)
+                    alias_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                
+                # Nom de l'alias en texte
+                alias_text = QLabel(alias if "/" not in alias else os.path.basename(alias))
+                alias_text.setFixedWidth(150)
+                alias_text.setStyleSheet("color: white;")
+                alias_text.setWordWrap(True)
+                
+                # Action
+                action_label = QLabel(clip_data.get('action', 'copy'))
+                action_label.setFixedWidth(80)
+                action_label.setStyleSheet("color: lightblue;")
+                
+                # String (tronquée si trop longue)
+                string = clip_data.get('string', '')
+                string_display = string[:50] + "..." if len(string) > 50 else string
+                string_label = QLabel(string_display)
+                string_label.setStyleSheet("color: lightgray;")
+                string_label.setWordWrap(True)
+                
+                # Bouton restaurer
+                restore_btn = QPushButton("↩️")
+                restore_btn.setFixedSize(30, 30)
+                restore_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: rgba(100, 200, 100, 100);
+                        border: 1px solid rgba(100, 255, 100, 150);
+                        border-radius: 4px;
+                    }
+                    QPushButton:hover {
+                        background-color: rgba(100, 255, 100, 150);
+                    }
+                """)
+                restore_btn.clicked.connect(lambda checked, a=alias, cd=clip_data: self.restore_clip_to_menu(a, cd, dialog, x, y))
+                
+                # Bouton supprimer
+                delete_btn = QPushButton("🗑️")
+                delete_btn.setFixedSize(30, 30)
+                delete_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: rgba(200, 100, 100, 100);
+                        border: 1px solid rgba(255, 100, 100, 150);
+                        border-radius: 4px;
+                    }
+                    QPushButton:hover {
+                        background-color: rgba(255, 100, 100, 150);
+                    }
+                """)
+                delete_btn.clicked.connect(lambda checked, a=alias: self.delete_stored_clip_and_refresh(a, dialog, x, y))
+                
+                clip_layout.addWidget(alias_label)
+                clip_layout.addWidget(alias_text)
+                clip_layout.addWidget(action_label)
+                clip_layout.addWidget(string_label)
+                clip_layout.addStretch()
+                clip_layout.addWidget(restore_btn)
+                clip_layout.addWidget(delete_btn)
+                
+                scroll_layout.addLayout(clip_layout)
+        
+        scroll_layout.addStretch()
+        scroll.setWidget(scroll_content)
+        layout.addWidget(scroll)
+        
+        # Bouton Fermer
+        close_button = QPushButton("Fermer")
+        close_button.setFixedHeight(40)
+        close_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(100, 100, 100, 100);
+                border: 1px solid rgba(150, 150, 150, 150);
+                border-radius: 6px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: rgba(150, 150, 150, 150);
+            }
+        """)
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        
+        dialog_layout = QVBoxLayout(dialog)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        dialog_layout.addLayout(layout)
+        
+        # Réactiver le mouse tracking après fermeture
+        dialog.finished.connect(lambda: self.current_popup.setMouseTracking(True) if self.current_popup else None)
+        
+        dialog.exec()
+    
+    def delete_stored_clip_and_refresh(self, alias, dialog, x, y):
+        """Affiche une confirmation avant de supprimer un clip stocké"""
+        # Fermer le dialogue actuel
+        dialog.accept()
+        
+        # Afficher la confirmation
+        confirm_dialog = QDialog(self.tracker)
+        confirm_dialog.setWindowTitle("🗑️ Supprimer du stockage")
+        confirm_dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+        confirm_dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        # Palette sombre
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Base, QColor(35, 35, 35))
+        palette.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
+        confirm_dialog.setPalette(palette)
+        
+        confirm_dialog.setFixedSize(350, 150)
+        confirm_dialog.move(x - 175, y - 75)
+        
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # Message
+        display_name = alias if "/" not in alias else os.path.basename(alias)
+        message = QLabel(f"Supprimer définitivement\n'{display_name}'\ndu stockage ?")
+        message.setStyleSheet("color: white; font-size: 14px;")
+        message.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        message.setWordWrap(True)
+        layout.addWidget(message)
+        
+        # Boutons
+        buttons_layout = QHBoxLayout()
+        
+        cancel_button = QPushButton("Annuler")
+        cancel_button.setFixedHeight(40)
+        cancel_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(100, 100, 100, 100);
+                border: 1px solid rgba(150, 150, 150, 150);
+                border-radius: 6px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: rgba(150, 150, 150, 150);
+            }
+        """)
+        cancel_button.clicked.connect(lambda: (confirm_dialog.reject(), self.show_stored_clips_dialog(x, y)))
+        
+        delete_button = QPushButton("🗑️ Supprimer")
+        delete_button.setFixedHeight(40)
+        delete_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(200, 100, 100, 100);
+                border: 1px solid rgba(255, 100, 100, 150);
+                border-radius: 6px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 100, 100, 150);
+            }
+        """)
+        
+        def confirm_delete():
+            # Supprimer le thumbnail s'il existe
+            if os.path.exists(alias):
+                os.remove(alias)
+            
+            remove_stored_clip(alias)
+            confirm_dialog.accept()
+            self.show_stored_clips_dialog(x, y)
+        
+        delete_button.clicked.connect(confirm_delete)
+        
+        buttons_layout.addWidget(cancel_button)
+        buttons_layout.addWidget(delete_button)
+        layout.addLayout(buttons_layout)
+        
+        dialog_layout = QVBoxLayout(confirm_dialog)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        dialog_layout.addLayout(layout)
+        
+        confirm_dialog.exec()
+    
+    def restore_clip_to_menu(self, alias, clip_data, dialog, x, y):
+        """Restaure un clip stocké vers le menu radial"""
+        # Récupérer les données du clip
+        action = clip_data.get('action', 'copy')
+        string = clip_data.get('string', '')
+        
+        # Ajouter au menu radial (dans le fichier JSON)
+        append_to_actions_file_json(CLIP_NOTES_FILE_JSON, alias, string, action)
+        
+        # Ajouter directement dans actions_map_sub pour mise à jour immédiate
+        if action == "copy":
+            self.actions_map_sub[alias] = [(paperclip_copy, [string], {}), string, action]
+        elif action == "term":
+            self.actions_map_sub[alias] = [(execute_terminal, [string], {}), string, action]
+        elif action == "exec":
+            self.actions_map_sub[alias] = [(execute_command, [string], {}), string, action]
+        
+        # Supprimer du stockage
+        remove_stored_clip(alias)
+        
+        # Mettre à jour le menu en arrière-plan
+        self.refresh_menu()
+        
+        # Fermer le dialogue actuel et rouvrir la fenêtre de stockage
+        dialog.accept()
+        self.show_stored_clips_dialog(x, y)
+    
     def show_config_dialog(self, x, y):
         """Affiche le dialogue de configuration"""
         if self.tracker:
@@ -2222,8 +2695,9 @@ class App(QMainWindow):
         neon_speed_layout = QVBoxLayout()
         neon_speed_label = QLabel(f"Vitesse du néon: {NEON_SPEED}ms")
         neon_speed_slider = QSlider(Qt.Orientation.Horizontal)
-        neon_speed_slider.setMinimum(1)   # Très rapide
-        neon_speed_slider.setMaximum(200)  # Très lent
+        # Bornes des vitesses
+        neon_speed_slider.setMinimum(1)
+        neon_speed_slider.setMaximum(200)
         neon_speed_slider.setValue(NEON_SPEED)
         neon_speed_slider.valueChanged.connect(lambda v: neon_speed_label.setText(f"Vitesse du néon: {v}ms"))
         neon_speed_layout.addWidget(neon_speed_label)
@@ -2454,7 +2928,8 @@ class App(QMainWindow):
             "➕": "Ajouter",
             "✏️": "Modifier",
             "➖": "Supprimer",
-            "⚙️": "Configuration"
+            "⚙️": "Configuration",
+            "📦": "Clips stockés"
         }
         
         self.actions_map_sub = {
@@ -2462,6 +2937,7 @@ class App(QMainWindow):
             "✏️": [(self.update_clip, [x,y], {}), special_button_tooltips["✏️"], None],
             "➖": [(self.delete_clip, [x,y], {}), special_button_tooltips["➖"], None],
             "⚙️": [(self.show_config_dialog, [x,y], {}), special_button_tooltips["⚙️"], None],
+            "📦": [(self.show_storage_menu, [x,y], {}), special_button_tooltips["📦"], None],
         }
         populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
 
