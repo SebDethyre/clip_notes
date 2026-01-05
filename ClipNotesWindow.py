@@ -1925,13 +1925,47 @@ class App(QMainWindow):
         layout.addWidget(value_input)
         layout.addWidget(submit_button)
         layout.addWidget(help_label)
+        
+        def get_pictures_directory():
+            """
+            Retourne le répertoire Images/Pictures de l'utilisateur de manière robuste.
+            """
+            home = os.path.expanduser("~")
 
+            # 1️⃣ Essayer via xdg-user-dir (le plus fiable)
+            try:
+                result = subprocess.run(
+                    ["xdg-user-dir", "PICTURES"],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                path = result.stdout.strip()
+                if path and os.path.isdir(path):
+                    return path
+            except Exception:
+                pass
+
+            # 2️⃣ Fallbacks classiques
+            candidates = [
+                os.path.join(home, "Pictures"),
+                os.path.join(home, "Images"),
+            ]
+
+            for path in candidates:
+                if os.path.isdir(path):
+                    return path
+
+            # 3️⃣ Dernier recours : HOME
+            return home
+        
         def open_image_selector():
             """Ouvre un sélecteur de fichier pour choisir une image"""
+            start_dir = get_pictures_directory()
             file_path, _ = QFileDialog.getOpenFileName(
                 dialog,
                 "Choisir une image",
-                "",
+                start_dir,
                 "Images (*.png *.jpg *.jpeg *.gif *.bmp *.webp);;Tous les fichiers (*)"
             )
             
