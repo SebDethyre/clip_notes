@@ -1,30 +1,33 @@
 # 📋 ClipNotes
 
-> Un presse-papier intelligent et ergonomique à portée de curseur
+> Un gestionnaire de presse-papier intelligent et ergonomique à portée de curseur
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![PyQt5](https://img.shields.io/badge/PyQt5-5.15+-green.svg)](https://pypi.org/project/PyQt5/)
+[![PyQt6](https://img.shields.io/badge/PyQt6-6.0+-green.svg)](https://pypi.org/project/PyQt6/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ![ClipNotes Demo](docs/demo.gif)
 
 ## ✨ Qu'est-ce que ClipNotes ?
 
-**ClipNotes** est un gestionnaire de presse-papier nouvelle génération qui apparaît instantanément autour de votre curseur. Fini les allers-retours fastidieux pour copier vos liens, commandes, snippets de code ou templates favoris !
+**ClipNotes** est un gestionnaire de presse-papier nouvelle génération qui apparaît instantanément autour de votre curseur dans une interface radiale élégante. Fini les allers-retours fastidieux pour copier vos liens, commandes, snippets de code ou templates favoris !
 
 ### 🎯 Pourquoi ClipNotes ?
 
 - **⚡ Instantané** : Apparaît là où se trouve votre curseur
-- **🎨 Élégant** : Interface radiale moderne avec animations fluides
-- **😀 Organisé** : Étiquetez vos clips avec des emojis pour une reconnaissance visuelle immédiate
+- **🎨 Élégant** : Interface radiale moderne avec animations fluides et effets néon
+- **🔧 Polyvalent** : 3 types d'actions par clip (copie, terminal, exécution)
+- **🖼️ Visuel** : Utilisez des emojis ou vos propres images comme icônes
+- **🎭 Personnalisable** : Couleurs, opacités, néons configurables
+- **💾 Organisé** : Système de stockage pour sauvegarder/restaurer des groupes de clips
 - **🔒 Discret** : Fenêtre légère et transparente qui disparaît quand vous n'en avez pas besoin
 - **⌨️ Productif** : Accès par raccourci clavier, pas besoin de la souris
 
 **Cas d'usage typiques :**
-- Développeurs : commandes git, snippets de code, URLs de repos
+- Développeurs : commandes git, snippets de code, URLs de repos, lancement d'applications
+- DevOps : commandes SSH, chemins serveurs, configurations, scripts d'automatisation
 - Designers : codes couleur, liens Figma/Adobe, textes récurrents
 - Rédacteurs : templates d'emails, phrases types, liens de références
-- DevOps : commandes SSH, chemins serveurs, configurations
 - Tous : URLs fréquentes, numéros de téléphone, adresses email
 
 ---
@@ -42,10 +45,10 @@
 ```bash
 # Installation des outils requis
 sudo apt update
-sudo apt install python3-pip python3-venv xdotool
+sudo apt install python3-pip python3-venv
 
-# Pour Wayland (optionnel, améliore la compatibilité)
-sudo apt install python3-pyqt5 python3-pyqt5.qtsvg
+# Pour PyQt6
+sudo apt install python3-pyqt6 python3-pyqt6.qtsvg
 ```
 
 ### Installation de ClipNotes
@@ -69,7 +72,7 @@ sudo apt install python3-pyqt5 python3-pyqt5.qtsvg
 
    **Contenu de `requirements.txt` :**
    ```
-   PyQt5>=5.15.0
+   PyQt6>=6.0.0
    pyperclip>=1.8.2
    Pillow>=9.0.0
    ```
@@ -111,25 +114,25 @@ sudo apt install python3-pyqt5 python3-pyqt5.qtsvg
 
 1. **Appuyez sur votre raccourci clavier** (ex: `Super+V`)
 2. Le menu radial apparaît **autour de votre curseur**
-3. Cliquez sur un clip pour le copier dans le presse-papier
-4. Collez où vous voulez avec `Ctrl+V`
+3. Cliquez sur un clip pour l'utiliser (action configurée : copie, terminal ou exécution)
+4. Le menu se ferme automatiquement
 
 ### Interface
 
 ```
-          📝 (Modifier)
+          📦 (Stockage)
               ↑
-    🌿 ←   [CENTRE]   → 🎩
+    ⚙️ ←   [CENTRE]   → ➖
+              ↓
+          ✏️ (Modifier)
               ↓
           ➕ (Ajouter)
-              ↓
-          🗑️ (Supprimer)
 ```
 
 Le menu est organisé en **cercle** avec :
-- **Centre** : Indicateur de mode (vide par défaut)
-- **Périphérie** : Vos clips étiquetés avec des emojis
-- **Boutons de contrôle** : ➕ Ajouter, 📝 Modifier, 🗑️ Supprimer
+- **Centre** : Indicateur de mode + icône du clip survolé
+- **Périmètre** : Vos clips étiquetés avec des emojis ou images
+- **Boutons de contrôle** : ➕ Ajouter, ✏️ Modifier, ➖ Supprimer, ⚙️ Configuration, 📦 Stockage
 
 ---
 
@@ -138,75 +141,190 @@ Le menu est organisé en **cercle** avec :
 1. **Appuyez sur le raccourci** pour ouvrir ClipNotes
 2. **Cliquez sur ➕** (bouton "Ajouter")
 3. Une fenêtre contextuelle s'ouvre :
-   - **Nom du clip** : Choisissez un emoji + nom descriptif (ex: `🐍 Python venv`)
-   - **Bouton "😀 Emojis"** : Ouvre un sélecteur d'emojis pour faciliter le choix
-   - **Contenu** : Le texte que vous voulez copier (commande, lien, texte...)
+   - **Icône** : 
+     - Choisissez un emoji via le bouton "😀 Emojis"
+     - Ou cliquez sur "🖼️ Image" pour utiliser votre propre image (transformée en thumbnail rond)
+   - **Nom du clip** : Texte descriptif qui apparaîtra en tooltip
+   - **Contenu** : Le texte/commande que vous voulez sauvegarder
+   - **Action (slider)** :
+     - 📋 **Copy** : Copie le contenu dans le presse-papier
+     - 💻 **Term** : Ouvre un nouveau terminal et exécute la commande
+     - ⚡ **Exec** : Exécute la commande en arrière-plan
    - **Bouton "Ajouter"** : Valide et enregistre
 
 4. Votre nouveau clip apparaît immédiatement dans le menu !
 
-**💡 Astuce** : Utilisez des emojis pour catégoriser visuellement :
-- 🔗 pour les liens
-- 🐍 pour Python
-- 🐳 pour Docker
-- 💾 pour les commandes système
-- 📧 pour les emails
-- etc.
+**💡 Astuces** :
+- Utilisez des emojis pour catégoriser visuellement :
+  - 🔗 pour les liens
+  - 🐍 pour Python
+  - 🐳 pour Docker
+  - 💾 pour les commandes système
+  - 📧 pour les emails
+- Ou utilisez vos propres images (logos, photos, captures d'écran)
+- Les couleurs des zones changent selon l'action (orange=copy, vert=term, bleu=exec)
 
 ---
 
-### 📝 Modifier un clip existant
+### ✏️ Modifier un clip existant
 
 **Activer le mode modification :**
 1. **Appuyez sur le raccourci** pour ouvrir ClipNotes
-2. **Cliquez sur 📝** (bouton "Modifier")
-3. Le centre du menu s'illumine en **orange** 🟠 avec l'icône 📝
+2. **Cliquez sur ✏️** (bouton "Modifier")
+3. Le centre du menu s'illumine en **orange** 🟠 avec l'icône ✏️
 4. **Cliquez sur le clip** que vous voulez modifier
 
 **Fenêtre d'édition :**
 - Les champs sont **pré-remplis** avec les valeurs actuelles
-- Modifiez le nom et/ou le contenu
+- Le slider est positionné sur l'action actuelle
+- Modifiez le nom, l'icône, le contenu et/ou l'action
 - Cliquez sur **"Modifier"** pour sauvegarder
 
+**Note :** Si vous changez l'image d'un clip, l'ancien thumbnail est automatiquement supprimé.
+
 **Quitter le mode modification :**
-- **Cliquez à nouveau sur 📝** pour désactiver le mode
+- **Cliquez à nouveau sur ✏️** pour désactiver le mode
 - Ou cliquez ailleurs pour fermer le menu
 
 ---
 
-### 🗑️ Supprimer un clip
+### ➖ Supprimer un clip
 
 **Activer le mode suppression :**
 1. **Appuyez sur le raccourci** pour ouvrir ClipNotes
-2. **Cliquez sur 🗑️** (bouton "Supprimer")
-3. Le centre du menu s'illumine en **rouge** 🔴 avec l'icône 🗑️
+2. **Cliquez sur ➖** (bouton "Supprimer")
+3. Le centre du menu s'illumine en **rouge** 🔴 avec l'icône ➖
 4. **Cliquez sur le clip** à supprimer
 
 **Confirmation :**
 - Une boîte de dialogue apparaît : *"Supprimer le clip '[nom]' ?"*
-- **Yes** : Le clip est définitivement supprimé
+- **Yes** : Le clip et son thumbnail (si image) sont définitivement supprimés
 - **No** : Annulation, le clip est conservé
 
 **Quitter le mode suppression :**
-- **Cliquez à nouveau sur 🗑️** pour désactiver le mode
+- **Cliquez à nouveau sur ➖** pour désactiver le mode
 - Ou cliquez ailleurs pour fermer le menu
+
+---
+
+### 📦 Stockage : Sauvegarder et restaurer des groupes
+
+Le système de stockage permet de créer des collections de clips pour différents contextes (projet A, projet B, usage perso, etc.).
+
+**Ouvrir le menu de stockage :**
+1. Cliquez sur **📦** dans le menu principal
+2. Un sous-menu radial apparaît avec :
+   - **💾 Save** : Sauvegarder vos clips actuels
+   - **📂 Load** : Restaurer un groupe de clips
+   - **❌ Delete** : Supprimer un groupe sauvegardé
+   - **🔙 Retour** : Revenir au menu principal
+
+**Sauvegarder un groupe :**
+1. Cliquez sur **💾 Save**
+2. Entrez un nom pour le groupe (ex: "Projet Web", "DevOps", "Personnel")
+3. Tous vos clips actuels sont sauvegardés sous ce nom
+
+**Restaurer un groupe :**
+1. Cliquez sur **📂 Load**
+2. Choisissez le groupe dans la liste
+3. Vos clips actuels sont remplacés par ceux du groupe
+
+**Supprimer un groupe :**
+1. Cliquez sur **❌ Delete**
+2. Choisissez le groupe à supprimer
+3. Confirmation demandée
 
 ---
 
 ### 📋 Utiliser un clip
 
-**Simple !**
-1. Ouvrez ClipNotes avec votre raccourci
-2. Cliquez sur le clip voulu
-3. Le contenu est **automatiquement copié** dans le presse-papier
-4. Le menu se ferme
-5. Collez avec `Ctrl+V` où vous voulez !
+**Trois types d'actions possibles :**
 
-**Note :** Les sauts de ligne dans vos clips sont préservés. Parfait pour les commandes multi-lignes !
+1. **📋 Copy (Copier)** :
+   - Cliquez sur le clip
+   - Le contenu est copié dans le presse-papier
+   - Collez avec `Ctrl+V` où vous voulez
+   - Les sauts de ligne sont préservés
+
+2. **💻 Term (Terminal)** :
+   - Cliquez sur le clip
+   - Un nouveau terminal s'ouvre
+   - La commande est exécutée
+   - Le terminal reste ouvert après l'exécution
+
+3. **⚡ Exec (Exécution)** :
+   - Cliquez sur le clip
+   - La commande est exécutée en arrière-plan
+   - Aucune fenêtre n'apparaît
+   - Parfait pour lancer des applications (VSCode, navigateur, etc.)
+
+**Indicateurs visuels :**
+- La couleur de la zone du clip indique son action :
+  - 🟠 Orange = Copy
+  - 🟢 Vert = Term
+  - 🔵 Bleu = Exec
+- L'icône du clip survolé apparaît au centre du menu
+- Un tooltip affiche le contenu complet au survol
+
+---
+
+### ⚙️ Configuration avancée
+
+Cliquez sur **⚙️** dans le menu principal pour accéder aux options :
+
+**Apparence :**
+- **Néon central** : Activer/désactiver l'effet néon pulsé au centre
+- **Icône centrale** : Afficher/masquer l'icône du clip survolé au centre
+- **Opacité du menu** : Régler la transparence globale (0-100%)
+- **Opacité des zones** :
+  - Opacité de base (zones non survolées)
+  - Opacité au survol
+- **Vitesse du néon** : Contrôler la vitesse du battement lumineux
+
+**Couleurs :**
+- **Couleur du fond du menu** : Personnaliser le gris de fond
+- **Couleur du néon** : Changer la couleur de l'effet lumineux
+- **Couleurs par action** :
+  - Couleur des zones "Copy" (défaut : orange)
+  - Couleur des zones "Term" (défaut : vert)
+  - Couleur des zones "Exec" (défaut : bleu)
+  - Palette complète disponible (rouges, oranges, jaunes, verts, bleus, violets, gris)
+
+**Sauvegarde :**
+- Toutes les modifications sont sauvegardées dans `config.json`
+- Les paramètres persistent entre les sessions
 
 ---
 
 ## 🎨 Fonctionnalités avancées
+
+### Tracking du curseur
+
+ClipNotes utilise un système innovant pour apparaître exactement où se trouve votre curseur :
+
+**Comment ça marche :**
+- Un **overlay invisible** transparent couvre tout votre écran
+- Cet overlay capture la position du curseur en temps réel
+- Dès que vous appelez ClipNotes, le menu apparaît aux coordonnées capturées
+
+**Pourquoi c'est malin :**
+- Fonctionne sur **X11 et Wayland** sans dépendance externe
+- Pas besoin de droits administrateur spéciaux
+- Compatible avec tous les environnements de bureau (GNOME, KDE, XFCE, etc.)
+
+**Le défi technique :**
+- L'overlay subit les marges du système (barres Ubuntu, zones réservées)
+- Ces marges créent un décalage entre la position "théorique" et la position "réelle"
+- Solution : système de **corrections calibrées** pour compenser ces marges
+- L'écran est divisé en 4 quadrants (gauche/droite/haut/bas) avec une correction spécifique pour chaque
+
+**Avantages :**
+- ✅ Aucune dépendance système complexe
+- ✅ Fonctionne partout où PyQt6 fonctionne
+- ✅ Rafraîchissement ultra-rapide (~60 FPS)
+- ✅ Pas de latence perceptible
+
+---
 
 ### Animations
 
@@ -221,13 +339,45 @@ ClipNotes gère automatiquement les instances multiples :
 - **Un seul menu à la fois** : Relancer le raccourci ferme l'ancien et ouvre un nouveau menu
 - **Pas de doublons** : Le système de verrouillage empêche les conflits
 - **Fermeture propre** : Les ressources sont libérées correctement
+- **Lock file** : Fichier `.clipnotes.lock` contenant le PID du processus actif
 
 ### Persistance des données
 
-- Tous vos clips sont sauvegardés dans **`clip_notes.txt`**
-- Format simple et lisible : `emoji_nom:contenu`
-- Éditable manuellement si besoin (attention à la syntaxe)
+- Tous vos clips sont sauvegardés dans **`clip_notes.json`**
+- Format structuré et lisible :
+  ```json
+  [
+    {
+      "alias": "🐍 venv",
+      "action": "copy",
+      "string": "python3 -m venv venv && source venv/bin/activate"
+    },
+    {
+      "alias": "thumbnails/abc123.png",
+      "action": "exec",
+      "string": "code ."
+    }
+  ]
+  ```
+- Thumbnails stockés dans le dossier `thumbnails/` avec noms hashés
+- Configuration dans `config.json`
+- Groupes de stockage dans `stored_clips.json`
 - Rechargement automatique à chaque ouverture
+
+### Support des images
+
+- **Thumbnails ronds** : Vos images sont automatiquement transformées en cercles
+- **Optimisation** : Redimensionnement intelligent avec remplissage
+- **Gestion automatique** : Création, suppression et mise à jour des thumbnails
+- **Hash MD5** : Nommage unique pour éviter les conflits
+- **Format PNG** : Conservation de la transparence
+
+### Tri intelligent
+
+Les clips sont automatiquement triés :
+1. Par type d'action (Copy → Term → Exec)
+2. Alphabétiquement à l'intérieur de chaque groupe
+3. Les boutons spéciaux restent toujours en position fixe
 
 ---
 
@@ -237,13 +387,16 @@ ClipNotes gère automatiquement les instances multiples :
 
 ```
 clipnotes/
-├── ClipNotesWindow.py      # Application principale
-├── utils.py                 # Fonctions utilitaires (couleurs, fichiers, emojis)
+├── ClipNotesWindow.py      # Application principale (menu radial, animations)
+├── utils.py                 # Fonctions utilitaires (fichiers, emojis, commandes)
 ├── ui/
 │   ├── __init__.py
 │   └── EmojiSelector.py     # Sélecteur d'emojis avec pagination
 ├── launch_clipnotes.sh      # Script de lancement avec gestion d'instances
-├── clip_notes.txt           # Fichier de données (vos clips)
+├── clip_notes.json          # Fichier de données (vos clips)
+├── config.json              # Configuration (couleurs, opacités, etc.)
+├── stored_clips.json        # Groupes de clips sauvegardés
+├── thumbnails/              # Dossier des miniatures d'images
 ├── emojis.txt               # Liste des emojis disponibles
 ├── seguiemj.ttf             # Police pour le rendu des emojis
 ├── requirements.txt         # Dépendances Python
@@ -252,44 +405,66 @@ clipnotes/
 
 ### Technologies utilisées
 
-- **PyQt5** : Interface graphique et animations
+- **PyQt6** : Interface graphique et animations
 - **Pyperclip** : Gestion du presse-papier système
-- **Pillow (PIL)** : Rendu des emojis en images
-- **xdotool** : Récupération de la position du curseur (X11)
+- **Pillow (PIL)** : Rendu des emojis et traitement d'images
+- **JSON** : Format de stockage des données
+- **CursorTracker** : Overlay invisible pour capturer la position du curseur
 
 ### Concepts clés
 
-1. **Menu radial** : Fenêtre `FramelessWindowHint` + `WindowStaysOnTopHint` avec positionnement dynamique
-2. **Animations Qt** : `QPropertyAnimation` pour les effets visuels fluides
-3. **Gestion d'état** : Modes (normal/modification/suppression) avec indicateurs visuels
+1. **Menu radial** : Fenêtre `FramelessWindowHint` + `WindowStaysOnTopHint` avec positionnement dynamique autour du curseur
+2. **Animations Qt** : `QPropertyAnimation` pour les effets visuels fluides (zoom, néon, couleurs)
+3. **Gestion d'état** : Modes (normal/modification/suppression/stockage) avec indicateurs visuels au centre
 4. **Lock file** : Fichier `.clipnotes.lock` contenant le PID pour éviter les instances multiples
-5. **Auto-détection** : Utilisation de `__file__` pour les chemins (portabilité)
+5. **CursorTracker** : Widget invisible plein écran qui capture la position du curseur en temps réel
+   - Overlay transparent couvrant tout l'écran
+   - Récupération des coordonnées via `mouseMoveEvent`
+   - Système de corrections pour compenser les marges Ubuntu (zones non-cliquables)
+   - Calibration manuelle des offsets (gauche/droite/haut/bas)
+   - Rafraîchissement à ~60 FPS via QTimer
+6. **Système d'actions** : Architecture modulaire permettant d'associer différentes fonctions (copy/term/exec) aux clips
+7. **Thumbnails** : Génération automatique de miniatures rondes avec masque circulaire
+8. **Configuration dynamique** : Chargement et sauvegarde des paramètres en JSON
 
 ---
 
-## 🐛 Troubleshooting
+## 🛠️ Troubleshooting
 
-### Le menu n'apparaît pas au bon endroit (Wayland)
+### Calibration du positionnement (si le menu n'apparaît pas exactement au curseur)
 
-**Symptôme :** Sur le bureau vide, le menu apparaît au centre de l'écran au lieu du curseur.
+**Symptôme :** Le menu radial n'apparaît pas pile sur votre curseur, il y a un décalage.
 
-**Cause :** Restriction de sécurité Wayland qui empêche la récupération de la position du curseur global.
+**Cause :** L'overlay utilisé pour capturer la position du curseur subit les marges du système (barres Ubuntu, zones non-cliquables). Ces marges varient selon votre configuration (taille des barres, résolution, etc.).
 
-**Solutions :**
-1. **Forcer X11** (recommandé) :
-   ```bash
-   # Déconnectez-vous
-   # Sur l'écran de connexion, cliquez sur l'icône ⚙️
-   # Sélectionnez "Ubuntu sur Xorg" (ou session X11)
-   # Reconnectez-vous
-   ```
+**Solution :** Ajuster les valeurs de correction dans le code
 
-2. **Accepter la limitation** : Le menu fonctionne correctement quand le curseur est sur une fenêtre d'application (VSCode, navigateur, etc.)
+Le système utilise 4 valeurs de correction pour compenser les marges :
 
-3. **Variable d'environnement** (déjà dans le script) :
-   ```bash
-   export QT_QPA_PLATFORM=xcb
-   ```
+```python
+# Dans ClipNotesWindow.py ou le fichier de configuration du tracker
+self.x_correction_left = 200    # Correction à gauche
+self.x_correction_right = -200  # Correction à droite
+self.y_correction_top = 200     # Correction en haut
+self.y_correction_bottom = 80   # Correction en bas
+```
+
+**Comment calibrer :**
+
+1. **Méthode manuelle** :
+   - Lancez ClipNotes
+   - Notez où le menu apparaît par rapport à votre curseur
+   - Si le menu est trop à gauche : augmentez `x_correction_left`
+   - Si le menu est trop à droite : diminuez `x_correction_right` (valeur négative)
+   - Si le menu est trop haut : augmentez `y_correction_top`
+   - Si le menu est trop bas : augmentez `y_correction_bottom`
+   - Testez plusieurs positions (centre, bords, coins) pour trouver les bonnes valeurs
+
+2. **Outil de calibration** (en développement) :
+   - Un script automatisé est en cours de développement pour calculer automatiquement les corrections optimales
+   - Cet outil affichera des repères visuels pour aider à mesurer les décalages
+
+**Note :** Ces valeurs sont spécifiques à votre configuration système. Si vous changez la résolution, la taille des barres ou le thème, vous devrez peut-être recalibrer.
 
 ---
 
@@ -318,7 +493,7 @@ clipnotes/
 
 ---
 
-### Erreur "ModuleNotFoundError: No module named 'PyQt5'"
+### Erreur "ModuleNotFoundError: No module named 'PyQt6'"
 
 **Solution :**
 ```bash
@@ -360,8 +535,8 @@ rm .clipnotes.lock
 ```
 
 **Optimisation :**
-- Vérifier que `xdotool` est installé (plus rapide que le fallback Qt)
-- Sur Wayland, forcer X11 améliore les performances
+- Vérifier que le CursorTracker ne subit pas de lag (rafraîchissement à 60 FPS)
+- Si le problème persiste, vérifier les pilotes graphiques
 
 ---
 
@@ -378,24 +553,57 @@ python3 -c "from PIL import Image; print('Pillow OK')"
 
 ---
 
-### Erreur "Permission denied" sur clip_notes.txt
+### Les images ne deviennent pas des thumbnails ronds
+
+**Vérifications :**
+1. Le dossier `thumbnails/` doit exister (créé automatiquement normalement)
+2. Permissions d'écriture :
+   ```bash
+   ls -ld thumbnails/
+   # Devrait afficher drwxr-xr-x
+   ```
+
+3. Si le dossier manque :
+   ```bash
+   mkdir thumbnails
+   chmod 755 thumbnails
+   ```
+
+---
+
+### Erreur "Permission denied" sur clip_notes.json
 
 **Solution :**
 ```bash
-chmod 644 clip_notes.txt
+chmod 644 clip_notes.json
+chmod 644 config.json
+chmod 644 stored_clips.json
 ```
 
 ---
 
 ### Le contenu copié a des `\n` au lieu de sauts de ligne
 
-**Normal !** Les `\n` sont affichés dans le fichier mais correctement convertis lors de la copie.
+**Normal !** Les `\n` sont affichés dans le fichier JSON mais correctement convertis lors de l'utilisation.
 
 **Si problème :**
 - Vérifier que `paperclip_copy()` dans `utils.py` contient bien :
   ```python
   formatted_string = string.replace(r'\n', '\n')
   ```
+
+---
+
+### Les couleurs ne changent pas après configuration
+
+**Solution :**
+1. Vérifier que `config.json` existe et est bien formé
+2. Fermer complètement ClipNotes et le relancer :
+   ```bash
+   pkill -f ClipNotesWindow
+   rm .clipnotes.lock
+   ./launch_clipnotes.sh
+   ```
 
 ---
 
@@ -420,6 +628,7 @@ cat .clipnotes.lock
 ```bash
 pkill -9 -f ClipNotesWindow
 rm -f .clipnotes.lock
+rm -f thumbnails/*.png  # Si besoin de réinitialiser les images
 ```
 
 ---
@@ -433,14 +642,17 @@ Les contributions sont les bienvenues ! N'hésitez pas à :
 
 ### Idées d'évolution
 
-- [ ] Support de catégories/dossiers pour organiser les clips
-- [ ] Import/export de collections de clips
+- [x] Support de catégories/actions pour organiser les clips (copy/term/exec)
+- [x] Système de stockage/restauration de groupes de clips
+- [x] Personnalisation complète des couleurs et de l'apparence
+- [x] Support des images comme icônes
 - [ ] Historique avec recherche
 - [ ] Snippets de code avec coloration syntaxique
 - [ ] Synchronisation cloud (Dropbox, Google Drive)
 - [ ] Raccourcis clavier par clip
 - [ ] Mode sombre/clair configurable
 - [ ] Support multi-langues
+- [ ] Import/export de collections au format JSON
 
 ---
 
@@ -454,15 +666,28 @@ Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour plus de 
 
 **Sébastien Dethyre**
 
+Développeur Full-Stack & Ingénieur Test Automation
+
 - 💼 LinkedIn : [Sébastien Dethyre](https://linkedin.com/in/votre-profil)
-- 📧 Email : votre.email@example.com
-- 🐙 GitHub : [@votre-username](https://github.com/votre-username)
+- 📧 Email : dethyres@hotmail.fr
+- 🐙 GitHub : [@SebDethyre](https://github.com/SebDethyre)
+- 🌐 Site : [sebastiendethyre.github.io/site](https://sebastiendethyre.github.io/site)
+
+**Compétences démontrées dans ce projet :**
+- Architecture d'application PyQt6 avancée
+- Animations et interfaces graphiques modernes
+- Gestion de fichiers et persistence de données (JSON)
+- Traitement d'images (PIL/Pillow)
+- Automatisation système (subprocess, shell)
+- Conception UX/UI intuitive
+- Gestion d'état complexe
+- Documentation technique complète
 
 ---
 
 ## 🙏 Remerciements
 
-- PyQt5 pour le framework graphique
+- PyQt6 pour le framework graphique puissant et moderne
 - La communauté Python pour les excellentes bibliothèques
 - Les contributeurs open-source
 

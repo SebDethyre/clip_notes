@@ -676,7 +676,7 @@ class RadialMenu(QWidget):
             "➕": "Ajouter",
             "✏️": "Modifier",
             "➖": "Supprimer",
-            "📦": "Clips stockés"
+            "📦": "Stockage"
         }
         
         angle_step = 360 / len(buttons)
@@ -2100,7 +2100,7 @@ class App(QMainWindow):
         
         # Remplacer temporairement les boutons par les 2 options
         self.buttons_sub = [
-            ("📋", lambda: self.show_stored_clips_dialog(x, y), "Voir les clips stockés", None),
+            ("📋", lambda: self.show_stored_clips_dialog(x, y), "Clips stockés", None),
             ("💾", lambda: self.store_clip_mode(x, y), "Stocker des clips", None)
         ]
         
@@ -2929,7 +2929,7 @@ class App(QMainWindow):
             "✏️": "Modifier",
             "➖": "Supprimer",
             "⚙️": "Configuration",
-            "📦": "Clips stockés"
+            "📦": "Stockage"
         }
         
         self.actions_map_sub = {
