@@ -33,7 +33,7 @@ ZONE_HOVER_OPACITY = 45
 SHOW_CENTRAL_ICON = True  # Afficher l'icône du clip survolé au centre
 MENU_OPACITY = 100  # Opacité globale du menu radial (0-100)
 
-SPECIAL_BUTTONS = ["⚙️", "➖", "✏️", "➕", "📦"]
+SPECIAL_BUTTONS = ["📦", "⚙️", "➖", "✏️", "➕"]
 
 # Palette de couleurs disponibles (RGB)
 COLOR_PALETTE = {
@@ -2100,8 +2100,8 @@ class App(QMainWindow):
         
         # Remplacer temporairement les boutons par les 2 options
         self.buttons_sub = [
-            ("💾", lambda: self.store_clip_mode(x, y), "Stocker un clip", None),
-            ("📋", lambda: self.show_stored_clips_dialog(x, y), "Voir les clips stockés", None)
+            ("📋", lambda: self.show_stored_clips_dialog(x, y), "Voir les clips stockés", None),
+            ("💾", lambda: self.store_clip_mode(x, y), "Stocker des clips", None)
         ]
         
         if self.current_popup:
