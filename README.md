@@ -150,7 +150,7 @@ Le menu est organisé en **cercle** avec :
    - **Action (slider)** :
      - 📋 **Copy** : Copie le contenu dans le presse-papier
      - 💻 **Term** : Ouvre un nouveau terminal et exécute la commande
-     - ⚡ **Exec** : Exécute la commande en arrière-plan
+     - 🚀 **Exec** : Exécute la commande en arrière-plan
    - **Bouton "Ajouter"** : Valide et enregistre
 
 4. Votre nouveau clip apparaît immédiatement dans le menu !
@@ -208,32 +208,22 @@ Le menu est organisé en **cercle** avec :
 
 ---
 
-### 📦 Stockage : Sauvegarder et restaurer des groupes
+### 📦 Stockage : Sauvegarder et restaurer des clips
 
-Le système de stockage permet de créer des collections de clips pour différents contextes (projet A, projet B, usage perso, etc.).
+Le système de stockage permet de conserver des clips pour différents contextes.
 
-**Ouvrir le menu de stockage :**
+**Stocker des clips :**
 1. Cliquez sur **📦** dans le menu principal
 2. Un sous-menu radial apparaît avec :
-   - **💾 Save** : Sauvegarder vos clips actuels
-   - **📂 Load** : Restaurer un groupe de clips
-   - **❌ Delete** : Supprimer un groupe sauvegardé
-   - **🔙 Retour** : Revenir au menu principal
+   - **💾 Stocker des clips** : Bascule en mode de stockage séquentiel des clips, par simple click
+   - **📋 Clips stockés** : Accès à la fenêtre des clips stockés
 
-**Sauvegarder un groupe :**
-1. Cliquez sur **💾 Save**
-2. Entrez un nom pour le groupe (ex: "Projet Web", "DevOps", "Personnel")
-3. Tous vos clips actuels sont sauvegardés sous ce nom
+**Menu de stockage :**
+Chaque clip est repésenté selon son ordre de stockage. Il est possible pour chacun de :
+- ↩️ : le restaurer
+- ✏️ : l'éditer
+- 🗑️ : le supprimer définitivement
 
-**Restaurer un groupe :**
-1. Cliquez sur **📂 Load**
-2. Choisissez le groupe dans la liste
-3. Vos clips actuels sont remplacés par ceux du groupe
-
-**Supprimer un groupe :**
-1. Cliquez sur **❌ Delete**
-2. Choisissez le groupe à supprimer
-3. Confirmation demandée
 
 ---
 
@@ -316,23 +306,25 @@ ClipNotes est entièrement utilisable au clavier, sans jamais toucher la souris 
 
 Cliquez sur **⚙️** dans le menu principal pour accéder aux options :
 
-**Apparence :**
-- **Néon central** : Activer/désactiver l'effet néon pulsé au centre
-- **Icône centrale** : Afficher/masquer l'icône du clip survolé au centre
-- **Opacité du menu** : Régler la transparence globale (0-100%)
-- **Opacité des zones** :
-  - Opacité de base (zones non survolées)
-  - Opacité au survol
-- **Vitesse du néon** : Contrôler la vitesse du battement lumineux
-
-**Couleurs :**
+**🎨 Couleurs :**
 - **Couleur du fond du menu** : Personnaliser le gris de fond
-- **Couleur du néon** : Changer la couleur de l'effet lumineux
 - **Couleurs par action** :
   - Couleur des zones "Copy" (défaut : orange)
   - Couleur des zones "Term" (défaut : vert)
   - Couleur des zones "Exec" (défaut : bleu)
-  - Palette complète disponible (rouges, oranges, jaunes, verts, bleus, violets, gris)
+  - Palette complète disponible (rouges, oranges, jaunes, verts, bleus, violets, gris) + ouleurs personnalisées
+
+**🔆 Opacités :**
+- **Opacité du menu** : Régler la transparence globale (0-100%)
+- **Opacité des zones** :
+  - Opacité de base (zones non survolées)
+  - Opacité au survol
+
+**⚡ Options :**
+- **Icône centrale** : Afficher/masquer l'icône du clip survolé au centre
+- **Néon central** : Activer/désactiver l'effet néon pulsé au centre
+- **Couleur du néon** : Changer la couleur de l'effet lumineux
+- **Vitesse du néon** : Contrôler la vitesse du battement lumineux
 
 **Sauvegarde :**
 - Toutes les modifications sont sauvegardées dans `config.json`
