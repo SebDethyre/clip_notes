@@ -1596,13 +1596,14 @@ class App(QMainWindow):
         # CRITIQUE: Forcer le mouse tracking après le refresh
         self.current_popup.setMouseTracking(True)
 
-    def update_clip(self, x, y, slider_value=0):
+    def update_clip(self, x, y, context = "from_radial"):
         if self.tracker:
             self.tracker.update_pos()
             x, y = self.tracker.last_x, self.tracker.last_y
-        
-        # Activer le mode modification
-        self.update_mode = True
+
+        # Activer le mode modification seulement si c'est depuis le menu radial
+        if context == "from_radial":
+            self.update_mode = True
         
         # Filtrer les clips (sans les boutons d'action)
         clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in SPECIAL_BUTTONS}
@@ -2313,10 +2314,13 @@ class App(QMainWindow):
         dialog.setWindowTitle("📋 Clips stockés")
         dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        
+        dialog.setStyleSheet("""
+                background-color: rgba(35, 35, 35, 255);
+                border-radius: 6px;
+        """)
         # Appliquer une palette sombre
         palette = QPalette()
-        palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.Window, QColor(100, 100, 100))
         palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
         palette.setColor(QPalette.ColorRole.Base, QColor(35, 35, 35))
         palette.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
@@ -2333,22 +2337,24 @@ class App(QMainWindow):
         layout.setSpacing(10)
         
         # Titre
-        title_label = QLabel("📋 Clips stockés")
-        title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
-        layout.addWidget(title_label)
+        # title_label = QLabel("📋 Clips stockés")
+        # title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
+        # layout.addWidget(title_label)
         
         # Zone de défilement pour la liste
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("""
-            QScrollArea {
-                background-color: rgba(35, 35, 35, 255);
-                border: 1px solid rgba(100, 100, 100, 150);
-                border-radius: 6px;
-            }
-        """)
+        # scroll.setStyleSheet("""
+        #     QScrollArea {
+        #         background-color: rgba(35, 35, 35, 255);
+        #         border: 1px solid rgba(100, 100, 100, 150);
+        #         border-radius: 6px;
+        #     }
+        # """)
         
         scroll_content = QWidget()
+        scroll_content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        # scroll_content.setStyleSheet("background-color: rgb(100, 100, 100);")
         scroll_layout = QVBoxLayout(scroll_content)
         scroll_layout.setSpacing(5)
         
@@ -2362,15 +2368,15 @@ class App(QMainWindow):
             header_layout = QHBoxLayout()
             
             alias_header = QLabel("Alias")
-            alias_header.setStyleSheet("font-weight: bold; color: black;")
+            alias_header.setStyleSheet("font-weight: bold; color: white;")
             alias_header.setFixedWidth(50)
             
             action_header = QLabel("Action")
-            action_header.setStyleSheet("font-weight: bold; color: black;")
+            action_header.setStyleSheet("font-weight: bold; color: white;")
             action_header.setFixedWidth(80)
             
             value_header = QLabel("Valeur")
-            value_header.setStyleSheet("font-weight: bold; color: black;")
+            value_header.setStyleSheet("font-weight: bold; color: white;")
             
             # header_layout.addWidget(icon_header)
             header_layout.addWidget(alias_header)
@@ -2417,19 +2423,20 @@ class App(QMainWindow):
                     # pixmap = text_pixmap(alias, 32)
                     # alias_label.setPixmap(pixmap)
                     alias_label.setText(alias)
+                    alias_label.setStyleSheet("color: white;")
                     alias_label.setWordWrap(True)
                     alias_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                               
                 # Action
                 action_label = QLabel(clip_data.get('action', 'copy'))
                 action_label.setFixedWidth(80)
-                action_label.setStyleSheet("color: blue;")
+                action_label.setStyleSheet("color: lightblue;")
                 
                 # String (tronquée si trop longue)
                 string = clip_data.get('string', '')
                 string_display = string[:50] + "..." if len(string) > 50 else string
                 string_label = QLabel(string_display)
-                string_label.setStyleSheet("color: black;")
+                string_label.setStyleSheet("color: white;")
                 string_label.setWordWrap(True)
                 
                 # Bouton restaurer
@@ -2447,12 +2454,27 @@ class App(QMainWindow):
                 """)
                 restore_btn.clicked.connect(lambda checked, a=alias, cd=clip_data: self.restore_clip_to_menu(a, cd, dialog, x, y))
                 
+                # Bouton Editer
+                edit_btn = QPushButton("✏️")
+                edit_btn.setFixedSize(30, 30)
+                edit_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: rgba(255, 255, 150, 100);
+                        border: 1px solid rgba(255, 255, 150, 150);
+                        border-radius: 4px;
+                    }
+                    QPushButton:hover {
+                        background-color: rgba(255, 255, 150, 150);
+                    }
+                """)
+                edit_btn.clicked.connect(lambda checked, a=alias, cd=clip_data, d=dialog: self.edit_clip_from_storage(a, string, x, y, self.get_action_from_json(a), d))
+                
                 # Bouton supprimer
                 delete_btn = QPushButton("🗑️")
                 delete_btn.setFixedSize(30, 30)
                 delete_btn.setStyleSheet("""
                     QPushButton {
-                        background-color: rgba(200, 100, 100, 100);
+                        background-color: rgba(255, 255, 150, 100);
                         border: 1px solid rgba(255, 100, 100, 150);
                         border-radius: 4px;
                     }
@@ -2468,6 +2490,7 @@ class App(QMainWindow):
                 clip_layout.addWidget(string_label)
                 clip_layout.addStretch()
                 clip_layout.addWidget(restore_btn)
+                clip_layout.addWidget(edit_btn)
                 clip_layout.addWidget(delete_btn)
                 
                 scroll_layout.addLayout(clip_layout)
@@ -3071,7 +3094,14 @@ class App(QMainWindow):
             on_submit_callback=handle_submit
         )
 
-    def edit_clip(self, name, value, x, y, slider_value):
+    def edit_clip_from_storage(self, name, value, x, y, slider_value, storage_dialog):
+        """Édite un clip depuis le dialogue de stockage"""
+        # Fermer le dialogue de stockage
+        storage_dialog.accept()
+        # Appeler edit_clip avec le contexte from_storage
+        self.edit_clip(name, value, x, y, slider_value, context="from_storage")
+
+    def edit_clip(self, name, value, x, y, slider_value, context = "from_radial"):
         if self.tracker:
             self.tracker.update_pos()
             x, y = self.tracker.last_x, self.tracker.last_y
@@ -3101,9 +3131,12 @@ class App(QMainWindow):
                         return
                 
                 if new_name != old_name:
-                    self.actions_map_sub.pop(old_name, None)
-                    # Supprimer l'ancien alias du JSON
-                    delete_from_json(CLIP_NOTES_FILE_JSON, old_name)
+                    # Seulement si on vient du menu radial
+                    if context == "from_radial":
+                        self.actions_map_sub.pop(old_name, None)
+                        # Supprimer l'ancien alias du JSON
+                        delete_from_json(CLIP_NOTES_FILE_JSON, old_name)
+                    
                     # Supprimer l'ancien thumbnail s'il existe (si c'est un chemin de fichier)
                     if "/" in old_name and os.path.exists(old_name):
                         try:
@@ -3112,19 +3145,40 @@ class App(QMainWindow):
                         except Exception as e:
                             print(f"Erreur lors de la suppression de l'ancien thumbnail: {e}")
                 
-                # Format: [(fonction, [args], {}), value, action]
-                if action == "copy":
-                    self.actions_map_sub[new_name] = [(paperclip_copy, [new_value], {}), new_value, action]
-                elif action == "term":
-                    self.actions_map_sub[new_name] = [(execute_terminal, [new_value], {}), new_value, action]
-                elif action == "exec":
-                    self.actions_map_sub[new_name] = [(execute_command, [new_value], {}), new_value, action]
+                # Sauvegarder dans le bon fichier selon le contexte
+                if context == "from_storage":
+                    # Sauvegarder dans le fichier de stockage
+                    # D'abord supprimer l'ancien clip du stockage
+                    remove_stored_clip(old_name)
+                    # Supprimer l'ancien thumbnail si le nom a changé
+                    if new_name != old_name and "/" in old_name and os.path.exists(old_name):
+                        try:
+                            os.remove(old_name)
+                            print(f"Ancien thumbnail supprimé: {old_name}")
+                        except Exception as e:
+                            print(f"Erreur lors de la suppression de l'ancien thumbnail: {e}")
+                    # Ajouter le nouveau clip au stockage
+                    add_stored_clip(new_name, action, new_value)
+                else:
+                    # Seulement pour le menu radial : ajouter à actions_map_sub
+                    if action == "copy":
+                        self.actions_map_sub[new_name] = [(paperclip_copy, [new_value], {}), new_value, action]
+                    elif action == "term":
+                        self.actions_map_sub[new_name] = [(execute_terminal, [new_value], {}), new_value, action]
+                    elif action == "exec":
+                        self.actions_map_sub[new_name] = [(execute_command, [new_value], {}), new_value, action]
+                    
+                    # Sauvegarder dans le menu radial
+                    replace_or_append_json(CLIP_NOTES_FILE_JSON, new_name, new_value, action)
                 
-                replace_or_append_json(CLIP_NOTES_FILE_JSON, new_name, new_value, action)
                 dialog.accept()
                 
-                # Rester en mode modification au lieu de revenir au menu principal
-                self.update_clip(x, y)
+                if context == "from_radial":
+                    # Rester en mode modification au lieu de revenir au menu principal
+                    self.update_clip(x, y, context)
+                elif context == "from_storage":
+                    # Rouvrir immédiatement la fenêtre de stockage
+                    self.show_stored_clips_dialog(x, y)
             else:
                 print("Les deux champs doivent être remplis")
 
