@@ -215,7 +215,7 @@ Le système de stockage permet de conserver des clips pour différents contextes
 **Stocker des clips :**
 1. Cliquez sur **📦** dans le menu principal
 2. Un sous-menu radial apparaît avec :
-   - **💾 Stocker des clips** : Bascule en mode de stockage séquentiel des clips, par simple click
+   - **💾 Stocker des clips (Activer le mode stockage)** : Bascule en mode de stockage séquentiel des clips, par simple click
    - **📋 Clips stockés** : Accès à la fenêtre des clips stockés
 
 **Menu de stockage :**
