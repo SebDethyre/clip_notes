@@ -299,6 +299,8 @@ ClipNotes est entièrement utilisable au clavier, sans jamais toucher la souris 
 - Vous utilisez un laptop sans souris
 - Vous voulez gagner en rapidité (pas besoin de viser avec la souris)
 - Vous préférez garder les mains sur le clavier pour rester concentré
+  
+> À l'usage, clip-notes fait office de boite à peites idées.
 
 ---
 
@@ -397,7 +399,7 @@ ClipNotes gère automatiquement les instances multiples :
   ```
 - Thumbnails stockés dans le dossier `thumbnails/` avec noms hashés
 - Configuration dans `config.json`
-- Groupes de stockage dans `stored_clips.json`
+- Stockage dans `stored_clips.json`
 - Rechargement automatique à chaque ouverture
 
 ### Support des images
