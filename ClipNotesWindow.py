@@ -1814,7 +1814,7 @@ class App(QMainWindow):
             self.current_popup.close()
 
     def _create_clip_dialog(self, title, button_text, x, y, initial_name="", initial_value="", 
-                           initial_slider_value=0, placeholder="", on_submit_callback=None):
+                           initial_slider_value=0, placeholder="", on_submit_callback=None, on_close_callback=None):
         dialog = QDialog(self.tracker)
         dialog.setWindowTitle(title)
         dialog.setMinimumWidth(350)
@@ -2207,7 +2207,11 @@ class App(QMainWindow):
         dialog_layout.setContentsMargins(0, 0, 0, 0)
         dialog_layout.addWidget(content)
         name_input.setFocus()
-        dialog.exec()
+        result = dialog.exec()
+        
+        # Si le dialogue a été fermé/annulé (pas accepté) et qu'un callback de fermeture est défini
+        if result == QDialog.DialogCode.Rejected and on_close_callback:
+            on_close_callback()
         
         # CRITIQUE: Nettoyer les variables du dialogue
         self._dialog_temp_image_path = None
@@ -2439,6 +2443,11 @@ class App(QMainWindow):
                 string_label.setStyleSheet("color: white;")
                 string_label.setWordWrap(True)
                 
+                # Convertir l'action en slider_value
+                action = clip_data.get('action', 'copy')
+                action_to_slider = {'copy': 0, 'term': 1, 'exec': 2}
+                slider_value = action_to_slider.get(action, 0)
+                
                 # Bouton restaurer
                 restore_btn = QPushButton("↩️")
                 restore_btn.setFixedSize(30, 30)
@@ -2467,7 +2476,7 @@ class App(QMainWindow):
                         background-color: rgba(255, 255, 150, 150);
                     }
                 """)
-                edit_btn.clicked.connect(lambda checked, a=alias, cd=clip_data, d=dialog: self.edit_clip_from_storage(a, string, x, y, self.get_action_from_json(a), d))
+                edit_btn.clicked.connect(lambda checked, a=alias, s=string, sv=slider_value, d=dialog: self.edit_clip_from_storage(a, s, x, y, sv, d))
                 
                 # Bouton supprimer
                 delete_btn = QPushButton("🗑️")
@@ -3189,7 +3198,8 @@ class App(QMainWindow):
             initial_name=name,
             initial_value=value,
             initial_slider_value=slider_value,  # PASSER la valeur du slider
-            on_submit_callback=handle_submit
+            on_submit_callback=handle_submit,
+            on_close_callback=lambda: self.show_stored_clips_dialog(x, y) if context == "from_storage" else None
         )
 
     def show_window_at(self, x, y, wm_name):
