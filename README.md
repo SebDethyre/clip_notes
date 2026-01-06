@@ -148,7 +148,7 @@ Le menu est organisé en **cercle** avec :
    - **Nom du clip** : Texte descriptif qui apparaîtra en tooltip
    - **Contenu** : Le texte/commande que vous voulez sauvegarder
    - **Action (slider)** :
-     - 📋 **Copy** : Copie le contenu dans le presse-papier
+     - ✂️ **Copy** : Copie le contenu dans le presse-papier
      - 💻 **Term** : Ouvre un nouveau terminal et exécute la commande
      - 🚀 **Exec** : Exécute la commande en arrière-plan
    - **Bouton "Ajouter"** : Valide et enregistre

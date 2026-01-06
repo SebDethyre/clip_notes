@@ -2431,10 +2431,17 @@ class App(QMainWindow):
                     alias_label.setWordWrap(True)
                     alias_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                               
-                # Action
-                action_label = QLabel(clip_data.get('action', 'copy'))
+                # Action "✂️", "💻", "🚀"
+                actions_readable = {
+                    "copy" : "copier",
+                    "term" : "exécuter terminal",
+                    "exec" : "exécuter",
+                }
+                
+                action_label = QLabel(actions_readable[clip_data.get('action', 'copy')])
                 action_label.setFixedWidth(80)
                 action_label.setStyleSheet("color: lightblue;")
+                action_label.setWordWrap(True)
                 
                 # String (tronquée si trop longue)
                 string = clip_data.get('string', '')
@@ -2543,7 +2550,7 @@ class App(QMainWindow):
         
         # Afficher la confirmation
         confirm_dialog = QDialog(self.tracker)
-        confirm_dialog.setWindowTitle("🗑️ Supprimer du stockage")
+        confirm_dialog.setWindowTitle("🗑️ Supprimer")
         confirm_dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         confirm_dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
@@ -2567,7 +2574,7 @@ class App(QMainWindow):
         
         # Message
         display_name = alias if "/" not in alias else os.path.basename(alias)
-        message = QLabel(f"Supprimer définitivement\n'{display_name}'\ndu stockage ?")
+        message = QLabel(f"<b>Supprimer définitivement\n'{display_name}'\ndu stockage ?</b>")
         message.setStyleSheet("color: white; font-size: 14px;")
         message.setAlignment(Qt.AlignmentFlag.AlignCenter)
         message.setWordWrap(True)
@@ -2581,6 +2588,7 @@ class App(QMainWindow):
         cancel_button.setStyleSheet("""
             QPushButton {
                 background-color: rgba(100, 100, 100, 100);
+                color: white;
                 border: 1px solid rgba(150, 150, 150, 150);
                 border-radius: 6px;
                 font-size: 14px;
@@ -2597,6 +2605,7 @@ class App(QMainWindow):
         delete_button.setStyleSheet("""
             QPushButton {
                 background-color: rgba(200, 100, 100, 100);
+                color: white;
                 border: 1px solid rgba(255, 100, 100, 150);
                 border-radius: 6px;
                 font-size: 14px;
