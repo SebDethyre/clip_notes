@@ -125,7 +125,7 @@ sudo apt install python3-pyqt6 python3-pyqt6.qtsvg
               ↑
     ⚙️ ←   [CENTRE]   → ➖
               ↓
-          ✏️ (Modifier)
+          🔧 (Modifier)
               ↓
           ➕ (Ajouter)
 ```
@@ -133,7 +133,7 @@ sudo apt install python3-pyqt6 python3-pyqt6.qtsvg
 Le menu est organisé en **cercle** avec :
 - **Centre** : Indicateur de mode + icône du clip survolé
 - **Périmètre** : Vos clips étiquetés avec des emojis ou images
-- **Boutons de contrôle** : ➕ Ajouter, ✏️ Modifier, ➖ Supprimer, ⚙️ Configuration, 📦 Stockage
+- **Boutons de contrôle** : ➕ Ajouter, 🔧 Modifier, ➖ Supprimer, ⚙️ Configuration, 📦 Stockage
 
 ---
 
@@ -167,12 +167,12 @@ Le menu est organisé en **cercle** avec :
 
 ---
 
-### ✏️ Modifier un clip existant
+### 🔧 Modifier un clip existant
 
 **Activer le mode modification :**
 1. **Appuyez sur le raccourci** pour ouvrir ClipNotes
-2. **Cliquez sur ✏️** (bouton "Modifier")
-3. Le centre du menu s'illumine en **orange** 🟠 avec l'icône ✏️
+2. **Cliquez sur 🔧** (bouton "Modifier")
+3. Le centre du menu s'illumine en **orange** 🟠 avec l'icône 🔧
 4. **Cliquez sur le clip** que vous voulez modifier
 
 **Fenêtre d'édition :**
@@ -184,7 +184,7 @@ Le menu est organisé en **cercle** avec :
 **Note :** Si vous changez l'image d'un clip, l'ancien thumbnail est automatiquement supprimé.
 
 **Quitter le mode modification :**
-- **Cliquez à nouveau sur ✏️** pour désactiver le mode
+- **Cliquez à nouveau sur 🔧** pour désactiver le mode
 - Ou cliquez ailleurs pour fermer le menu
 
 ---
@@ -221,7 +221,7 @@ Le système de stockage permet de conserver des clips pour différents contextes
 **Menu de stockage :**
 Chaque clip est repésenté selon son ordre de stockage. Il est possible pour chacun de :
 - ↩️ : le restaurer
-- ✏️ : l'éditer
+- 🔧 : l'éditer
 - 🗑️ : le supprimer définitivement
 
 
@@ -324,6 +324,7 @@ Cliquez sur **⚙️** dans le menu principal pour accéder aux options :
 
 **⚡ Options :**
 - **Icône centrale** : Afficher/masquer l'icône du clip survolé au centre
+- **Menu à 4 icones** : Groupe les actions de Suppression ➖, de Stockage 💾 et de Consultation 📋 des clips stockés dans un même sous-menu "➖", afin de rendre le menu principal plus léger.
 - **Néon central** : Activer/désactiver l'effet néon pulsé au centre
 - **Couleur du néon** : Changer la couleur de l'effet lumineux
 - **Vitesse du néon** : Contrôler la vitesse du battement lumineux

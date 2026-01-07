@@ -9,14 +9,14 @@ from PyQt6.QtGui import QCursor
 from PyQt6.QtGui import QPainter, QColor, QIcon, QRadialGradient, QFont, QPalette, QPixmap, QPainterPath, QPen
 from PyQt6.QtCore import Qt, QSize, QTimer, QPropertyAnimation, QRect, QEasingCurve, QVariantAnimation, QEvent, QPointF, QObject
 from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QMainWindow, QVBoxLayout, QHBoxLayout, QSlider
-from PyQt6.QtWidgets import QDialog, QLineEdit, QMessageBox, QTextEdit, QToolTip, QLabel, QFileDialog, QComboBox, QCheckBox, QColorDialog, QScrollArea
+from PyQt6.QtWidgets import QDialog, QLineEdit, QMessageBox, QTextEdit, QTextBrowser, QToolTip, QLabel, QFileDialog, QComboBox, QCheckBox, QColorDialog, QScrollArea
 from PIL import Image, ImageDraw
 import hashlib
 
 from utils import *                
 from ui import EmojiSelector
 
-# 🗑️ 📝
+# 🗑️ 📝 ✏️
 # Constantes de configuration
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # CLIP_NOTES_FILE = os.path.join(SCRIPT_DIR, "clip_notes.txt")
@@ -31,9 +31,14 @@ CENTRAL_NEON = False  # Afficher le néon au centre
 ZONE_BASIC_OPACITY = 15
 ZONE_HOVER_OPACITY = 45
 SHOW_CENTRAL_ICON = True  # Afficher l'icône du clip survolé au centre
+FOUR_ICONS_MENU = True  # Menu à 4 icones inamovibles au lieu de 5 
 MENU_OPACITY = 100  # Opacité globale du menu radial (0-100)
 
-SPECIAL_BUTTONS = ["📦", "⚙️", "➖", "✏️", "➕"]
+# SPECIAL_BUTTONS = ["📦", "⚙️", "➖", "🔧", "➕"]
+if FOUR_ICONS_MENU is True:
+    SPECIAL_BUTTONS = ["➖", "⚙️", "🔧", "➕"]
+else:    
+    SPECIAL_BUTTONS = ["➖", "📦", "⚙️", "🔧", "➕"]
 
 # Palette de couleurs disponibles (RGB)
 COLOR_PALETTE = {
@@ -158,7 +163,7 @@ def create_thumbnail(image_path, size=48):
 
 def load_config():
     """Charge la configuration depuis le fichier JSON"""
-    global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, ACTION_ZONE_COLORS, MENU_OPACITY, MENU_BACKGROUND_COLOR, NEON_COLOR, NEON_SPEED
+    global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, FOUR_ICONS_MENU, ACTION_ZONE_COLORS, MENU_OPACITY, MENU_BACKGROUND_COLOR, NEON_COLOR, NEON_SPEED
     
     if not os.path.exists(CONFIG_FILE):
         return
@@ -171,6 +176,7 @@ def load_config():
         ZONE_BASIC_OPACITY = config.get('zone_basic_opacity', ZONE_BASIC_OPACITY)
         ZONE_HOVER_OPACITY = config.get('zone_hover_opacity', ZONE_HOVER_OPACITY)
         SHOW_CENTRAL_ICON = config.get('show_central_icon', SHOW_CENTRAL_ICON)
+        FOUR_ICONS_MENU = config.get('four_icons_menu', FOUR_ICONS_MENU)
         MENU_OPACITY = config.get('menu_opacity', MENU_OPACITY)
         NEON_SPEED = config.get('neon_speed', NEON_SPEED)
         
@@ -224,6 +230,7 @@ def save_config():
         'zone_basic_opacity': ZONE_BASIC_OPACITY,
         'zone_hover_opacity': ZONE_HOVER_OPACITY,
         'show_central_icon': SHOW_CENTRAL_ICON,
+        'four_icons_menu': FOUR_ICONS_MENU,
         'action_zone_colors': ACTION_ZONE_COLORS,
         'menu_opacity': MENU_OPACITY,
         'menu_background_color': MENU_BACKGROUND_COLOR,
@@ -593,8 +600,8 @@ class RadialKeyboardListener(QObject):
 
     def eventFilter(self, obj, event):
         # Seulement si le menu est visible
-        if not self.radial_menu.isVisible():
-            return False
+        # if not self.radial_menu.isVisible():
+        #     return False
         
         # Ne pas traiter les événements si un dialogue est ouvert
         app = QApplication.instance()
@@ -721,110 +728,121 @@ class RadialMenu(QWidget):
         }
         
         # Tooltips pour les boutons spéciaux
-        special_tooltips = {
-            "➕": "Ajouter",
-            "✏️": "Modifier",
-            "➖": "Supprimer",
-            "📦": "Stockage"
-        }
-        
-        angle_step = 360 / len(buttons)
-        for i, button in enumerate(buttons):
-            if len(button) == 2:
-                label, callback = button
-                tooltip = ""
-                action = None
-            elif len(button) == 3:
-                label, callback, tooltip = button
-                action = None
-            elif len(button) == 4:
-                label, callback, tooltip, action = button
-            else:
-                label, callback = button
-                tooltip = ""
-                action = None
-            
-            # Si c'est un bouton spécial sans tooltip, utiliser le tooltip par défaut
-            if label in special_tooltips and not tooltip:
-                tooltip = special_tooltips[label]
-            
-            # Stocker la couleur, l'action et le label pour ce bouton
-            color = action_colors.get(action, None)
-            self._button_colors.append(color)
-            self._button_actions.append(action)
-            self._button_labels.append(label)
+        if FOUR_ICONS_MENU is True:
+            special_tooltips = {
+                "➕": "Ajouter",
+                "🔧": "Modifier",
+                "➖": "Supprimer"
+            }
+        else:
+            special_tooltips = {
+                "➕": "Ajouter",
+                "🔧": "Modifier",
+                "➖": "Supprimer",
+                "📦": "Stocker"
+            }
+        if buttons:
+            angle_step = 360 / len(buttons)
+            for i, button in enumerate(buttons):
+                if len(button) == 2:
+                    label, callback = button
+                    tooltip = ""
+                    action = None
+                elif len(button) == 3:
+                    label, callback, tooltip = button
+                    action = None
+                elif len(button) == 4:
+                    label, callback, tooltip, action = button
+                else:
+                    label, callback = button
+                    tooltip = ""
+                    action = None
                 
-            angle = math.radians(i * angle_step)
-            # Le centre du menu radial est maintenant au centre du widget agrandi
-            center_offset = self.widget_size // 2
-            bx = center_offset + self.radius * math.cos(angle) - self.btn_size // 2
-            by = center_offset + self.radius * math.sin(angle) - self.btn_size // 2
+                # Si c'est un bouton spécial sans tooltip, utiliser le tooltip par défaut
+                if label in special_tooltips and not tooltip:
+                    tooltip = special_tooltips[label]
+                
+                # Stocker la couleur, l'action et le label pour ce bouton
+                color = action_colors.get(action, None)
+                self._button_colors.append(color)
+                self._button_actions.append(action)
+                self._button_labels.append(label)
+                    
+                angle = math.radians(i * angle_step)
+                # Le centre du menu radial est maintenant au centre du widget agrandi
+                center_offset = self.widget_size // 2
+                bx = center_offset + self.radius * math.cos(angle) - self.btn_size // 2
+                by = center_offset + self.radius * math.sin(angle) - self.btn_size // 2
 
-            btn = QPushButton("", self)
-            # Activer le hover tracking pour ce bouton
-            btn.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+                btn = QPushButton("", self)
+                # Activer le hover tracking pour ce bouton
+                btn.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+                
+                # Déterminer le type de label et utiliser la fonction appropriée
+                if "/" in label:
+                    # C'est un chemin d'image - légèrement plus petit pour voir le hover
+                    btn.setIcon(QIcon(image_pixmap(label, 48)))
+                    btn.setIconSize(QSize(48, 48))
+                elif is_emoji(label):
+                    # C'est un emoji
+                    btn.setIcon(QIcon(emoji_pixmap(label, 32)))
+                    btn.setIconSize(QSize(32, 32))
+                else:
+                    # C'est du texte simple
+                    btn.setIcon(QIcon(text_pixmap(label, 32)))
+                    btn.setIconSize(QSize(32, 32))
+                
+                # Les boutons spéciaux (➕ 🔧 ➖) ont un fond transparent MAIS coloré au hover
+                if FOUR_ICONS_MENU is True:
+                    special_buttons = ["➖", "⚙️", "🔧", "➕"]
+                else:    
+                    special_buttons = ["➖", "📦", "⚙️", "🔧", "➕"]
+                if label in special_buttons:
+                    btn.setStyleSheet(f"""
+                        QPushButton {{
+                            background-color: transparent;
+                            border-radius: {self.btn_size // 2}px;
+                            border: none;
+                        }}
+                        QPushButton:hover {{
+                            background-color: rgba(255, 255, 255, 100);
+                        }}
+                    """)
+                elif "/" in label:
+                    # Boutons avec images - pas de padding, fond transparent
+                    btn.setStyleSheet(f"""
+                        QPushButton {{
+                            background-color: transparent;
+                            border-radius: {self.btn_size // 2}px;
+                            border: none;
+                            padding: 0px;
+                        }}
+                        QPushButton:hover {{
+                            background-color: rgba(255, 255, 255, 30);
+                        }}
+                    """)
+                else:
+                    btn.setStyleSheet(f"""
+                        QPushButton {{
+                            background-color: rgba(255, 255, 255, 10);
+                            border-radius: {self.btn_size // 2}px;
+                            border: none;
+                        }}
+                        QPushButton:hover {{
+                            background-color: rgba(255, 255, 255, 100);
+                        }}
+                    """)
+                btn.setFixedSize(self.btn_size, self.btn_size)
+                btn.move(int(bx), int(by))
+                btn.setVisible(False)
+                btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
+                
+                # Installer l'eventFilter pour tous les boutons (pour tooltips et badges)
+                btn.installEventFilter(self)
+                if tooltip:
+                    self._tooltips[btn] = tooltip
+                self.buttons.append(btn)
             
-            # Déterminer le type de label et utiliser la fonction appropriée
-            if "/" in label:
-                # C'est un chemin d'image - légèrement plus petit pour voir le hover
-                btn.setIcon(QIcon(image_pixmap(label, 48)))
-                btn.setIconSize(QSize(48, 48))
-            elif is_emoji(label):
-                # C'est un emoji
-                btn.setIcon(QIcon(emoji_pixmap(label, 32)))
-                btn.setIconSize(QSize(32, 32))
-            else:
-                # C'est du texte simple
-                btn.setIcon(QIcon(text_pixmap(label, 32)))
-                btn.setIconSize(QSize(32, 32))
-            
-            # Les boutons spéciaux (➕ ✏️ ➖) ont un fond transparent MAIS coloré au hover
-            if label in SPECIAL_BUTTONS:
-                btn.setStyleSheet(f"""
-                    QPushButton {{
-                        background-color: transparent;
-                        border-radius: {self.btn_size // 2}px;
-                        border: none;
-                    }}
-                    QPushButton:hover {{
-                        background-color: rgba(255, 255, 255, 100);
-                    }}
-                """)
-            elif "/" in label:
-                # Boutons avec images - pas de padding, fond transparent
-                btn.setStyleSheet(f"""
-                    QPushButton {{
-                        background-color: transparent;
-                        border-radius: {self.btn_size // 2}px;
-                        border: none;
-                        padding: 0px;
-                    }}
-                    QPushButton:hover {{
-                        background-color: rgba(255, 255, 255, 30);
-                    }}
-                """)
-            else:
-                btn.setStyleSheet(f"""
-                    QPushButton {{
-                        background-color: rgba(255, 255, 255, 10);
-                        border-radius: {self.btn_size // 2}px;
-                        border: none;
-                    }}
-                    QPushButton:hover {{
-                        background-color: rgba(255, 255, 255, 100);
-                    }}
-                """)
-            btn.setFixedSize(self.btn_size, self.btn_size)
-            btn.move(int(bx), int(by))
-            btn.setVisible(False)
-            btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
-            
-            # Installer l'eventFilter pour tous les boutons (pour tooltips et badges)
-            btn.installEventFilter(self)
-            if tooltip:
-                self._tooltips[btn] = tooltip
-            self.buttons.append(btn)
-        
         # Créer les 3 badges globaux (un par action) - seront positionnés dynamiquement
         self._action_badges = {}
         badge_info = {
@@ -852,9 +870,13 @@ class RadialMenu(QWidget):
 
     def update_buttons(self, buttons):
         """Met à jour les boutons existants sans recréer le widget entier"""
+        print(f"DEBUG update_buttons: Reçu {len(buttons) if buttons else 0} boutons")
+        print(f"DEBUG update_buttons: buttons = {[(b[0], b[2]) for b in buttons] if buttons else 'None'}")
+        
         # Sauvegarder l'état actuel
         was_visible = self.isVisible()
         current_opacity = self._widget_opacity
+        print(f"DEBUG update_buttons: was_visible={was_visible}, current_opacity={current_opacity}")
         
         # Détruire les anciens boutons
         for btn in self.buttons:
@@ -1007,10 +1029,10 @@ class RadialMenu(QWidget):
         """Crée un handler de clic qui affiche un message de confirmation personnalisé selon l'action"""
         def handler():
             # Pour les boutons spéciaux uniquement, afficher un message
-            if action is None:
-                message = f"✓ {label}"
-                self.tooltip_window.show_message(message, 1000)
-                self._update_tooltip_position()
+            # if action is None:
+            #     message = f"✓ {label}"
+            #     self.tooltip_window.show_message(message, 1000)
+            #     self._update_tooltip_position()
             
             # Exécuter le callback
             cb()
@@ -1167,11 +1189,16 @@ class RadialMenu(QWidget):
     
     def _initialize_focus(self):
         """Initialise le focus sur le premier clip ou sur ➕"""
-        # Les 5 boutons spéciaux sont toujours présents : 📦 ⚙️ ➖ ✏️ ➕
+        # Les 5 boutons spéciaux sont toujours présents : 📦 ⚙️ ➖ 🔧 ➕
         # S'il y a plus de 5 boutons, les clips commencent à l'index 5
-        if len(self.buttons) > 5:
+        # if len(self.buttons) > 5:
+        button_mumber = 5
+        if FOUR_ICONS_MENU is True:
+            button_mumber = 4
+        if len(self.buttons) > button_mumber:
             # Il y a des clips, aller au premier clip
-            self._focused_index = 5
+            # self._focused_index = 5
+            self._focused_index = button_mumber
         else:
             # Pas de clips, trouver le bouton ➕
             for i, label in enumerate(self._button_labels):
@@ -1243,28 +1270,28 @@ class RadialMenu(QWidget):
             action: QColor(*rgb, ZONE_HOVER_OPACITY)
             for action, rgb in ACTION_ZONE_COLORS.items()
         }
-        
-        angle_step = 360 / len(self.buttons)
-        
-        # Dessiner toutes les zones
-        for i, action in enumerate(self._button_actions):
-            if action in action_colors_base:
-                # Choisir la couleur selon si c'est survolé ou non
-                if action == self._hovered_action:
-                    color = action_colors_hover[action]
-                else:
-                    color = action_colors_base[action]
-                
-                # Calculer l'angle de ce bouton
-                button_angle = i * angle_step
-                
-                # Convertir en angle Qt (0° à droite, sens anti-horaire)
-                start_angle = -button_angle - (angle_step / 2)
-                
-                painter.setBrush(color)
-                painter.setPen(Qt.PenStyle.NoPen)
-                # drawPie utilise des "16èmes de degrés"
-                painter.drawPie(circle_rect, int(start_angle * 16), int(angle_step * 16))
+        if self.buttons:
+            angle_step = 360 / len(self.buttons)
+            
+            # Dessiner toutes les zones
+            for i, action in enumerate(self._button_actions):
+                if action in action_colors_base:
+                    # Choisir la couleur selon si c'est survolé ou non
+                    if action == self._hovered_action:
+                        color = action_colors_hover[action]
+                    else:
+                        color = action_colors_base[action]
+                    
+                    # Calculer l'angle de ce bouton
+                    button_angle = i * angle_step
+                    
+                    # Convertir en angle Qt (0° à droite, sens anti-horaire)
+                    start_angle = -button_angle - (angle_step / 2)
+                    
+                    painter.setBrush(color)
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    # drawPie utilise des "16èmes de degrés"
+                    painter.drawPie(circle_rect, int(start_angle * 16), int(angle_step * 16))
 
         if self.neon_enabled:
             scaled_neon_radius = self._neon_radius * self._scale_factor
@@ -1326,13 +1353,16 @@ class RadialMenu(QWidget):
     def handle_click_outside(self):
         """Gère le clic en dehors du menu (sur le tracker ou au centre)"""
         # Si on est en mode modification, suppression ou stockage, revenir au menu de base
+        button_mumber = 2
+        if FOUR_ICONS_MENU is True:
+            button_mumber = 3
         if self.app_instance and (self.app_instance.update_mode or self.app_instance.delete_mode or self.app_instance.store_mode):
             self.app_instance.update_mode = False
             self.app_instance.delete_mode = False
             self.app_instance.store_mode = False
             self.app_instance.refresh_menu()
         # Si on est dans le menu de sélection 📦 (2 boutons seulement)
-        elif len(self.buttons) == 2:
+        elif len(self.buttons) == button_mumber:
             self.app_instance.refresh_menu()
         else:
             # Sinon, fermer normalement
@@ -1397,7 +1427,11 @@ class RadialMenu(QWidget):
                     btn.setIconSize(QSize(int(32 * self._scale_factor), int(32 * self._scale_factor)))
                 
                 # Mettre à jour le style avec le border-radius scalé
-                if label in SPECIAL_BUTTONS:
+                if FOUR_ICONS_MENU is True:
+                    special_buttons = ["➖", "⚙️", "🔧", "➕"]
+                else:    
+                    special_buttons = ["➖", "📦", "⚙️", "🔧", "➕"]
+                if label in special_buttons:
                     btn.setStyleSheet(f"""
                         QPushButton {{
                             background-color: transparent;
@@ -1560,9 +1594,42 @@ class App(QMainWindow):
         
         # Reconstruire buttons_sub depuis actions_map_sub avec tri
         self.buttons_sub = []
-        
+        if FOUR_ICONS_MENU is True:
+            special_button_tooltips = {
+                "➕": "Ajouter",
+                "🔧": "Modifier",
+                "⚙️": "Configurer",
+                "➖": "Supprimer",
+            }
+            # populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
+            self.actions_map_sub = {
+                "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
+                "🔧": [(self.update_clip, [x,y], {}), special_button_tooltips["🔧"], None],
+                "⚙️": [(self.show_config_dialog, [x,y], {}), special_button_tooltips["⚙️"], None],
+                "➖": [(self.show_storage_menu, [x,y], {}), special_button_tooltips["➖"], None],
+            }
+        else:
+            special_button_tooltips = {
+                "➕": "Ajouter",
+                "🔧": "Modifier",
+                "⚙️": "Configurer",
+                "📦": "Stocker",
+                "➖": "Supprimer",
+            }
+            
+            self.actions_map_sub = {
+                "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
+                "🔧": [(self.update_clip, [x,y], {}), special_button_tooltips["🔧"], None],
+                "⚙️": [(self.show_config_dialog, [x,y], {}), special_button_tooltips["⚙️"], None],
+                "📦": [(self.show_storage_menu, [x,y], {}), special_button_tooltips["📦"], None],
+                "➖": [(self.delete_clip, [x,y], {}), special_button_tooltips["➖"], None],
+            }
+        if FOUR_ICONS_MENU is True:
+            special_buttons = ["➖", "⚙️", "🔧", "➕"]
+        else:    
+            special_buttons = ["➖", "📦", "⚙️", "🔧", "➕"]
+        populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
         # Séparer les boutons spéciaux des autres
-        special_buttons = SPECIAL_BUTTONS
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Trier seulement les clips (pas les boutons spéciaux)
@@ -1604,10 +1671,44 @@ class App(QMainWindow):
         # Activer le mode modification seulement si c'est depuis le menu radial
         if context == "from_radial":
             self.update_mode = True
-        
+            # if FOUR_ICONS_MENU is True:
+            #     special_button_tooltips = {
+            #         "➕": "Ajouter",
+            #         "🔧": "Modifier",
+            #         "⚙️": "Configurer",
+            #         "➖": "Supprimer",
+            #     }
+            #     # populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
+            #     self.actions_map_sub = {
+            #         "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
+            #         "🔧": [(self.update_clip, [x,y], {}), special_button_tooltips["🔧"], None],
+            #         "⚙️": [(self.show_config_dialog, [x,y], {}), special_button_tooltips["⚙️"], None],
+            #         "➖": [(self.show_storage_menu, [x,y], {}), special_button_tooltips["➖"], None],
+            #     }
+            # else:
+            #     special_button_tooltips = {
+            #         "➕": "Ajouter",
+            #         "🔧": "Modifier",
+            #         "⚙️": "Configurer",
+            #         "📦": "Stocker",
+            #         "➖": "Supprimer",
+            #     }
+                
+            #     self.actions_map_sub = {
+            #         "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
+            #         "🔧": [(self.update_clip, [x,y], {}), special_button_tooltips["🔧"], None],
+            #         "⚙️": [(self.show_config_dialog, [x,y], {}), special_button_tooltips["⚙️"], None],
+            #         "📦": [(self.show_storage_menu, [x,y], {}), special_button_tooltips["📦"], None],
+            #         "➖": [(self.delete_clip, [x,y], {}), special_button_tooltips["➖"], None],
+            #     }
+            
         # Filtrer les clips (sans les boutons d'action)
-        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in SPECIAL_BUTTONS}
-        
+        if FOUR_ICONS_MENU is True:
+            special_buttons = ["➖", "⚙️", "🔧", "➕"]
+        else:    
+            special_buttons = ["➖", "📦", "⚙️", "🔧", "➕"]
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
+        # print(clips_only)
         # Trier les clips
         sorted_clips = sort_actions_map(clips_only)
         
@@ -1627,7 +1728,7 @@ class App(QMainWindow):
         
         if self.current_popup:
             self.current_popup.update_buttons(self.buttons_sub)
-            self.current_popup.set_central_text("✏️")
+            self.current_popup.set_central_text("🔧")
             self.current_popup.set_neon_color("jaune")
             self.current_popup.toggle_neon(True)
             self.current_popup.timer.start(50)
@@ -1647,9 +1748,12 @@ class App(QMainWindow):
         
         # Activer le mode suppression
         self.delete_mode = True
-        
         # Filtrer les clips (sans les boutons d'action)
-        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in SPECIAL_BUTTONS}
+        if FOUR_ICONS_MENU is True:
+            special_buttons = ["➖", "⚙️", "🔧", "➕"]
+        else:    
+            special_buttons = ["➖", "📦", "⚙️", "🔧", "➕"]
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Trier les clips
         sorted_clips = sort_actions_map(clips_only)
@@ -1781,7 +1885,11 @@ class App(QMainWindow):
                 if isinstance(func_data, tuple) and len(func_data) == 3:
                     func, args, kwargs = func_data
                     func(*args, **kwargs)
-                    if name not in SPECIAL_BUTTONS:
+                    if FOUR_ICONS_MENU is True:
+                        special_buttons = ["➖", "⚙️", "🔧", "➕"]
+                    else:    
+                        special_buttons = ["➖", "📦", "⚙️", "🔧", "➕"]
+                    if name not in special_buttons:
                         # Récupérer l'action et générer le message
                         action = self.actions_map_sub[name][2]
                         if action == "copy":
@@ -1965,11 +2073,13 @@ class App(QMainWindow):
 
         submit_button = QPushButton(button_text)
         submit_button.setFixedHeight(32)
+        submit_button.setProperty("help_text", "Valider")
+        submit_button.installEventFilter(self)
         
         # Label d'aide pour afficher les descriptions des icônes
         help_label = QLabel("")
         help_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        help_label.setStyleSheet("color: white; font-size: 12px; padding: 4px; font-weight: bold;")
+        help_label.setStyleSheet("color: white; font-size: 14px; padding: 4px; font-weight: bold;")
         help_label.setMinimumHeight(20)
         self._dialog_help_label = help_label  # Stocker pour l'event filter
 
@@ -2235,9 +2345,12 @@ class App(QMainWindow):
         
         # Activer le mode stockage
         self.store_mode = True
-        
+        if FOUR_ICONS_MENU is True:
+            special_buttons = ["➖", "⚙️", "🔧", "➕"]
+        else:
+            special_buttons = ["➖", "📦", "⚙️", "🔧", "➕"]
         # Filtrer les clips (sans les boutons d'action)
-        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in SPECIAL_BUTTONS}
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Trier les clips
         sorted_clips = sort_actions_map(clips_only)
@@ -2291,19 +2404,30 @@ class App(QMainWindow):
     
     def show_storage_menu(self, x, y):
         """Affiche un menu pour choisir entre stocker un clip ou voir les clips stockés"""
+        
         if self.tracker:
             self.tracker.update_pos()
             x, y = self.tracker.last_x, self.tracker.last_y
-        
+        # Menu à 4 icones
+        if FOUR_ICONS_MENU is True:
+            self.buttons_sub = [
+                ("📋", lambda: self.show_stored_clips_dialog(x, y), "Clips stockés", None),
+                ("🗑️", lambda: self.delete_clip(x, y), "Supprimer", None),
+                ("💾", lambda: self.store_clip_mode(x, y), "Stocker", None)
+            ]
+            central_icon = "➖"
+        else:
+            self.buttons_sub = [
+                ("📋", lambda: self.show_stored_clips_dialog(x, y), "Clips stockés", None),
+                ("💾", lambda: self.store_clip_mode(x, y), "Stocker", None)
+            ]
+            central_icon = "📦"
         # Remplacer temporairement les boutons par les 2 options
-        self.buttons_sub = [
-            ("📋", lambda: self.show_stored_clips_dialog(x, y), "Clips stockés", None),
-            ("💾", lambda: self.store_clip_mode(x, y), "Stocker des clips", None)
-        ]
         
         if self.current_popup:
             self.current_popup.update_buttons(self.buttons_sub)
-            self.current_popup.set_central_text("📦")
+            self.current_popup.set_central_text(central_icon)
+
     
     def show_stored_clips_dialog(self, x, y):
         """Affiche la fenêtre de dialogue avec la liste des clips stockés"""
@@ -2333,7 +2457,10 @@ class App(QMainWindow):
         palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
         dialog.setPalette(palette)
         
-        dialog.setFixedSize(750, 500)
+        # dialog.setFixedSize(750, 500)
+
+        dialog.resize(750, 500)
+        dialog.setMinimumSize(650, 400)
         dialog.move(x - 375, y - 200)
         
         layout = QVBoxLayout()
@@ -2437,9 +2564,17 @@ class App(QMainWindow):
                     "term" : "exécuter terminal",
                     "exec" : "exécuter",
                 }
+
+                actions_readable_tooltip = {
+                    "copy" : "copie la valeur dans le presse-papier",
+                    "term" : "exécute la valeur dans un terminal",
+                    "exec" : "exécute la valeur hors terminal",
+                }
                 
                 action_label = QLabel(actions_readable[clip_data.get('action', 'copy')])
                 action_label.setFixedWidth(80)
+                action_label.setProperty("help_text", actions_readable_tooltip[clip_data.get('action', 'copy')])
+                action_label.installEventFilter(self)
                 action_label.setStyleSheet("color: lightblue;")
                 action_label.setWordWrap(True)
                 
@@ -2447,6 +2582,10 @@ class App(QMainWindow):
                 string = clip_data.get('string', '')
                 string_display = string[:50] + "..." if len(string) > 50 else string
                 string_label = QLabel(string_display)
+                # string_display_helper = string[:150] + "..." if len(string) > 150 else string
+                help_text = string.replace(r"\n", "\n")
+                string_label.setProperty("help_text", help_text)
+                string_label.installEventFilter(self)
                 string_label.setStyleSheet("color: white;")
                 string_label.setWordWrap(True)
                 
@@ -2458,6 +2597,8 @@ class App(QMainWindow):
                 # Bouton restaurer
                 restore_btn = QPushButton("↩️")
                 restore_btn.setFixedSize(30, 30)
+                restore_btn.setProperty("help_text", "Restaurer")
+                restore_btn.installEventFilter(self)
                 restore_btn.setStyleSheet("""
                     QPushButton {
                         background-color: rgba(100, 200, 100, 100);
@@ -2471,8 +2612,10 @@ class App(QMainWindow):
                 restore_btn.clicked.connect(lambda checked, a=alias, cd=clip_data: self.restore_clip_to_menu(a, cd, dialog, x, y))
                 
                 # Bouton Editer
-                edit_btn = QPushButton("✏️")
+                edit_btn = QPushButton("🔧")
                 edit_btn.setFixedSize(30, 30)
+                edit_btn.setProperty("help_text", "Modifier")
+                edit_btn.installEventFilter(self)
                 edit_btn.setStyleSheet("""
                     QPushButton {
                         background-color: rgba(255, 255, 150, 100);
@@ -2488,6 +2631,8 @@ class App(QMainWindow):
                 # Bouton supprimer
                 delete_btn = QPushButton("🗑️")
                 delete_btn.setFixedSize(30, 30)
+                delete_btn.setProperty("help_text", "Supprimer")
+                delete_btn.installEventFilter(self)
                 delete_btn.setStyleSheet("""
                     QPushButton {
                         background-color: rgba(255, 255, 150, 100);
@@ -2515,6 +2660,16 @@ class App(QMainWindow):
         scroll.setWidget(scroll_content)
         layout.addWidget(scroll)
         
+        # Label d'aide pour afficher les descriptions des icônes
+        help_label = QLabel("")
+        # help_code = QTextBrowser()
+        # help_label.setMinimumHeight(80)
+        help_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        help_label.setStyleSheet("color: white; font-size: 14px; padding: 4px; font-weight: bold;")
+        # help_label.setMinimumHeight(10)
+        layout.addWidget(help_label)
+        self._dialog_help_label = help_label
+        
         # Bouton Fermer
         close_button = QPushButton("Fermer")
         close_button.setFixedHeight(40)
@@ -2532,6 +2687,8 @@ class App(QMainWindow):
             }
         """)
         close_button.clicked.connect(dialog.accept)
+        # close_button.setProperty("help_text", "Fermer")
+        # close_button.installEventFilter(self)
         layout.addWidget(close_button)
         
         dialog_layout = QVBoxLayout(dialog)
@@ -2671,7 +2828,7 @@ class App(QMainWindow):
             x, y = self.tracker.last_x, self.tracker.last_y
         
         dialog = QDialog(self.tracker)
-        dialog.setWindowTitle("⚙️ Configuration")
+        dialog.setWindowTitle("⚙️ Configurer")
         dialog.setWindowFlags(Qt.WindowType.Dialog)
         dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
@@ -2691,7 +2848,7 @@ class App(QMainWindow):
         palette.setColor(QPalette.ColorRole.HighlightedText, QColor(35, 35, 35))
         dialog.setPalette(palette)
         
-        dialog.setFixedSize(400, 740)
+        dialog.setFixedSize(400, 750)
         
         if x is None or y is None:
             screen = QApplication.primaryScreen().geometry()
@@ -2884,9 +3041,9 @@ class App(QMainWindow):
         layout.addWidget(options_label)
         
         # Checkbox pour l'icône centrale
-        icon_checkbox = QCheckBox("Afficher l'icône du clip survolé")
-        icon_checkbox.setChecked(SHOW_CENTRAL_ICON)
-        icon_checkbox.setStyleSheet("""
+        central_icon_checkbox = QCheckBox("Afficher l'icône du clip survolé")
+        central_icon_checkbox.setChecked(SHOW_CENTRAL_ICON)
+        central_icon_checkbox.setStyleSheet("""
             QCheckBox::indicator {
                 background-color: white;
                 border: 1px solid black;
@@ -2898,7 +3055,24 @@ class App(QMainWindow):
                 background-color: #ff8c00;
             }
             """)
-        layout.addWidget(icon_checkbox)
+        layout.addWidget(central_icon_checkbox)
+
+        # Checkbox pour le menu à 4 icones
+        four_icons_menu_checkbox = QCheckBox("Menu à 4 icones")
+        four_icons_menu_checkbox.setChecked(FOUR_ICONS_MENU)
+        four_icons_menu_checkbox.setStyleSheet("""
+            QCheckBox::indicator {
+                background-color: white;
+                border: 1px solid black;
+                width: 14px;
+                height: 14px;
+                margin-left: 20px;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #ff8c00;
+            }
+            """)
+        layout.addWidget(four_icons_menu_checkbox)
         
         # Checkbox pour le néon central
         neon_checkbox = QCheckBox("Afficher le néon central")
@@ -3016,7 +3190,7 @@ class App(QMainWindow):
         """)
         
         def save_and_close():
-            global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, ACTION_ZONE_COLORS, MENU_OPACITY, MENU_BACKGROUND_COLOR, NEON_COLOR, NEON_SPEED
+            global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, FOUR_ICONS_MENU, ACTION_ZONE_COLORS, MENU_OPACITY, MENU_BACKGROUND_COLOR, NEON_COLOR, NEON_SPEED
             
             # Mettre à jour les variables globales
             ACTION_ZONE_COLORS["copy"] = selected_colors["copy"]
@@ -3028,7 +3202,8 @@ class App(QMainWindow):
             MENU_BACKGROUND_COLOR = tuple(selected_menu_bg_color)
             NEON_COLOR = tuple(selected_neon_color)
             NEON_SPEED = neon_speed_slider.value()
-            SHOW_CENTRAL_ICON = icon_checkbox.isChecked()
+            SHOW_CENTRAL_ICON = central_icon_checkbox.isChecked()
+            FOUR_ICONS_MENU = four_icons_menu_checkbox.isChecked()
             CENTRAL_NEON = neon_checkbox.isChecked()
             
             # Sauvegarder dans le fichier
@@ -3201,7 +3376,7 @@ class App(QMainWindow):
                 print("Les deux champs doivent être remplis")
 
         self._create_clip_dialog(
-            title="✏️ Modifier",
+            title="🔧 Modifier",
             button_text="Modifier",
             x=x, y=y,
             initial_name=name,
@@ -3230,25 +3405,47 @@ class App(QMainWindow):
         self.buttons_sub = []
         
         # Définir les tooltips pour les boutons spéciaux
-        special_button_tooltips = {
-            "➕": "Ajouter",
-            "✏️": "Modifier",
-            "➖": "Supprimer",
-            "⚙️": "Configuration",
-            "📦": "Stockage"
-        }
-        
-        self.actions_map_sub = {
-            "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
-            "✏️": [(self.update_clip, [x,y], {}), special_button_tooltips["✏️"], None],
-            "➖": [(self.delete_clip, [x,y], {}), special_button_tooltips["➖"], None],
-            "⚙️": [(self.show_config_dialog, [x,y], {}), special_button_tooltips["⚙️"], None],
-            "📦": [(self.show_storage_menu, [x,y], {}), special_button_tooltips["📦"], None],
-        }
-        populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
+
+
+        if FOUR_ICONS_MENU is True:
+            special_button_tooltips = {
+                "➕": "Ajouter",
+                "🔧": "Modifier",
+                "⚙️": "Configurer",
+                "➖": "Supprimer",
+            }
+            # populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
+            self.actions_map_sub = {
+                "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
+                "🔧": [(self.update_clip, [x,y], {}), special_button_tooltips["🔧"], None],
+                "⚙️": [(self.show_config_dialog, [x,y], {}), special_button_tooltips["⚙️"], None],
+                "➖": [(self.show_storage_menu, [x,y], {}), special_button_tooltips["➖"], None],
+            }
+            populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
+        else:
+            special_button_tooltips = {
+                "➕": "Ajouter",
+                "🔧": "Modifier",
+                "⚙️": "Configurer",
+                "📦": "Stocker",
+                "➖": "Supprimer",
+            }
+            
+            self.actions_map_sub = {
+                "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
+                "🔧": [(self.update_clip, [x,y], {}), special_button_tooltips["🔧"], None],
+                "⚙️": [(self.show_config_dialog, [x,y], {}), special_button_tooltips["⚙️"], None],
+                "📦": [(self.show_storage_menu, [x,y], {}), special_button_tooltips["📦"], None],
+                "➖": [(self.delete_clip, [x,y], {}), special_button_tooltips["➖"], None],
+            }
+            populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
 
         # Séparer les boutons spéciaux des autres
-        special_buttons = SPECIAL_BUTTONS
+        if FOUR_ICONS_MENU is True:
+            special_buttons = ["➖", "⚙️", "🔧", "➕"]
+        else:    
+            special_buttons = ["➖", "📦", "⚙️", "🔧", "➕"]
+        special_buttons = special_buttons
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Trier seulement les clips (pas les boutons spéciaux)
