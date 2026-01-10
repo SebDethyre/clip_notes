@@ -2049,7 +2049,7 @@ class HoverSubMenu(QWidget):
                     QPushButton {{
                         background-color: rgba(120, 120, 120, 250);
                         border-radius: {max(1, scaled_size // 2)}px;
-                        border: 3px solid rgba(255, 255, 100, 255);
+                        border: 3px solid rgba(255, 255, 255, 255);
                     }}
                 """)
             else:
