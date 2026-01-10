@@ -2058,11 +2058,11 @@ class HoverSubMenu(QWidget):
                     QPushButton {{
                         background-color: rgba(80, 80, 80, 220);
                         border-radius: {max(1, scaled_size // 2)}px;
-                        border: 2px solid rgba(255, 255, 255, 100);
+                        border: 2px solid rgba(255, 255, 255, 0);
                     }}
                     QPushButton:hover {{
                         background-color: rgba(120, 120, 120, 250);
-                        border: 2px solid rgba(255, 255, 255, 200);
+                        border: 2px solid rgba(255, 255, 255, 0);
                     }}
                 """)
     
