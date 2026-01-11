@@ -2198,6 +2198,7 @@ class App(QMainWindow):
         # Créer une fenêtre tooltip pour l'application (utilisée dans les dialogues)
         self.tooltip_window = TooltipWindow()
         self._dialog_emoji_labels = []
+        self.nb_icons_config_labels = []
         self._dialog_help_label = None
         self._dialog_slider = None
         self._nb_icons_dialog_slider = None
@@ -2228,6 +2229,10 @@ class App(QMainWindow):
                 slider_value = watched.property("slider_value")
                 if slider_value is not None:
                     self._dialog_slider.setValue(slider_value)
+            if watched in self.nb_icons_config_labels and self._nb_icons_dialog_slider:
+                slider_value = watched.property("slider_value")
+                if slider_value is not None:
+                    self._nb_icons_dialog_slider.setValue(slider_value)
         
         return super().eventFilter(watched, event)
 
@@ -3762,8 +3767,8 @@ class App(QMainWindow):
         emoji_tooltips = ["4", "5"]
         
         # Stocker les labels pour l'event filter
-        self._dialog_emoji_labels = []
-        self._dialog_slider = None  # Référence au slider pour les clics sur emojis
+        self.nb_icons_config_labels = []
+        self._nb_icons_dialog_slider = None  # Référence au slider pour les clics sur emojis
         
         for i, emoji in enumerate(emoji_labels):
             if i > 0:
@@ -3775,12 +3780,13 @@ class App(QMainWindow):
             
             # Stocker le tooltip et la valeur du slider pour ce label
             label.setProperty("tooltip_text", emoji_tooltips[i])
-            label.setProperty("slider_value", i)  # 0 pour ✂️, 1 pour 💻, 2 pour 🚀
+            # La valeur du slider est 4 ou 5, pas l'index 0 ou 1
+            label.setProperty("slider_value", int(emoji))  # Utiliser la valeur réelle (4 ou 5)
             
             # Installer l'event filter pour détecter le hover et les clics
             label.installEventFilter(self)
             label.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
-            self._dialog_emoji_labels.append(label)
+            self.nb_icons_config_labels.append(label)
             
             emoji_labels_layout.addWidget(label)
             if i < len(emoji_labels) - 1:
@@ -3800,7 +3806,7 @@ class App(QMainWindow):
         slider.setPageStep(1)
         slider.setProperty("help_text", "Associer une action")
         slider.installEventFilter(self)
-        self._dialog_slider = slider  # Stocker pour les clics sur emojis
+        self._nb_icons_dialog_slider = slider  # Stocker pour les clics sur emojis
         # slider.valueChanged.connect(self.refresh_menu)
         slider.setStyleSheet("""
             QSlider::groove:horizontal {
