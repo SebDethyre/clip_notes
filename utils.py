@@ -56,6 +56,46 @@ def is_emoji(s):
     
     return False
 
+def has_rich_formatting(html_content):
+    """
+    Détecte si un contenu HTML contient du vrai formatting riche 
+    (coloration syntaxique, styles, etc.) et pas juste du texte basique.
+    
+    Returns:
+        bool: True si le HTML contient du formatting riche, False sinon
+    """
+    if not html_content:
+        return False
+    
+    # Patterns indiquant du formatting riche (coloration de code, etc.)
+    rich_patterns = [
+        'color:',           # Couleur de texte
+        'background-color:', # Couleur de fond
+        'font-weight:',     # Gras
+        'font-style:',      # Italique
+        'text-decoration:', # Souligné, etc.
+        '<span style=',     # Spans avec styles
+        '<font color=',     # Ancienne syntaxe de couleur
+        'rgb(',             # Couleurs RGB
+        'rgba(',            # Couleurs RGBA
+        '#[0-9a-fA-F]{3,6}', # Couleurs hex
+    ]
+    
+    # Le HTML basique de QTextEdit ressemble à :
+    # <!DOCTYPE ...><html><head>...</head><body style="..."><p style="...">texte</p></body></html>
+    # On cherche des styles AU-DELÀ de ce wrapper basique
+    
+    import re
+    for pattern in rich_patterns:
+        # Chercher le pattern dans le body (pas dans les meta du head)
+        body_match = re.search(r'<body[^>]*>(.*)</body>', html_content, re.DOTALL | re.IGNORECASE)
+        if body_match:
+            body_content = body_match.group(1)
+            if re.search(pattern, body_content, re.IGNORECASE):
+                return True
+    
+    return False
+
 colors = {
     "blanc": (255, 255, 255),
     "noir": (0, 0, 0),
@@ -243,7 +283,7 @@ def append_to_actions_file(file_path, key, value):
         f.write(f"{key}:{value}\n")
         # print(f"[Info] La clé '{key}' a été ajoutée au fichier.")
 
-def append_to_actions_file_json(file_path, alias, string, action="copy"):
+def append_to_actions_file_json(file_path, alias, string, action="copy", html_string=None):
     """
     Ajoute une entrée dans le fichier JSON d'actions.
     
@@ -252,6 +292,7 @@ def append_to_actions_file_json(file_path, alias, string, action="copy"):
         alias: L'alias/clé de l'action
         string: La commande ou chaîne à associer
         action: Type d'action ("copy", "term", "exec"), par défaut "copy"
+        html_string: Le contenu HTML formaté (optionnel, pour conserver la coloration)
     """
     # Vérifier si la valeur est non vide
     if not string.strip():
@@ -279,6 +320,10 @@ def append_to_actions_file_json(file_path, alias, string, action="copy"):
         "action": action,
         "string": string
     }
+    # Ajouter le HTML seulement s'il est fourni
+    if html_string:
+        new_entry["html_string"] = html_string
+    
     data.append(new_entry)
     
     # Sauvegarder dans le fichier JSON
@@ -332,7 +377,7 @@ def replace_or_append_at_lineno(chemin_fichier, clef, valeur, numero_ligne):
     with open(chemin_fichier, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lignes) + '\n')  # ajoute un \n final propre
 
-def replace_or_append_json(file_path, alias, string, action="copy"):
+def replace_or_append_json(file_path, alias, string, action="copy", html_string=None):
     """
     Remplace une entrée existante ou l'ajoute si elle n'existe pas.
     
@@ -341,6 +386,7 @@ def replace_or_append_json(file_path, alias, string, action="copy"):
         alias: L'alias/clé de l'action
         string: La commande ou chaîne à associer
         action: Type d'action ("copy", "term", "exec"), par défaut "copy"
+        html_string: Le contenu HTML formaté (optionnel, pour conserver la coloration)
     """
     # Vérifier si la valeur est non vide
     if not string.strip():
@@ -363,6 +409,11 @@ def replace_or_append_json(file_path, alias, string, action="copy"):
             # Remplacer les valeurs
             item["string"] = string
             item["action"] = action
+            # Gérer le HTML : l'ajouter, le mettre à jour, ou le supprimer
+            if html_string:
+                item["html_string"] = html_string
+            elif "html_string" in item:
+                del item["html_string"]  # Supprimer si plus de HTML
             found = True
             print(f"[Info] L'alias '{alias}' a été mis à jour.")
             break
@@ -374,6 +425,8 @@ def replace_or_append_json(file_path, alias, string, action="copy"):
             "action": action,
             "string": string
         }
+        if html_string:
+            new_entry["html_string"] = html_string
         data.append(new_entry)
         print(f"[Info] L'alias '{alias}' a été ajouté.")
     

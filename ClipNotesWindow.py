@@ -13,10 +13,11 @@ from PyQt6.QtWidgets import QDialog, QLineEdit, QMessageBox, QTextEdit, QTextBro
 from PIL import Image, ImageDraw
 import hashlib
 
-from utils import *                
+from utils import *
+from utils import has_rich_formatting                
 from ui import EmojiSelector
 
-# 🗑️ 📝
+# 🗑️ 📝 ✏️
 # Constantes de configuration
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # CLIP_NOTES_FILE = os.path.join(SCRIPT_DIR, "clip_notes.txt")
@@ -31,10 +32,14 @@ CENTRAL_NEON = False  # Afficher le néon au centre
 ZONE_BASIC_OPACITY = 15
 ZONE_HOVER_OPACITY = 45
 SHOW_CENTRAL_ICON = True  # Afficher l'icône du clip survolé au centre
+NB_ICONS_MENU = 4  # Menu à 4 icones inamovibles au lieu de 5 
 MENU_OPACITY = 100  # Opacité globale du menu radial (0-100)
 
-# SPECIAL_BUTTONS = ["➖", "📦", "⚙️", "🔧", "➕"]
-SPECIAL_BUTTONS = ["➖", "⚙️", "🔧", "➕"]
+# SPECIAL_BUTTONS = ["📦", "⚙️", "➖", "🔧", "➕"]
+if NB_ICONS_MENU == 4:
+    SPECIAL_BUTTONS = ["➖", "⚙️", "🔧", "➕"]
+elif NB_ICONS_MENU == 5:
+    SPECIAL_BUTTONS = ["➖", "📦", "⚙️", "🔧", "➕"]
 
 # Palette de couleurs disponibles (RGB)
 COLOR_PALETTE = {
@@ -159,7 +164,7 @@ def create_thumbnail(image_path, size=48):
 
 def load_config():
     """Charge la configuration depuis le fichier JSON"""
-    global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, ACTION_ZONE_COLORS, MENU_OPACITY, MENU_BACKGROUND_COLOR, NEON_COLOR, NEON_SPEED
+    global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, NB_ICONS_MENU, ACTION_ZONE_COLORS, MENU_OPACITY, MENU_BACKGROUND_COLOR, NEON_COLOR, NEON_SPEED
     
     if not os.path.exists(CONFIG_FILE):
         return
@@ -172,6 +177,7 @@ def load_config():
         ZONE_BASIC_OPACITY = config.get('zone_basic_opacity', ZONE_BASIC_OPACITY)
         ZONE_HOVER_OPACITY = config.get('zone_hover_opacity', ZONE_HOVER_OPACITY)
         SHOW_CENTRAL_ICON = config.get('show_central_icon', SHOW_CENTRAL_ICON)
+        NB_ICONS_MENU = config.get('nb_icons_menu', NB_ICONS_MENU)
         MENU_OPACITY = config.get('menu_opacity', MENU_OPACITY)
         NEON_SPEED = config.get('neon_speed', NEON_SPEED)
         
@@ -225,6 +231,7 @@ def save_config():
         'zone_basic_opacity': ZONE_BASIC_OPACITY,
         'zone_hover_opacity': ZONE_HOVER_OPACITY,
         'show_central_icon': SHOW_CENTRAL_ICON,
+        'nb_icons_menu': NB_ICONS_MENU,
         'action_zone_colors': ACTION_ZONE_COLORS,
         'menu_opacity': MENU_OPACITY,
         'menu_background_color': MENU_BACKGROUND_COLOR,
@@ -235,7 +242,7 @@ def save_config():
     try:
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=4, ensure_ascii=False)
-        print(f"[Config] Configuration sauvegardée: {config}")
+        # print(f"[Config] Configuration sauvegardée: {config}")
     except Exception as e:
         print(f"[Erreur] Impossible de sauvegarder la configuration: {e}")
 
@@ -502,7 +509,7 @@ class CursorTracker(QWidget):
             self.close()
 
 
-# === NOUVELLE CLASSE: FENÊTRE TOOLTIP INVISIBLE ===
+# === FENÊTRE TOOLTIP INVISIBLE ===
 class TooltipWindow(QWidget):
     """Fenêtre semi-transparente pour afficher des messages en dessous du menu radial"""
     def __init__(self, parent=None):
@@ -518,46 +525,67 @@ class TooltipWindow(QWidget):
         # CRITIQUE: La tooltip ne doit pas intercepter les événements souris
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         
-        # Label pour le texte
-        self.label = QLabel("", self)
-        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.label.setStyleSheet("""
-            QLabel {
+        # QTextBrowser pour afficher du texte OU du HTML riche
+        self.text_browser = QTextBrowser(self)
+        self.text_browser.setOpenExternalLinks(False)
+        self.text_browser.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.text_browser.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.text_browser.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.text_browser.setStyleSheet("""
+            QTextBrowser {
                 color: white;
                 background-color: rgba(80, 80, 80, 200);
                 border-radius: 8px;
                 padding: 8px 16px;
                 font-size: 14px;
                 font-weight: bold;
+                border: none;
             }
         """)
         
         # Layout
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.label)
+        layout.addWidget(self.text_browser)
         
         # Timer pour l'auto-masquage
         self.hide_timer = QTimer(self)
         self.hide_timer.timeout.connect(self.hide)
         self.hide_timer.setSingleShot(True)
         
+        # Taille max pour éviter les tooltips géants
+        self.setMaximumWidth(600)
+        self.setMaximumHeight(400)
+        
         # État initial
         self.hide()
     
-    def show_message(self, text, duration_ms=0):
+    def show_message(self, text, duration_ms=0, html=None):
         """
         Affiche un message.
         
         Args:
-            text: Le texte à afficher
+            text: Le texte à afficher (fallback si pas de HTML)
             duration_ms: Durée d'affichage en millisecondes (0 = infini)
+            html: Le HTML riche à afficher (optionnel, prioritaire sur text)
         """
-        if not text:
+        if not text and not html:
             self.hide()
             return
         
-        self.label.setText(text)
+        if html:
+            # Afficher le HTML riche
+            self.text_browser.setHtml(html)
+        else:
+            # Afficher le texte simple
+            self.text_browser.setPlainText(text)
+        
+        # Ajuster la taille au contenu
+        doc = self.text_browser.document()
+        doc.setTextWidth(self.maximumWidth() - 32)  # Moins le padding
+        content_height = min(int(doc.size().height()) + 20, self.maximumHeight())
+        content_width = min(int(doc.idealWidth()) + 40, self.maximumWidth())
+        self.text_browser.setFixedSize(content_width, content_height)
         self.adjustSize()
         self.show()
         
@@ -623,10 +651,10 @@ class RadialKeyboardListener(QObject):
                 elif key == Qt.Key.Key_Left:
                     submenu._handle_key_left()
                     return True
-                elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
+                elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter or key == Qt.Key.Key_Down:
                     submenu._handle_key_enter()
                     return True
-                elif key == Qt.Key.Key_Escape:
+                elif key == Qt.Key.Key_Escape or key == Qt.Key.Key_Up:
                     submenu._handle_key_escape()
                     return True
             else:
@@ -637,10 +665,10 @@ class RadialKeyboardListener(QObject):
                 elif key == Qt.Key.Key_Left:
                     self.radial_menu._handle_key_left()
                     return True
-                elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
+                elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter or key == Qt.Key.Key_Down:
                     self.radial_menu._handle_key_enter()
                     return True
-                elif key == Qt.Key.Key_Escape:
+                elif key == Qt.Key.Key_Escape or key == Qt.Key.Key_Up:
                     self.radial_menu._handle_key_escape()
                     return True
 
@@ -748,11 +776,19 @@ class RadialMenu(QWidget):
         }
         
         # Tooltips pour les boutons spéciaux
-        special_tooltips = {
-            "➕": "Ajouter",
-            "🔧": "Modifier",
-            "➖": "Supprimer/Stocker"
-        }
+        if NB_ICONS_MENU == 4:
+            special_tooltips = {
+                "➕": "Ajouter",
+                "🔧": "Modifier",
+                "➖": "Supprimer"
+            }
+        elif NB_ICONS_MENU == 5:
+            special_tooltips = {
+                "➕": "Ajouter",
+                "🔧": "Modifier",
+                "➖": "Supprimer",
+                "📦": "Stocker"
+            }
         if buttons:
             angle_step = 360 / len(buttons)
             for i, button in enumerate(buttons):
@@ -760,15 +796,21 @@ class RadialMenu(QWidget):
                     label, callback = button
                     tooltip = ""
                     action = None
+                    tooltip_html = None
                 elif len(button) == 3:
                     label, callback, tooltip = button
                     action = None
+                    tooltip_html = None
                 elif len(button) == 4:
                     label, callback, tooltip, action = button
+                    tooltip_html = None
+                elif len(button) == 5:
+                    label, callback, tooltip, action, tooltip_html = button
                 else:
                     label, callback = button
                     tooltip = ""
                     action = None
+                    tooltip_html = None
                 
                 # Si c'est un bouton spécial sans tooltip, utiliser le tooltip par défaut
                 if label in special_tooltips and not tooltip:
@@ -805,7 +847,11 @@ class RadialMenu(QWidget):
                     btn.setIconSize(QSize(32, 32))
                 
                 # Les boutons spéciaux (➕ 🔧 ➖) ont un fond transparent MAIS coloré au hover
-                if label in SPECIAL_BUTTONS:
+                if NB_ICONS_MENU == 4:
+                    special_buttons = ["➖", "⚙️", "🔧", "➕"]
+                elif NB_ICONS_MENU == 5:   
+                    special_buttons = ["➖", "📦", "⚙️", "🔧", "➕"]
+                if label in special_buttons:
                     btn.setStyleSheet(f"""
                         QPushButton {{
                             background-color: transparent;
@@ -843,19 +889,26 @@ class RadialMenu(QWidget):
                 btn.setFixedSize(self.btn_size, self.btn_size)
                 btn.move(int(bx), int(by))
                 btn.setVisible(False)
-                
-                # Cas spécial : le bouton ➖ ouvre le sous-menu de stockage
-                if label == "➖":
-                    self._storage_button_index = i
-                    # Le clic ouvre aussi le sous-menu (pour la navigation clavier)
-                    btn.clicked.connect(lambda checked=False, b=btn: self._show_storage_submenu(b))
-                else:
-                    btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
+                if NB_ICONS_MENU == 4:
+                    if label == "➖":
+                        self._storage_button_index = i
+                        # Le clic ouvre aussi le sous-menu (pour la navigation clavier)
+                        btn.clicked.connect(lambda checked=False, b=btn: self._show_storage_submenu(b))
+                    else:
+                        btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
+                elif NB_ICONS_MENU == 5:   
+                    # Cas spécial : le bouton 📦 ouvre le sous-menu de stockage
+                    if label == "📦":
+                        self._storage_button_index = i
+                        # Le clic ouvre aussi le sous-menu (pour la navigation clavier)
+                        btn.clicked.connect(lambda checked=False, b=btn: self._show_storage_submenu(b))
+                    else:
+                        btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
                 
                 # Installer l'eventFilter pour tous les boutons (pour tooltips et badges)
                 btn.installEventFilter(self)
                 if tooltip:
-                    self._tooltips[btn] = tooltip
+                    self._tooltips[btn] = (tooltip, tooltip_html)
                 self.buttons.append(btn)
             
         # Créer les 3 badges globaux (un par action) - seront positionnés dynamiquement
@@ -991,9 +1044,14 @@ class RadialMenu(QWidget):
             
             # Afficher le message de hover dans la fenêtre tooltip
             if watched in self._tooltips:
-                tooltip_text = self._tooltips[watched]
+                tooltip_data = self._tooltips[watched]
+                # Supporter l'ancien format (string) et le nouveau (tuple)
+                if isinstance(tooltip_data, tuple):
+                    tooltip_text, tooltip_html = tooltip_data
+                else:
+                    tooltip_text, tooltip_html = tooltip_data, None
                 # Afficher dans la fenêtre tooltip en dessous (durée infinie)
-                self.tooltip_window.show_message(tooltip_text, 0)
+                self.tooltip_window.show_message(tooltip_text, 0, html=tooltip_html)
                 self._update_tooltip_position()
                 
         elif event.type() == QEvent.Type.Leave:
@@ -1032,11 +1090,17 @@ class RadialMenu(QWidget):
         
         # Créer les boutons du sous-menu
         x, y = self._x, self._y
-        submenu_buttons = [
-            ("📋", lambda: self._storage_action_clips(x, y), "Clips stockés"),
-            ("🗑️", lambda: self._storage_action_delete(x, y), "Supprimer"),
-            ("💾", lambda: self._storage_action_store(x, y), "Stocker"),
-        ]
+        if NB_ICONS_MENU == 4:
+            submenu_buttons = [
+                ("📋", lambda: self._storage_action_clips(x, y), "Clips stockés"),
+                ("🗑️", lambda: self._storage_action_delete(x, y), "Supprimer"),
+                ("💾", lambda: self._storage_action_store(x, y), "Stocker"),
+            ]
+        elif NB_ICONS_MENU == 5:
+            submenu_buttons = [
+                ("📋", lambda: self._storage_action_clips(x, y), "Clips stockés"),
+                ("💾", lambda: self._storage_action_store(x, y), "Stocker"),
+            ]
         
         # Créer le sous-menu avec self comme parent (nécessaire pour Wayland)
         self._hover_submenu = HoverSubMenu(
@@ -1354,11 +1418,16 @@ class RadialMenu(QWidget):
     
     def _initialize_focus(self):
         """Initialise le focus sur le premier clip ou sur ➕"""
-        # Les 4 boutons spéciaux sont toujours présents : ⚙️ ➖ 🔧 ➕
-        # S'il y a plus de 4 boutons, les clips commencent à l'index 5
-        if len(self.buttons) > 4:
+        # Les 5 boutons spéciaux sont toujours présents : 📦 ⚙️ ➖ 🔧 ➕
+        # S'il y a plus de 5 boutons, les clips commencent à l'index 5
+        # if len(self.buttons) > 5:
+        button_mumber = NB_ICONS_MENU
+        # if NB_ICONS_MENU == 4:
+        #     button_mumber = 4
+        if len(self.buttons) > button_mumber:
             # Il y a des clips, aller au premier clip
-            self._focused_index = 4
+            # self._focused_index = 5
+            self._focused_index = button_mumber
         else:
             # Pas de clips, trouver le bouton ➕
             for i, label in enumerate(self._button_labels):
@@ -1374,8 +1443,13 @@ class RadialMenu(QWidget):
         # Afficher le tooltip
         focused_button = self.buttons[self._focused_index]
         if focused_button in self._tooltips:
-            tooltip_text = self._tooltips[focused_button]
-            self.tooltip_window.show_message(tooltip_text, 0)
+            tooltip_data = self._tooltips[focused_button]
+            # Supporter l'ancien format (string) et le nouveau (tuple)
+            if isinstance(tooltip_data, tuple):
+                tooltip_text, tooltip_html = tooltip_data
+            else:
+                tooltip_text, tooltip_html = tooltip_data, None
+            self.tooltip_window.show_message(tooltip_text, 0, html=tooltip_html)
             self._update_tooltip_position()
         
         # Afficher l'icône centrale si activé
@@ -1527,10 +1601,17 @@ class RadialMenu(QWidget):
             self._hover_submenu = None
         
         # Si on est en mode modification, suppression ou stockage, revenir au menu de base
+        if NB_ICONS_MENU == 4:
+            button_mumber = 3
+        elif NB_ICONS_MENU == 5:
+            button_mumber = 2
         if self.app_instance and (self.app_instance.update_mode or self.app_instance.delete_mode or self.app_instance.store_mode):
             self.app_instance.update_mode = False
             self.app_instance.delete_mode = False
             self.app_instance.store_mode = False
+            self.app_instance.refresh_menu()
+        # Si on est dans le menu de sélection 📦 (2 boutons seulement)
+        elif len(self.buttons) == button_mumber:
             self.app_instance.refresh_menu()
         else:
             # Sinon, fermer normalement
@@ -1595,7 +1676,11 @@ class RadialMenu(QWidget):
                     btn.setIconSize(QSize(int(32 * self._scale_factor), int(32 * self._scale_factor)))
                 
                 # Mettre à jour le style avec le border-radius scalé
-                if label in SPECIAL_BUTTONS:
+                if NB_ICONS_MENU == 4:
+                    special_buttons = ["➖", "⚙️", "🔧", "➕"]
+                elif NB_ICONS_MENU == 5:  
+                    special_buttons = ["➖", "📦", "⚙️", "🔧", "➕"]
+                if label in special_buttons:
                     btn.setStyleSheet(f"""
                         QPushButton {{
                             background-color: transparent;
@@ -1811,8 +1896,13 @@ class HoverSubMenu(QWidget):
             
             # Afficher le tooltip dans le parent_menu si disponible
             if watched in self._tooltips and self.parent_menu:
-                tooltip_text = self._tooltips[watched]
-                self.parent_menu.tooltip_window.show_message(tooltip_text, 0)
+                tooltip_data = self._tooltips[watched]
+                # Supporter l'ancien format (string) et le nouveau (tuple)
+                if isinstance(tooltip_data, tuple):
+                    tooltip_text, tooltip_html = tooltip_data
+                else:
+                    tooltip_text, tooltip_html = tooltip_data, None
+                self.parent_menu.tooltip_window.show_message(tooltip_text, 0, html=tooltip_html)
                 self.parent_menu._update_tooltip_position()
             
             # Afficher l'icône survolée dans le menu parent
@@ -2073,8 +2163,13 @@ class HoverSubMenu(QWidget):
         
         focused_btn = self._buttons[self._focused_index]
         if focused_btn in self._tooltips and self.parent_menu:
-            tooltip_text = self._tooltips[focused_btn]
-            self.parent_menu.tooltip_window.show_message(tooltip_text, 0)
+            tooltip_data = self._tooltips[focused_btn]
+            # Supporter l'ancien format (string) et le nouveau (tuple)
+            if isinstance(tooltip_data, tuple):
+                tooltip_text, tooltip_html = tooltip_data
+            else:
+                tooltip_text, tooltip_html = tooltip_data, None
+            self.parent_menu.tooltip_window.show_message(tooltip_text, 0, html=tooltip_html)
             self.parent_menu._update_tooltip_position()
         
         # Afficher l'icône focusée dans le menu parent
@@ -2105,6 +2200,7 @@ class App(QMainWindow):
         self._dialog_emoji_labels = []
         self._dialog_help_label = None
         self._dialog_slider = None
+        self._nb_icons_dialog_slider = None
         self._dialog_image_preview = None  # Label pour l'aperçu de l'image
         self._dialog_temp_image_path = None  # Chemin temporaire de l'image sélectionnée
         self._dialog_remove_image_button = None  # Bouton pour supprimer l'image
@@ -2154,6 +2250,32 @@ class App(QMainWindow):
             print(f"Erreur lecture JSON: {e}")
         return 0
 
+    def get_clip_data_from_json(self, alias):
+        """
+        Lit toutes les données d'un clip depuis le fichier JSON.
+        
+        Returns:
+            tuple: (slider_value, html_string ou None)
+        """
+        try:
+            if os.path.exists(CLIP_NOTES_FILE_JSON):
+                with open(CLIP_NOTES_FILE_JSON, 'r', encoding='utf-8') as f:
+                    clips = json.load(f)
+                    for clip in clips:
+                        if clip.get('alias') == alias:
+                            action = clip.get('action', 'copy')
+                            action_to_slider = {
+                                'copy': 0,
+                                'term': 1,
+                                'exec': 2
+                            }
+                            slider_value = action_to_slider.get(action, 0)
+                            html_string = clip.get('html_string', None)
+                            return (slider_value, html_string)
+        except Exception as e:
+            print(f"Erreur lecture JSON: {e}")
+        return (0, None)
+
     def refresh_menu(self):
         """Rafraîchit le menu en mettant à jour les boutons existants"""
         if not self.current_popup:
@@ -2171,9 +2293,41 @@ class App(QMainWindow):
         
         # Reconstruire buttons_sub depuis actions_map_sub avec tri
         self.buttons_sub = []
-        
+        if NB_ICONS_MENU == 4:
+            special_button_tooltips = {
+                "➕": "Ajouter",
+                "🔧": "Modifier",
+                "⚙️": "Configurer",
+                "➖": "Supprimer",
+            }
+            # populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
+            self.actions_map_sub = {
+                "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
+                "🔧": [(self.update_clip, [x,y], {}), special_button_tooltips["🔧"], None],
+                "⚙️": [(self.show_config_dialog, [x,y], {}), special_button_tooltips["⚙️"], None],
+                "➖": [(self.show_storage_menu, [x,y], {}), special_button_tooltips["➖"], None],
+            }
+        elif NB_ICONS_MENU == 5:
+            special_button_tooltips = {
+                "➕": "Ajouter",
+                "🔧": "Modifier",
+                "⚙️": "Configurer",
+                "📦": "Stocker",
+                "➖": "Supprimer",
+            }
+            self.actions_map_sub = {
+                "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
+                "🔧": [(self.update_clip, [x,y], {}), special_button_tooltips["🔧"], None],
+                "⚙️": [(self.show_config_dialog, [x,y], {}), special_button_tooltips["⚙️"], None],
+                "📦": [(self.show_storage_menu, [x,y], {}), special_button_tooltips["📦"], None],
+                "➖": [(self.delete_clip, [x,y], {}), special_button_tooltips["➖"], None],
+            }
+        if NB_ICONS_MENU == 4:
+            special_buttons = ["➖", "⚙️", "🔧", "➕"]
+        elif NB_ICONS_MENU == 5:
+            special_buttons = ["➖", "📦", "⚙️", "🔧", "➕"]
+        populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
         # Séparer les boutons spéciaux des autres
-        special_buttons = SPECIAL_BUTTONS
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Trier seulement les clips (pas les boutons spéciaux)
@@ -2217,22 +2371,27 @@ class App(QMainWindow):
             self.update_mode = True
         
         # Filtrer les clips (sans les boutons d'action)
-        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in SPECIAL_BUTTONS}
-        
+        if NB_ICONS_MENU == 4:
+            special_buttons = ["➖", "⚙️", "🔧", "➕"]
+        elif NB_ICONS_MENU == 5:    
+            special_buttons = ["➖", "📦", "⚙️", "🔧", "➕"]
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
+        # print(clips_only)
         # Trier les clips
         sorted_clips = sort_actions_map(clips_only)
         
         self.buttons_sub = []
         for name, (action_data, value, action) in sorted_clips:
-            # Lire l'action depuis le JSON pour ce clip
-            clip_slider_value = self.get_action_from_json(name)
+            # Lire l'action ET le HTML depuis le JSON pour ce clip
+            clip_slider_value, clip_html = self.get_clip_data_from_json(name)
             tooltip = value.replace(r'\n', '\n')
             self.buttons_sub.append(
                 (
                     name, 
-                    self.make_handler_edit(name, value, x, y, clip_slider_value),
+                    self.make_handler_edit(name, value, x, y, clip_slider_value, clip_html),
                     tooltip,
-                    action
+                    action,
+                    clip_html  # 5ème élément : HTML pour le tooltip
                 )
             )
         
@@ -2243,12 +2402,12 @@ class App(QMainWindow):
             self.current_popup.toggle_neon(True)
             self.current_popup.timer.start(50)
 
-    def make_handler_edit(self, name, value, x, y, slider_value):
+    def make_handler_edit(self, name, value, x, y, slider_value, html_string=None):
         def handler():
             if self.tracker:
                 self.tracker.update_pos()
                 x, y = self.tracker.last_x, self.tracker.last_y
-            self.edit_clip(name, value, x, y, slider_value)
+            self.edit_clip(name, value, x, y, slider_value, html_string=html_string)
         return handler
 
     def delete_clip(self, x, y):
@@ -2259,7 +2418,11 @@ class App(QMainWindow):
         # Activer le mode suppression
         self.delete_mode = True
         # Filtrer les clips (sans les boutons d'action)
-        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in SPECIAL_BUTTONS}
+        if NB_ICONS_MENU == 4:
+            special_buttons = ["➖", "⚙️", "🔧", "➕"]
+        elif NB_ICONS_MENU == 5:    
+            special_buttons = ["➖", "📦", "⚙️", "🔧", "➕"]
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Trier les clips
         sorted_clips = sort_actions_map(clips_only)
@@ -2267,12 +2430,15 @@ class App(QMainWindow):
         self.buttons_sub = []
         for name, (action_data, value, action) in sorted_clips:
             tooltip = value.replace(r'\n', '\n')
+            # Récupérer le HTML pour le tooltip
+            _, clip_html = self.get_clip_data_from_json(name)
             self.buttons_sub.append(
                 (
                     name, 
                     self.make_handler_delete(name, value, x, y),
                     tooltip,
-                    action
+                    action,
+                    clip_html  # 5ème élément : HTML pour le tooltip
                 )
             )
         
@@ -2391,7 +2557,11 @@ class App(QMainWindow):
                 if isinstance(func_data, tuple) and len(func_data) == 3:
                     func, args, kwargs = func_data
                     func(*args, **kwargs)
-                    if name not in SPECIAL_BUTTONS:
+                    if NB_ICONS_MENU == 4:
+                        special_buttons = ["➖", "⚙️", "🔧", "➕"]
+                    elif NB_ICONS_MENU == 5:   
+                        special_buttons = ["➖", "📦", "⚙️", "🔧", "➕"]
+                    if name not in special_buttons:
                         # Récupérer l'action et générer le message
                         action = self.actions_map_sub[name][2]
                         if action == "copy":
@@ -2408,7 +2578,7 @@ class App(QMainWindow):
                             self.current_popup.tooltip_window.show_message(message, 1000)
                             self.current_popup._update_tooltip_position()
                             # Fermer après 1 seconde
-                            QTimer.singleShot(1000, self._close_popup)
+                            QTimer.singleShot(300, self._close_popup)
                         else:
                             # Fermer immédiatement si pas de message
                             self._close_popup()
@@ -2424,7 +2594,7 @@ class App(QMainWindow):
             self.current_popup.close()
 
     def _create_clip_dialog(self, title, button_text, x, y, initial_name="", initial_value="", 
-                           initial_slider_value=0, placeholder="", on_submit_callback=None, on_close_callback=None):
+                           initial_slider_value=0, initial_html=None, placeholder="", on_submit_callback=None, on_close_callback=None):
         dialog = QDialog(self.tracker)
         dialog.setWindowTitle(title)
         dialog.setMinimumWidth(350)
@@ -2593,7 +2763,10 @@ class App(QMainWindow):
         value_input.installEventFilter(self)
         if placeholder:
             value_input.setPlaceholderText(placeholder)
-        if initial_value:
+        if initial_html:
+            # Si on a du HTML riche, l'utiliser pour conserver le formatting
+            value_input.setHtml(initial_html)
+        elif initial_value:
             value_input.setText(initial_value.replace(r'\n', '\n'))
 
         submit_button = QPushButton(button_text)
@@ -2858,10 +3031,8 @@ class App(QMainWindow):
             self.current_popup.setMouseTracking(True)
         
         return dialog
-
     
     # ===== MODE STOCKAGE DE CLIPS =====
-    
     def store_clip_mode(self, x, y):
         """Active le mode stockage de clips"""
         if self.tracker:
@@ -2870,9 +3041,12 @@ class App(QMainWindow):
         
         # Activer le mode stockage
         self.store_mode = True
-        
+        if NB_ICONS_MENU == 4:
+            special_buttons = ["➖", "⚙️", "🔧", "➕"]
+        elif NB_ICONS_MENU == 5:
+            special_buttons = ["➖", "📦", "⚙️", "🔧", "➕"]
         # Filtrer les clips (sans les boutons d'action)
-        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in SPECIAL_BUTTONS}
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Trier les clips
         sorted_clips = sort_actions_map(clips_only)
@@ -2880,12 +3054,15 @@ class App(QMainWindow):
         self.buttons_sub = []
         for name, (action_data, value, action) in sorted_clips:
             tooltip = value.replace(r'\n', '\n')
+            # Récupérer le HTML pour le tooltip
+            _, clip_html = self.get_clip_data_from_json(name)
             self.buttons_sub.append(
                 (
                     name, 
                     self.make_handler_store(name, value, action, x, y),
                     tooltip,
-                    action
+                    action,
+                    clip_html  # 5ème élément : HTML pour le tooltip
                 )
             )
         
@@ -2930,17 +3107,26 @@ class App(QMainWindow):
         if self.tracker:
             self.tracker.update_pos()
             x, y = self.tracker.last_x, self.tracker.last_y
-        
+        # Menu à 4 icones
+        if NB_ICONS_MENU == 4:
+            self.buttons_sub = [
+                ("📋", lambda: self.show_stored_clips_dialog(x, y), "Clips stockés", None),
+                ("🗑️", lambda: self.delete_clip(x, y), "Supprimer", None),
+                ("💾", lambda: self.store_clip_mode(x, y), "Stocker", None)
+            ]
+            central_icon = "➖"
+        elif NB_ICONS_MENU == 5:
+            self.buttons_sub = [
+                ("📋", lambda: self.show_stored_clips_dialog(x, y), "Clips stockés", None),
+                ("💾", lambda: self.store_clip_mode(x, y), "Stocker", None)
+            ]
+            central_icon = "📦"
         # Remplacer temporairement les boutons par les 2 options
-        self.buttons_sub = [
-            ("📋", lambda: self.show_stored_clips_dialog(x, y), "Clips stockés", None),
-            ("🗑️", lambda: self.delete_clip(x, y), "Clips stockés", None),
-            ("💾", lambda: self.store_clip_mode(x, y), "Stocker des clips", None)
-        ]
         
         if self.current_popup:
             self.current_popup.update_buttons(self.buttons_sub)
-            self.current_popup.set_central_text("➖")
+            self.current_popup.set_central_text(central_icon)
+
     
     def show_stored_clips_dialog(self, x, y):
         """Affiche la fenêtre de dialogue avec la liste des clips stockés"""
@@ -3352,7 +3538,7 @@ class App(QMainWindow):
         palette.setColor(QPalette.ColorRole.HighlightedText, QColor(35, 35, 35))
         dialog.setPalette(palette)
         
-        dialog.setFixedSize(400, 780)
+        dialog.setFixedSize(400, 830)
         
         if x is None or y is None:
             screen = QApplication.primaryScreen().geometry()
@@ -3543,11 +3729,105 @@ class App(QMainWindow):
         options_label = QLabel("⚡ Options")
         options_label.setStyleSheet("font-weight: bold; color: white; margin-top: 10px;")
         layout.addWidget(options_label)
+
+
+        # Checkbox pour le menu à 4 icones
+        # nb_icons_menu_checkbox = QCheckBox("Menu à 4 icones")
+        # nb_icons_menu_checkbox.setChecked(NB_ICONS_MENU)
+        # nb_icons_menu_checkbox.setStyleSheet("""
+        #     QCheckBox::indicator {
+        #         background-color: white;
+        #         border: 1px solid black;
+        #         width: 14px;
+        #         height: 14px;
+        #         margin-left: 20px;
+        #     }
+        #     QCheckBox::indicator:checked {
+        #         background-color: #ff8c00;
+        #     }
+        #     """)
+        # layout.addWidget(nb_icons_menu_checkbox)
+        slider_container = QWidget()
+        slider_label = QLabel("Nombre d'icones du menu")
+        slider_layout = QVBoxLayout(slider_container)
+        slider_layout.setContentsMargins(20, 0, 20, 0)
+        slider_layout.setSpacing(2)
+
+        emoji_labels_layout = QHBoxLayout()
+        emoji_labels_layout.setContentsMargins(8, 0, 8, 0)
+        emoji_labels_layout.setSpacing(0)
+        # emoji_labels = ["3", "4", "5"]
+        # emoji_tooltips = ["3", "4", "5"]
+        emoji_labels = ["4", "5"]
+        emoji_tooltips = ["4", "5"]
+        
+        # Stocker les labels pour l'event filter
+        self._dialog_emoji_labels = []
+        self._dialog_slider = None  # Référence au slider pour les clics sur emojis
+        
+        for i, emoji in enumerate(emoji_labels):
+            if i > 0:
+                emoji_labels_layout.addStretch()
+            label = QLabel(emoji)
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            label.setStyleSheet("font-size: 20px;")
+            label.setCursor(Qt.CursorShape.PointingHandCursor)  # Curseur pointeur
+            
+            # Stocker le tooltip et la valeur du slider pour ce label
+            label.setProperty("tooltip_text", emoji_tooltips[i])
+            label.setProperty("slider_value", i)  # 0 pour ✂️, 1 pour 💻, 2 pour 🚀
+            
+            # Installer l'event filter pour détecter le hover et les clics
+            label.installEventFilter(self)
+            label.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+            self._dialog_emoji_labels.append(label)
+            
+            emoji_labels_layout.addWidget(label)
+            if i < len(emoji_labels) - 1:
+                emoji_labels_layout.addStretch()
+        
+        slider_layout.addWidget(slider_label)
+        slider_layout.addLayout(emoji_labels_layout)
+
+        slider = QSlider(Qt.Orientation.Horizontal)
+        # slider.setMinimum(3)
+        slider.setMinimum(4)
+        slider.setMaximum(5)
+        slider.setValue(NB_ICONS_MENU)  # INITIALISER avec la bonne valeur
+        slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        slider.setTickInterval(1)
+        slider.setSingleStep(1)
+        slider.setPageStep(1)
+        slider.setProperty("help_text", "Associer une action")
+        slider.installEventFilter(self)
+        self._dialog_slider = slider  # Stocker pour les clics sur emojis
+        # slider.valueChanged.connect(self.refresh_menu)
+        slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                height: 6px;
+                background: #555;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background: #fff;
+                border: 2px solid #888;
+                width: 16px;
+                margin: -6px 0;
+                border-radius: 9px;
+            }
+        """)
+        
+        # Layout pour réduire la largeur du slider
+        slider_h_layout = QHBoxLayout()
+        slider_h_layout.setContentsMargins(8, 0, 8, 0)
+        slider_h_layout.addWidget(slider)
+        slider_layout.addLayout(slider_h_layout)
+        layout.addWidget(slider_container)
         
         # Checkbox pour l'icône centrale
-        icon_checkbox = QCheckBox("Afficher l'icône du clip survolé")
-        icon_checkbox.setChecked(SHOW_CENTRAL_ICON)
-        icon_checkbox.setStyleSheet("""
+        central_icon_checkbox = QCheckBox("Icône centrale au survol")
+        central_icon_checkbox.setChecked(SHOW_CENTRAL_ICON)
+        central_icon_checkbox.setStyleSheet("""
             QCheckBox::indicator {
                 background-color: white;
                 border: 1px solid black;
@@ -3559,10 +3839,10 @@ class App(QMainWindow):
                 background-color: #ff8c00;
             }
             """)
-        layout.addWidget(icon_checkbox)
+        layout.addWidget(central_icon_checkbox)
         
         # Checkbox pour le néon central
-        neon_checkbox = QCheckBox("Afficher le néon central")
+        neon_checkbox = QCheckBox("Néon central")
         neon_checkbox.setChecked(CENTRAL_NEON)
         neon_checkbox.setStyleSheet("""
             QCheckBox::indicator {
@@ -3577,7 +3857,7 @@ class App(QMainWindow):
             }
             """)
         layout.addWidget(neon_checkbox)
-        
+
         # Couleur du néon
         neon_color_layout = QHBoxLayout()
         neon_color_label = QLabel("Couleur du néon")
@@ -3619,7 +3899,7 @@ class App(QMainWindow):
         
         neon_color_layout.addWidget(neon_color_label)
         neon_color_layout.addWidget(neon_color_button)
-        neon_color_layout.setContentsMargins(20, 0, 0, 0)
+        neon_color_layout.setContentsMargins(45, 0, 60, 0)
         neon_color_layout.addStretch()
         layout.addLayout(neon_color_layout)
         
@@ -3636,9 +3916,28 @@ class App(QMainWindow):
         )
         neon_speed_layout.addWidget(neon_speed_label)
         neon_speed_layout.addWidget(neon_speed_slider)
-        neon_speed_layout.setContentsMargins(20, 0, 20, 0)
+        neon_speed_layout.setContentsMargins(45, 0, 30, 0)
         layout.addLayout(neon_speed_layout)
-        
+
+        neon_widgets = (
+            neon_color_label,
+            neon_color_button,
+            neon_speed_label,
+            neon_speed_slider,
+        )
+
+        def update_neon_config_visibility():
+            enabled = neon_checkbox.isChecked()
+            for widget in neon_widgets:
+                widget.setVisible(enabled)
+            dialog.setFixedSize(400, 830 if enabled else 740)
+
+        # Initialisation
+        update_neon_config_visibility()
+
+        # Connexion
+        neon_checkbox.stateChanged.connect(update_neon_config_visibility)
+
         # Boutons Sauvegarder et Annuler
         layout.addStretch()
         buttons_layout = QHBoxLayout()
@@ -3677,7 +3976,7 @@ class App(QMainWindow):
         """)
         
         def save_and_close():
-            global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, ACTION_ZONE_COLORS, MENU_OPACITY, MENU_BACKGROUND_COLOR, NEON_COLOR, NEON_SPEED
+            global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, NB_ICONS_MENU, ACTION_ZONE_COLORS, MENU_OPACITY, MENU_BACKGROUND_COLOR, NEON_COLOR, NEON_SPEED
             
             # Mettre à jour les variables globales
             ACTION_ZONE_COLORS["copy"] = selected_colors["copy"]
@@ -3689,7 +3988,8 @@ class App(QMainWindow):
             MENU_BACKGROUND_COLOR = tuple(selected_menu_bg_color)
             NEON_COLOR = tuple(selected_neon_color)
             NEON_SPEED = neon_speed_slider.value()
-            SHOW_CENTRAL_ICON = icon_checkbox.isChecked()
+            SHOW_CENTRAL_ICON = central_icon_checkbox.isChecked()
+            NB_ICONS_MENU = slider.value()
             CENTRAL_NEON = neon_checkbox.isChecked()
             
             # Sauvegarder dans le fichier
@@ -3727,6 +4027,10 @@ class App(QMainWindow):
             name = name_input.text().strip()
             value = value_input.toPlainText().strip().replace('\n', '\\n')
             
+            # Capturer le HTML et vérifier s'il contient du formatting riche
+            html_content = value_input.toHtml()
+            html_to_save = html_content if has_rich_formatting(html_content) else None
+            
             if name and value:
                 # Si une image a été sélectionnée, créer le thumbnail
                 if self._dialog_temp_image_path:
@@ -3754,8 +4058,8 @@ class App(QMainWindow):
                 elif action == "exec":
                     self.actions_map_sub[name] = [(execute_command, [value], {}), value, action]
                 
-                # append_to_actions_file(CLIP_NOTES_FILE, name, value)
-                append_to_actions_file_json(CLIP_NOTES_FILE_JSON, name, value, action)
+                # Sauvegarder avec le HTML si présent
+                append_to_actions_file_json(CLIP_NOTES_FILE_JSON, name, value, action, html_to_save)
                 
                 dialog.accept()
                 self.delete_mode = False
@@ -3773,14 +4077,14 @@ class App(QMainWindow):
             on_submit_callback=handle_submit
         )
 
-    def edit_clip_from_storage(self, name, value, x, y, slider_value, storage_dialog):
+    def edit_clip_from_storage(self, name, value, x, y, slider_value, storage_dialog, html_string=None):
         """Édite un clip depuis le dialogue de stockage"""
         # Fermer le dialogue de stockage
         storage_dialog.accept()
         # Appeler edit_clip avec le contexte from_storage
-        self.edit_clip(name, value, x, y, slider_value, context="from_storage")
+        self.edit_clip(name, value, x, y, slider_value, context="from_storage", html_string=html_string)
 
-    def edit_clip(self, name, value, x, y, slider_value, context = "from_radial"):
+    def edit_clip(self, name, value, x, y, slider_value, context = "from_radial", html_string=None):
         if self.tracker:
             self.tracker.update_pos()
             x, y = self.tracker.last_x, self.tracker.last_y
@@ -3788,6 +4092,10 @@ class App(QMainWindow):
         def handle_submit(dialog, name_input, value_input, slider):
             new_name = name_input.text().strip()
             new_value = value_input.toPlainText().strip().replace('\n', '\\n')
+            
+            # Capturer le HTML et vérifier s'il contient du formatting riche
+            new_html = value_input.toHtml()
+            new_html_to_save = new_html if has_rich_formatting(new_html) else None
 
             if new_name and new_value:
                 slider_value = slider.value()
@@ -3836,7 +4144,7 @@ class App(QMainWindow):
                             print(f"Ancien thumbnail supprimé: {old_name}")
                         except Exception as e:
                             print(f"Erreur lors de la suppression de l'ancien thumbnail: {e}")
-                    # Ajouter le nouveau clip au stockage
+                    # Ajouter le nouveau clip au stockage (TODO: ajouter support HTML au stockage si besoin)
                     add_stored_clip(new_name, action, new_value)
                 else:
                     # Seulement pour le menu radial : ajouter à actions_map_sub
@@ -3847,8 +4155,8 @@ class App(QMainWindow):
                     elif action == "exec":
                         self.actions_map_sub[new_name] = [(execute_command, [new_value], {}), new_value, action]
                     
-                    # Sauvegarder dans le menu radial
-                    replace_or_append_json(CLIP_NOTES_FILE_JSON, new_name, new_value, action)
+                    # Sauvegarder dans le menu radial avec le HTML si présent
+                    replace_or_append_json(CLIP_NOTES_FILE_JSON, new_name, new_value, action, new_html_to_save)
                 
                 dialog.accept()
                 
@@ -3868,6 +4176,7 @@ class App(QMainWindow):
             initial_name=name,
             initial_value=value,
             initial_slider_value=slider_value,  # PASSER la valeur du slider
+            initial_html=html_string,  # PASSER le HTML pour conserver le formatting
             on_submit_callback=handle_submit,
             on_close_callback=lambda: self.show_stored_clips_dialog(x, y) if context == "from_storage" else None
         )
@@ -3891,35 +4200,47 @@ class App(QMainWindow):
         self.buttons_sub = []
         
         # Définir les tooltips pour les boutons spéciaux
-        special_button_tooltips = {
-            "➕": "Ajouter",
-            "🔧": "Modifier",
-            "⚙️": "Configurer",
-            "➖": "Supprimer/Stocker"
-        }
-        
-        self.actions_map_sub = {
-            "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
-            "🔧": [(self.update_clip, [x,y], {}), special_button_tooltips["🔧"], None],
-            "⚙️": [(self.show_config_dialog, [x,y], {}), special_button_tooltips["⚙️"], None],
-            "➖": [(self.show_storage_menu, [x,y], {}), special_button_tooltips["➖"], None]
-            # "➖": [(self.delete_clip, [x,y], {}), special_button_tooltips["➖"], None],
-        }
-        # self.actions_map_sub = {
-        #     "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None]
-        # }
-        # if self.actions_map_sub:
-        #     self.actions_map_sub = {
-        #         "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
-        #         "🔧": [(self.update_clip, [x,y], {}), special_button_tooltips["🔧"], None],
-        #         "➖": [(self.delete_clip, [x,y], {}), special_button_tooltips["➖"], None],
-        #         "⚙️": [(self.show_config_dialog, [x,y], {}), special_button_tooltips["⚙️"], None],
-        #         "➖": [(self.show_storage_menu, [x,y], {}), special_button_tooltips["➖"], None],
-        #     }
-        populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
+
+
+        if NB_ICONS_MENU == 4:
+            special_button_tooltips = {
+                "➕": "Ajouter",
+                "🔧": "Modifier",
+                "⚙️": "Configurer",
+                "➖": "Supprimer",
+            }
+            # populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
+            self.actions_map_sub = {
+                "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
+                "🔧": [(self.update_clip, [x,y], {}), special_button_tooltips["🔧"], None],
+                "⚙️": [(self.show_config_dialog, [x,y], {}), special_button_tooltips["⚙️"], None],
+                "➖": [(self.show_storage_menu, [x,y], {}), special_button_tooltips["➖"], None],
+            }
+            populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
+        elif NB_ICONS_MENU == 5:
+            special_button_tooltips = {
+                "➕": "Ajouter",
+                "🔧": "Modifier",
+                "⚙️": "Configurer",
+                "📦": "Stocker",
+                "➖": "Supprimer",
+            }
+            
+            self.actions_map_sub = {
+                "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
+                "🔧": [(self.update_clip, [x,y], {}), special_button_tooltips["🔧"], None],
+                "⚙️": [(self.show_config_dialog, [x,y], {}), special_button_tooltips["⚙️"], None],
+                "📦": [(self.show_storage_menu, [x,y], {}), special_button_tooltips["📦"], None],
+                "➖": [(self.delete_clip, [x,y], {}), special_button_tooltips["➖"], None],
+            }
+            populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
 
         # Séparer les boutons spéciaux des autres
-        special_buttons = SPECIAL_BUTTONS
+        if NB_ICONS_MENU == 4:
+            special_buttons = ["➖", "⚙️", "🔧", "➕"]
+        elif NB_ICONS_MENU == 5:   
+            special_buttons = ["➖", "📦", "⚙️", "🔧", "➕"]
+        special_buttons = special_buttons
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Trier seulement les clips (pas les boutons spéciaux)
@@ -3932,10 +4253,12 @@ class App(QMainWindow):
                 tooltip = value.replace(r'\n', '\n')
                 self.buttons_sub.append((name, self.make_handler_sub(name, value, x, y), tooltip, action))
         
-        # Puis ajouter les clips triés
+        # Puis ajouter les clips triés (avec le HTML pour les tooltips)
         for name, (action_data, value, action) in sorted_clips:
             tooltip = value.replace(r'\n', '\n')
-            self.buttons_sub.append((name, self.make_handler_sub(name, value, x, y), tooltip, action))
+            # Récupérer le HTML du clip pour le tooltip
+            _, clip_html = self.get_clip_data_from_json(name)
+            self.buttons_sub.append((name, self.make_handler_sub(name, value, x, y), tooltip, action, clip_html))
         
         self.current_popup = RadialMenu(x, y, self.buttons_sub, sub=True, tracker=self.tracker, app_instance=self)
         self.current_popup.show()
