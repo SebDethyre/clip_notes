@@ -271,14 +271,18 @@ def save_stored_clips(clips):
     except Exception as e:
         print(f"[Erreur] Impossible de sauvegarder les clips stockés: {e}")
 
-def add_stored_clip(alias, action, string):
+def add_stored_clip(alias, action, string, html_string=None):
     """Ajoute un clip au stockage"""
     clips = load_stored_clips()
-    clips.append({
+    new_clip = {
         'alias': alias,
         'action': action,
         'string': string
-    })
+    }
+    # Ajouter le HTML seulement s'il est fourni
+    if html_string:
+        new_clip['html_string'] = html_string
+    clips.append(new_clip)
     save_stored_clips(clips)
     return clips
 
@@ -573,20 +577,51 @@ class TooltipWindow(QWidget):
             self.hide()
             return
         
-        if html:
-            # Afficher le HTML riche
-            self.text_browser.setHtml(html)
+        # Textes longs (>100 chars) ou HTML : comportement adapté
+        if html or (text and len(text) > 100):
+            # Retirer les contraintes de taille fixe
+            self.setMinimumSize(0, 0)
+            self.setMaximumSize(600, 400)
+            self.text_browser.setMinimumSize(0, 0)
+            self.text_browser.setMaximumSize(600, 400)
+            
+            if html:
+                self.text_browser.setHtml(html)
+            else:
+                self.text_browser.setPlainText(text)
+            
+            # Ajuster la taille au contenu
+            doc = self.text_browser.document()
+            doc.setTextWidth(560)  # Largeur fixe pour le calcul
+            content_height = min(int(doc.size().height()) + 20, 400)
+            content_width = min(int(doc.idealWidth()) + 40, 600)
+            # S'assurer d'une largeur minimale raisonnable
+            content_width = max(content_width, 200)
+            self.text_browser.setFixedSize(content_width, content_height)
+            self._calculated_width = content_width
+            self.setFixedSize(content_width, content_height)
         else:
-            # Afficher le texte simple
+            # Textes courts : nouveau comportement avec taille fixe
             self.text_browser.setPlainText(text)
+            from PyQt6.QtGui import QFontMetrics
+            font = self.text_browser.font()
+            fm = QFontMetrics(font)
+            # Calculer la taille du texte multi-lignes
+            max_text_width = 600 - 48
+            text_rect = fm.boundingRect(
+                QRect(0, 0, max_text_width, 10000),
+                Qt.TextFlag.TextWordWrap,
+                text
+            )
+            content_width = text_rect.width() + 48
+            content_height = text_rect.height() + 24
+            content_width = min(max(content_width, 60), 600)
+            content_height = min(content_height, 400)
+            
+            self.text_browser.setFixedSize(content_width, content_height)
+            self._calculated_width = content_width
+            self.setFixedSize(content_width, content_height)
         
-        # Ajuster la taille au contenu
-        doc = self.text_browser.document()
-        doc.setTextWidth(self.maximumWidth() - 32)  # Moins le padding
-        content_height = min(int(doc.size().height()) + 20, self.maximumHeight())
-        content_width = min(int(doc.idealWidth()) + 40, self.maximumWidth())
-        self.text_browser.setFixedSize(content_width, content_height)
-        self.adjustSize()
         self.show()
         
         # Si une durée est spécifiée, masquer automatiquement
@@ -607,8 +642,11 @@ class TooltipWindow(QWidget):
         # Distance en pixels (environ 1cm = 38 pixels sur un écran standard)
         distance_below = menu_radius + 20  # Rayon du menu + marge
         
+        # Utiliser la largeur calculée si disponible, sinon self.width()
+        width = getattr(self, '_calculated_width', self.width())
+        
         # Calculer la position
-        tooltip_x = menu_center_x - self.width() // 2
+        tooltip_x = menu_center_x - width // 2
         tooltip_y = menu_center_y + distance_below
         
         self.move(tooltip_x, tooltip_y)
@@ -2200,6 +2238,7 @@ class App(QMainWindow):
         self._dialog_emoji_labels = []
         self.nb_icons_config_labels = []
         self._dialog_help_label = None
+        self._dialog_help_browser = None  # QTextBrowser pour preview multilignes avec HTML
         self._dialog_slider = None
         self._nb_icons_dialog_slider = None
         self._dialog_image_preview = None  # Label pour l'aperçu de l'image
@@ -2214,15 +2253,50 @@ class App(QMainWindow):
                 tooltip_text = watched.property("tooltip_text")
                 if tooltip_text and self._dialog_help_label:
                     self._dialog_help_label.setText(tooltip_text)
+                    self._dialog_help_label.setVisible(True)
+                    if hasattr(self, '_dialog_help_browser') and self._dialog_help_browser:
+                        self._dialog_help_browser.setVisible(False)
             # Vérifier les autres widgets (avec help_text)
             else:
                 help_text = watched.property("help_text")
-                if help_text and self._dialog_help_label:
-                    self._dialog_help_label.setText(help_text)
+                html_string = watched.property("html_string")
+                
+                if help_text:
+                    # Déterminer si c'est multiligne
+                    line_count = help_text.count('\n') + 1
+                    is_multiline = line_count > 1
+                    
+                    if is_multiline and hasattr(self, '_dialog_help_browser') and self._dialog_help_browser:
+                        # Multilignes → utiliser le QTextBrowser
+                        if html_string:
+                            self._dialog_help_browser.setHtml(html_string)
+                        else:
+                            self._dialog_help_browser.setPlainText(help_text)
+                        self._dialog_help_browser.setVisible(True)
+                        if self._dialog_help_label:
+                            self._dialog_help_label.setVisible(False)
+                    elif self._dialog_help_label:
+                        # Une seule ligne → utiliser le label simple (avec HTML si disponible)
+                        if html_string:
+                            # Activer le rendu HTML et afficher le HTML
+                            self._dialog_help_label.setTextFormat(Qt.TextFormat.RichText)
+                            self._dialog_help_label.setText(html_string)
+                        else:
+                            # Texte simple
+                            self._dialog_help_label.setTextFormat(Qt.TextFormat.PlainText)
+                            self._dialog_help_label.setText(help_text)
+                        self._dialog_help_label.setVisible(True)
+                        if hasattr(self, '_dialog_help_browser') and self._dialog_help_browser:
+                            self._dialog_help_browser.setVisible(False)
         elif event.type() == QEvent.Type.Leave:
-            # Vider le label d'aide
+            # Vider et cacher les widgets d'aide
             if self._dialog_help_label:
+                self._dialog_help_label.setTextFormat(Qt.TextFormat.PlainText)
                 self._dialog_help_label.setText("")
+                self._dialog_help_label.setVisible(True)
+            if hasattr(self, '_dialog_help_browser') and self._dialog_help_browser:
+                self._dialog_help_browser.clear()
+                self._dialog_help_browser.setVisible(False)
         elif event.type() == QEvent.Type.MouseButtonPress:
             # Gérer les clics sur les emojis pour changer le slider
             if watched in self._dialog_emoji_labels and self._dialog_slider:
@@ -2345,10 +2419,12 @@ class App(QMainWindow):
                 tooltip = value.replace(r'\n', '\n')
                 self.buttons_sub.append((name, self.make_handler_sub(name, value, self._x, self._y), tooltip, action))
         
-        # Puis ajouter les clips triés
+        # Puis ajouter les clips triés (avec le HTML pour les tooltips)
         for name, (action_data, value, action) in sorted_clips:
             tooltip = value.replace(r'\n', '\n')
-            self.buttons_sub.append((name, self.make_handler_sub(name, value, self._x, self._y), tooltip, action))
+            # Récupérer le HTML du clip pour le tooltip
+            _, clip_html = self.get_clip_data_from_json(name)
+            self.buttons_sub.append((name, self.make_handler_sub(name, value, self._x, self._y), tooltip, action, clip_html))
         
         # Mettre à jour les boutons du menu existant
         self.current_popup.update_buttons(self.buttons_sub)
@@ -3085,8 +3161,11 @@ class App(QMainWindow):
                 self.tracker.update_pos()
                 x, y = self.tracker.last_x, self.tracker.last_y
             
-            # Stocker le clip
-            add_stored_clip(name, action if action else "copy", value)
+            # Récupérer le HTML depuis le fichier JSON avant de stocker
+            _, html_string = self.get_clip_data_from_json(name)
+            
+            # Stocker le clip avec le HTML s'il existe
+            add_stored_clip(name, action if action else "copy", value, html_string)
             
             # Supprimer le clip du menu radial
             self.actions_map_sub.pop(name, None)
@@ -3283,11 +3362,13 @@ class App(QMainWindow):
                 
                 # String (tronquée si trop longue)
                 string = clip_data.get('string', '')
+                html_string = clip_data.get('html_string', None)  # Récupérer le HTML s'il existe
                 string_display = string[:50] + "..." if len(string) > 50 else string
                 string_label = QLabel(string_display)
                 # string_display_helper = string[:150] + "..." if len(string) > 150 else string
                 help_text = string.replace(r"\n", "\n")
                 string_label.setProperty("help_text", help_text)
+                string_label.setProperty("html_string", html_string)  # Stocker le HTML pour le preview
                 string_label.installEventFilter(self)
                 string_label.setStyleSheet("color: white;")
                 string_label.setWordWrap(True)
@@ -3329,7 +3410,7 @@ class App(QMainWindow):
                         background-color: rgba(255, 255, 150, 150);
                     }
                 """)
-                edit_btn.clicked.connect(lambda checked, a=alias, s=string, sv=slider_value, d=dialog: self.edit_clip_from_storage(a, s, x, y, sv, d))
+                edit_btn.clicked.connect(lambda checked, a=alias, s=string, sv=slider_value, d=dialog, hs=html_string: self.edit_clip_from_storage(a, s, x, y, sv, d, hs))
                 
                 # Bouton supprimer
                 delete_btn = QPushButton("🗑️")
@@ -3363,15 +3444,44 @@ class App(QMainWindow):
         scroll.setWidget(scroll_content)
         layout.addWidget(scroll)
         
-        # Label d'aide pour afficher les descriptions des icônes
+        # Conteneur pour le preview adaptatif (label pour 1 ligne, QTextBrowser pour multilignes)
+        preview_container = QWidget()
+        preview_container.setMinimumHeight(30)
+        preview_container.setMaximumHeight(200)
+        preview_container_layout = QVBoxLayout(preview_container)
+        preview_container_layout.setContentsMargins(0, 0, 0, 0)
+        preview_container_layout.setSpacing(0)
+        
+        # Label simple pour les textes courts (1 ligne)
         help_label = QLabel("")
-        # help_code = QTextBrowser()
-        # help_label.setMinimumHeight(80)
         help_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         help_label.setStyleSheet("color: white; font-size: 14px; padding: 4px; font-weight: bold;")
-        # help_label.setMinimumHeight(10)
-        layout.addWidget(help_label)
+        help_label.setMinimumHeight(30)
+        preview_container_layout.addWidget(help_label)
+        
+        # QTextBrowser pour les textes multilignes avec HTML/linting
+        help_browser = QTextBrowser()
+        help_browser.setStyleSheet("""
+            QTextBrowser {
+                background-color: rgba(30, 30, 30, 200);
+                border: 1px solid rgba(100, 100, 100, 150);
+                border-radius: 6px;
+                color: white;
+                font-size: 12px;
+                padding: 8px;
+            }
+        """)
+        help_browser.setMinimumHeight(60)
+        help_browser.setMaximumHeight(180)
+        help_browser.setOpenExternalLinks(False)
+        help_browser.setVisible(False)  # Caché par défaut
+        preview_container_layout.addWidget(help_browser)
+        
+        layout.addWidget(preview_container)
+        
+        # Stocker les références pour l'event filter
         self._dialog_help_label = help_label
+        self._dialog_help_browser = help_browser
         
         # Bouton Fermer
         close_button = QPushButton("Fermer")
@@ -3494,9 +3604,10 @@ class App(QMainWindow):
         # Récupérer les données du clip
         action = clip_data.get('action', 'copy')
         string = clip_data.get('string', '')
+        html_string = clip_data.get('html_string', None)  # Récupérer le HTML s'il existe
         
-        # Ajouter au menu radial (dans le fichier JSON)
-        append_to_actions_file_json(CLIP_NOTES_FILE_JSON, alias, string, action)
+        # Ajouter au menu radial (dans le fichier JSON) avec le HTML
+        append_to_actions_file_json(CLIP_NOTES_FILE_JSON, alias, string, action, html_string)
         
         # Ajouter directement dans actions_map_sub pour mise à jour immédiate
         if action == "copy":
@@ -4150,8 +4261,8 @@ class App(QMainWindow):
                             print(f"Ancien thumbnail supprimé: {old_name}")
                         except Exception as e:
                             print(f"Erreur lors de la suppression de l'ancien thumbnail: {e}")
-                    # Ajouter le nouveau clip au stockage (TODO: ajouter support HTML au stockage si besoin)
-                    add_stored_clip(new_name, action, new_value)
+                    # Ajouter le nouveau clip au stockage avec le HTML si présent
+                    add_stored_clip(new_name, action, new_value, new_html_to_save)
                 else:
                     # Seulement pour le menu radial : ajouter à actions_map_sub
                     if action == "copy":
