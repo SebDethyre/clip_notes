@@ -76,9 +76,9 @@ def has_rich_formatting(html_content):
         'text-decoration:', # Souligné, etc.
         '<span style=',     # Spans avec styles
         '<font color=',     # Ancienne syntaxe de couleur
-        'rgb(',             # Couleurs RGB
-        'rgba(',            # Couleurs RGBA
-        '#[0-9a-fA-F]{3,6}', # Couleurs hex
+        r'rgb\(',           # Couleurs RGB
+        r'rgba\(',          # Couleurs RGBA
+        r'#[0-9a-fA-F]{3,6}', # Couleurs hex
     ]
     
     # Le HTML basique de QTextEdit ressemble à :
@@ -190,13 +190,17 @@ def text_pixmap(text, size=32):
     qt_img = QImage.fromData(data.getvalue(), "PNG")
     return QPixmap.fromImage(qt_img)
 
-def sort_actions_map(actions_map):
+def sort_actions_map(actions_map, json_order=None):
     """
     Trie le dictionnaire d'actions selon :
     1. L'action (None d'abord, puis copy, term, exec)
-    2. Alphabétiquement par alias à l'intérieur de chaque groupe
+    2. L'ordre du JSON si fourni, sinon alphabétiquement par alias
     
     Retourne une liste d'items triés : [(alias, (action_data, value, action)), ...]
+    
+    Args:
+        actions_map: Le dictionnaire d'actions
+        json_order: Dictionnaire optionnel {alias: index} pour l'ordre personnalisé
     """
     # Définir l'ordre de priorité des actions
     action_order = {
@@ -214,13 +218,74 @@ def sort_actions_map(actions_map):
         alias, (action_data, value, action) = item
         # Première clé : priorité de l'action
         action_priority = action_order.get(action, 999)
-        # Deuxième clé : tri alphabétique de l'alias (en minuscules)
-        alias_lower = alias.lower()
-        return (action_priority, alias_lower)
+        # Deuxième clé : ordre du JSON si disponible, sinon alphabétique
+        if json_order and alias in json_order:
+            order_key = json_order[alias]
+        else:
+            order_key = alias.lower()
+        return (action_priority, order_key)
     
     # Trier
     sorted_items = sorted(items, key=sort_key)
     return sorted_items
+
+
+def get_json_order(file_path):
+    """
+    Retourne un dictionnaire {alias: index} basé sur l'ordre des entrées dans le JSON.
+    """
+    if not os.path.exists(file_path):
+        return {}
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return {item.get('alias'): i for i, item in enumerate(data) if item.get('alias')}
+    except:
+        return {}
+
+
+def reorder_json_clips(file_path, action, new_order):
+    """
+    Réordonne les clips d'une action spécifique dans le fichier JSON.
+    
+    Args:
+        file_path: Chemin du fichier JSON
+        action: L'action concernée ("copy", "term", "exec")
+        new_order: Liste des alias dans le nouvel ordre
+    """
+    if not os.path.exists(file_path):
+        return
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except:
+        return
+    
+    # Séparer les clips par action
+    clips_by_action = {"copy": [], "term": [], "exec": []}
+    for item in data:
+        item_action = item.get('action', 'copy')
+        if item_action in clips_by_action:
+            clips_by_action[item_action].append(item)
+    
+    # Réordonner les clips de l'action concernée selon new_order
+    reordered = []
+    alias_to_clip = {clip.get('alias'): clip for clip in clips_by_action[action]}
+    for alias in new_order:
+        if alias in alias_to_clip:
+            reordered.append(alias_to_clip[alias])
+    
+    # Remplacer les clips de cette action par les réordonnés
+    clips_by_action[action] = reordered
+    
+    # Reconstruire la liste complète (copy, term, exec)
+    new_data = clips_by_action["copy"] + clips_by_action["term"] + clips_by_action["exec"]
+    
+    # Sauvegarder
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(new_data, f, indent=4, ensure_ascii=False)
 
 def populate_actions_map_from_file(file_path, actions_map_sub, callback):
     # Déterminer le chemin du fichier JSON
