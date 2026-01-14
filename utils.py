@@ -1,13 +1,8 @@
-import pyperclip
-import subprocess
-import io
-
-import json
-import os
+import pyperclip, subprocess, io, json, os, hashlib
 
 from PIL import Image, ImageDraw, ImageFont
 
-from PyQt6.QtGui import QColor, QPixmap, QImage
+from PyQt6.QtGui import QColor, QPixmap, QImage, QIcon
 import re
 
 def is_emoji(s):
@@ -577,3 +572,62 @@ def execute_command(string):
         stderr=subprocess.DEVNULL,
         stdin=subprocess.DEVNULL,
         start_new_session=True)  # Détache complètement du processus parent
+    
+
+def create_thumbnail(image_path, thumbnails_dir, size=48):
+    """
+    Crée une miniature ronde d'une image et la sauvegarde dans le dossier thumbnails.
+    Retourne le chemin relatif de la miniature.
+    """
+    try:
+        # Ouvrir l'image
+        img = Image.open(image_path)
+        
+        # Convertir en RGBA pour gérer la transparence
+        img = img.convert('RGBA')
+        
+        # Redimensionner en carré en remplissant tout l'espace (crop si nécessaire)
+        # On prend la plus petite dimension et on crop le reste
+        min_dimension = min(img.size)
+        left = (img.width - min_dimension) / 2
+        top = (img.height - min_dimension) / 2
+        right = (img.width + min_dimension) / 2
+        bottom = (img.height + min_dimension) / 2
+        img = img.crop((left, top, right, bottom))
+        
+        # Redimensionner au size voulu
+        img = img.resize((size, size), Image.Resampling.LANCZOS)
+        
+        # Créer un masque circulaire
+        mask = Image.new('L', (size, size), 0)
+        draw = ImageDraw.Draw(mask)
+        # PIL ellipse : (left, top, right, bottom) où right et bottom sont INCLUS
+        # Pour un cercle parfait de 48 pixels, on utilise (0, 0, 47, 47)
+        draw.ellipse((0, 0, size-1, size-1), fill=255)
+        
+        # Appliquer le masque circulaire
+        output = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+        output.paste(img, (0, 0))
+        output.putalpha(mask)
+        
+        # Créer un nom unique basé sur le hash du chemin original
+        hash_name = hashlib.md5(image_path.encode()).hexdigest()
+        thumbnail_filename = f"{hash_name}.png"
+        thumbnail_path = os.path.join(thumbnails_dir, thumbnail_filename)
+        
+        # Sauvegarder en PNG pour conserver la transparence
+        output.save(thumbnail_path, "PNG", optimize=True)
+        
+        # Retourner le chemin absolu
+        return thumbnail_path
+        
+    except Exception as e:
+        print(f"Erreur lors de la création de la miniature: {e}")
+        return None
+
+def create_color_icon(rgb_tuple, size=16):
+    """Crée une icône carrée de couleur pour les ComboBox"""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(QColor(*rgb_tuple))
+    return QIcon(pixmap)
+

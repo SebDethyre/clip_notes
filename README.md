@@ -436,6 +436,8 @@ clipnotes/
 │   └── HoverSubMenu.py             # Sous-menu diponible en hover
 │   └── RadialKeyboardListener.py   # Listener global pour intercepter les événements clavier
 │   └── CursorTracker.py            # Tracker de curseur pour Wayland
+│   └── TooltipWindow.py            # Fenêtre semi-transparente pour afficher des messages en dessous du menu radial
+│   └── CalibrationWindow.py        # Prototype de fenêtre de calibration du menu radial
 ├── launch_clipnotes.sh             # Script de lancement avec gestion d'instances
 ├── clip_notes.json                 # Fichier de données (vos clips)
 ├── config.json                     # Configuration (couleurs, opacités, etc.)

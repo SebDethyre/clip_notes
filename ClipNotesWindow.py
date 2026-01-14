@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw
 
 from utils import *
 
-from ui import EmojiSelector, AutoScrollListWidget, WhiteDropIndicatorStyle, HoverSubMenu, RadialKeyboardListener, CursorTracker
+from ui import EmojiSelector, AutoScrollListWidget, WhiteDropIndicatorStyle, HoverSubMenu, RadialKeyboardListener, CursorTracker, TooltipWindow, CalibrationWindow
 
 # 🗑️ 📝 ✏️
 # Constantes de configuration
@@ -103,57 +103,6 @@ NEON_SPEED = 80  # Plus petit = plus rapide
 # Créer le dossier des miniatures s'il n'existe pas
 os.makedirs(THUMBNAILS_DIR, exist_ok=True)
 
-def create_thumbnail(image_path, size=48):
-    """
-    Crée une miniature ronde d'une image et la sauvegarde dans le dossier thumbnails.
-    Retourne le chemin relatif de la miniature.
-    """
-    try:
-        # Ouvrir l'image
-        img = Image.open(image_path)
-        
-        # Convertir en RGBA pour gérer la transparence
-        img = img.convert('RGBA')
-        
-        # Redimensionner en carré en remplissant tout l'espace (crop si nécessaire)
-        # On prend la plus petite dimension et on crop le reste
-        min_dimension = min(img.size)
-        left = (img.width - min_dimension) / 2
-        top = (img.height - min_dimension) / 2
-        right = (img.width + min_dimension) / 2
-        bottom = (img.height + min_dimension) / 2
-        img = img.crop((left, top, right, bottom))
-        
-        # Redimensionner au size voulu
-        img = img.resize((size, size), Image.Resampling.LANCZOS)
-        
-        # Créer un masque circulaire
-        mask = Image.new('L', (size, size), 0)
-        draw = ImageDraw.Draw(mask)
-        # PIL ellipse : (left, top, right, bottom) où right et bottom sont INCLUS
-        # Pour un cercle parfait de 48 pixels, on utilise (0, 0, 47, 47)
-        draw.ellipse((0, 0, size-1, size-1), fill=255)
-        
-        # Appliquer le masque circulaire
-        output = Image.new('RGBA', (size, size), (0, 0, 0, 0))
-        output.paste(img, (0, 0))
-        output.putalpha(mask)
-        
-        # Créer un nom unique basé sur le hash du chemin original
-        hash_name = hashlib.md5(image_path.encode()).hexdigest()
-        thumbnail_filename = f"{hash_name}.png"
-        thumbnail_path = os.path.join(THUMBNAILS_DIR, thumbnail_filename)
-        
-        # Sauvegarder en PNG pour conserver la transparence
-        output.save(thumbnail_path, "PNG", optimize=True)
-        
-        # Retourner le chemin absolu
-        return thumbnail_path
-        
-    except Exception as e:
-        print(f"Erreur lors de la création de la miniature: {e}")
-        return None
-
 def load_config():
     """Charge la configuration depuis le fichier JSON"""
     global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, NB_ICONS_MENU, ACTION_ZONE_COLORS, MENU_OPACITY, MENU_BACKGROUND_COLOR, NEON_COLOR, NEON_SPEED
@@ -210,11 +159,6 @@ def load_config():
     except Exception as e:
         print(f"[Erreur] Impossible de charger la configuration: {e}")
 
-def create_color_icon(rgb_tuple, size=16):
-    """Crée une icône carrée de couleur pour les ComboBox"""
-    pixmap = QPixmap(size, size)
-    pixmap.fill(QColor(*rgb_tuple))
-    return QIcon(pixmap)
 
 def save_config():
     """Sauvegarde la configuration dans le fichier JSON"""
@@ -328,258 +272,6 @@ def remove_lock_file():
             os.remove(LOCK_FILE)
     except:
         pass
-
-class CalibrationWindow(QWidget):
-    def __init__(self, tracker, main_app):
-        super().__init__()
-        self.tracker = tracker
-        self.main_app = main_app  # Référence à l'app principale
-        
-        self.setWindowTitle("Calibration Curseur Wayland")
-        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
-        self.resize(400, 300)
-        
-        layout = QVBoxLayout()
-        
-        # === SLIDER X GAUCHE ===
-        x_left_layout = QHBoxLayout()
-        x_left_label = QLabel("X Correction Gauche:")
-        self.x_left_value = QLabel(str(tracker.x_correction_left))
-        self.x_left_slider = QSlider(Qt.Orientation.Horizontal)
-        self.x_left_slider.setRange(-300, 300)
-        self.x_left_slider.setValue(tracker.x_correction_left)
-        self.x_left_slider.valueChanged.connect(self.update_x_left)
-        
-        x_left_layout.addWidget(x_left_label)
-        x_left_layout.addWidget(self.x_left_slider)
-        x_left_layout.addWidget(self.x_left_value)
-        layout.addLayout(x_left_layout)
-        
-        # === SLIDER X DROITE ===
-        x_right_layout = QHBoxLayout()
-        x_right_label = QLabel("X Correction Droite:")
-        self.x_right_value = QLabel(str(tracker.x_correction_right))
-        self.x_right_slider = QSlider(Qt.Orientation.Horizontal)
-        self.x_right_slider.setRange(-300, 300)
-        self.x_right_slider.setValue(tracker.x_correction_right)
-        self.x_right_slider.valueChanged.connect(self.update_x_right)
-        
-        x_right_layout.addWidget(x_right_label)
-        x_right_layout.addWidget(self.x_right_slider)
-        x_right_layout.addWidget(self.x_right_value)
-        layout.addLayout(x_right_layout)
-        
-        # === SLIDER Y HAUT ===
-        y_top_layout = QHBoxLayout()
-        y_top_label = QLabel("Y Correction Haut:")
-        self.y_top_value = QLabel(str(tracker.y_correction_top))
-        self.y_top_slider = QSlider(Qt.Orientation.Horizontal)
-        self.y_top_slider.setRange(-300, 300)
-        self.y_top_slider.setValue(tracker.y_correction_top)
-        self.y_top_slider.valueChanged.connect(self.update_y_top)
-        
-        y_top_layout.addWidget(y_top_label)
-        y_top_layout.addWidget(self.y_top_slider)
-        y_top_layout.addWidget(self.y_top_value)
-        layout.addLayout(y_top_layout)
-        
-        # === SLIDER Y BAS ===
-        y_bottom_layout = QHBoxLayout()
-        y_bottom_label = QLabel("Y Correction Bas:")
-        self.y_bottom_value = QLabel(str(tracker.y_correction_bottom))
-        self.y_bottom_slider = QSlider(Qt.Orientation.Horizontal)
-        self.y_bottom_slider.setRange(-300, 300)
-        self.y_bottom_slider.setValue(tracker.y_correction_bottom)
-        self.y_bottom_slider.valueChanged.connect(self.update_y_bottom)
-        
-        y_bottom_layout.addWidget(y_bottom_label)
-        y_bottom_layout.addWidget(self.y_bottom_slider)
-        y_bottom_layout.addWidget(self.y_bottom_value)
-        layout.addLayout(y_bottom_layout)
-        
-        # === BOUTON AFFICHER VALEURS ===
-        print_button = QPushButton("Afficher valeurs actuelles")
-        print_button.clicked.connect(self.print_values)
-        layout.addWidget(print_button)
-        
-        # === INFO ===
-        info_label = QLabel("Le menu se relance automatiquement à chaque changement")
-        info_label.setStyleSheet("color: gray; font-style: italic;")
-        layout.addWidget(info_label)
-        
-        self.setLayout(layout)
-    
-    def refresh_menu(self):
-        """Relance le menu à la position actuelle du curseur"""
-        self.tracker.update_pos()
-        x, y = self.tracker.last_x, self.tracker.last_y
-        self.main_app.show_window_at(x, y, "")
-    
-    def update_x_left(self, value):
-        self.tracker.x_correction_left = value
-        self.x_left_value.setText(str(value))
-        self.refresh_menu()  # Relancer le menu
-    
-    def update_x_right(self, value):
-        self.tracker.x_correction_right = value
-        self.x_right_value.setText(str(value))
-        self.refresh_menu()  # Relancer le menu
-    
-    def update_y_top(self, value):
-        self.tracker.y_correction_top = value
-        self.y_top_value.setText(str(value))
-        self.refresh_menu()  # Relancer le menu
-    
-    def update_y_bottom(self, value):
-        self.tracker.y_correction_bottom = value
-        self.y_bottom_value.setText(str(value))
-        self.refresh_menu()  # Relancer le menu
-    
-    def print_values(self):
-        print("\n=== VALEURS DE CALIBRATION ===")
-        print(f"self.x_correction_left = {self.tracker.x_correction_left}")
-        print(f"self.x_correction_right = {self.tracker.x_correction_right}")
-        print(f"self.y_correction_top = {self.tracker.y_correction_top}")
-        print(f"self.y_correction_bottom = {self.tracker.y_correction_bottom}")
-        print("==============================\n")
-
-
-# === FENÊTRE TOOLTIP INVISIBLE ===
-class TooltipWindow(QWidget):
-    """Fenêtre semi-transparente pour afficher des messages en dessous du menu radial"""
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        
-        # Configuration de la fenêtre
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.ToolTip
-        )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        # CRITIQUE: La tooltip ne doit pas intercepter les événements souris
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        
-        # QTextBrowser pour afficher du texte OU du HTML riche
-        self.text_browser = QTextBrowser(self)
-        self.text_browser.setOpenExternalLinks(False)
-        self.text_browser.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.text_browser.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.text_browser.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.text_browser.setStyleSheet("""
-            QTextBrowser {
-                color: white;
-                background-color: rgba(80, 80, 80, 200);
-                border-radius: 8px;
-                padding: 8px 16px;
-                font-size: 14px;
-                font-weight: bold;
-                border: none;
-            }
-        """)
-        
-        # Layout
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.text_browser)
-        
-        # Timer pour l'auto-masquage
-        self.hide_timer = QTimer(self)
-        self.hide_timer.timeout.connect(self.hide)
-        self.hide_timer.setSingleShot(True)
-        
-        # Taille max pour éviter les tooltips géants
-        self.setMaximumWidth(600)
-        self.setMaximumHeight(400)
-        
-        # État initial
-        self.hide()
-    
-    def show_message(self, text, duration_ms=0, html=None):
-        """
-        Affiche un message.
-        
-        Args:
-            text: Le texte à afficher (fallback si pas de HTML)
-            duration_ms: Durée d'affichage en millisecondes (0 = infini)
-            html: Le HTML riche à afficher (optionnel, prioritaire sur text)
-        """
-        if not text and not html:
-            self.hide()
-            return
-        
-        # Textes longs (>100 chars) ou HTML : comportement adapté
-        if html or (text and len(text) > 100):
-            # Retirer les contraintes de taille fixe
-            self.setMinimumSize(0, 0)
-            self.setMaximumSize(600, 400)
-            self.text_browser.setMinimumSize(0, 0)
-            self.text_browser.setMaximumSize(600, 400)
-            
-            if html:
-                self.text_browser.setHtml(html)
-            else:
-                self.text_browser.setPlainText(text)
-            
-            # Ajuster la taille au contenu
-            doc = self.text_browser.document()
-            doc.setTextWidth(560)  # Largeur fixe pour le calcul
-            content_height = min(int(doc.size().height()) + 20, 400)
-            content_width = min(int(doc.idealWidth()) + 40, 600)
-            # S'assurer d'une largeur minimale raisonnable
-            content_width = max(content_width, 200)
-            self.text_browser.setFixedSize(content_width, content_height)
-            self._calculated_width = content_width
-            self.setFixedSize(content_width, content_height)
-        else:
-            # Textes courts : nouveau comportement avec taille fixe
-            self.text_browser.setPlainText(text)
-            font = self.text_browser.font()
-            fm = QFontMetrics(font)
-            # Calculer la taille du texte multi-lignes
-            max_text_width = 600 - 48
-            text_rect = fm.boundingRect(
-                QRect(0, 0, max_text_width, 10000),
-                Qt.TextFlag.TextWordWrap,
-                text
-            )
-            content_width = text_rect.width() + 48
-            content_height = text_rect.height() + 24
-            content_width = min(max(content_width, 60), 600)
-            content_height = min(content_height, 400)
-            
-            self.text_browser.setFixedSize(content_width, content_height)
-            self._calculated_width = content_width
-            self.setFixedSize(content_width, content_height)
-        
-        self.show()
-        
-        # Si une durée est spécifiée, masquer automatiquement
-        if duration_ms > 0:
-            self.hide_timer.start(duration_ms)
-        else:
-            self.hide_timer.stop()
-    
-    def position_below_menu(self, menu_center_x, menu_center_y, menu_radius):
-        """
-        Positionne la fenêtre tooltip en dessous du menu radial.
-        
-        Args:
-            menu_center_x: Position X du centre du menu
-            menu_center_y: Position Y du centre du menu
-            menu_radius: Rayon du menu (pour calculer la distance)
-        """
-        # Distance en pixels (environ 1cm = 38 pixels sur un écran standard)
-        distance_below = menu_radius + 20  # Rayon du menu + marge
-        
-        # Utiliser la largeur calculée si disponible, sinon self.width()
-        width = getattr(self, '_calculated_width', self.width())
-        
-        # Calculer la position
-        tooltip_x = menu_center_x - width // 2
-        tooltip_y = menu_center_y + distance_below
-        
-        self.move(tooltip_x, tooltip_y)
 
 class RadialMenu(QWidget):
     def __init__(self, x, y, buttons, parent=None, sub=False, tracker=None, app_instance=None):
@@ -4140,7 +3832,7 @@ class App(QMainWindow):
             if name and value:
                 # Si une image a été sélectionnée, créer le thumbnail
                 if self._dialog_temp_image_path:
-                    thumbnail_path = create_thumbnail(self._dialog_temp_image_path)
+                    thumbnail_path = create_thumbnail(self._dialog_temp_image_path, THUMBNAILS_DIR)
                     if thumbnail_path:
                         name = thumbnail_path  # Utiliser le chemin du thumbnail comme nom
                         print(f"Thumbnail créé: {thumbnail_path}")
@@ -4215,7 +3907,7 @@ class App(QMainWindow):
                 
                 # Si une nouvelle image a été sélectionnée, créer le thumbnail
                 if self._dialog_temp_image_path:
-                    thumbnail_path = create_thumbnail(self._dialog_temp_image_path)
+                    thumbnail_path = create_thumbnail(self._dialog_temp_image_path, THUMBNAILS_DIR)
                     if thumbnail_path:
                         new_name = thumbnail_path  # Utiliser le chemin du thumbnail comme nom
                         print(f"Nouveau thumbnail créé: {thumbnail_path}")
