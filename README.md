@@ -426,20 +426,25 @@ Les clips sont automatiquement triés :
 
 ```
 clipnotes/
-├── ClipNotesWindow.py      # Application principale (menu radial, animations)
-├── utils.py                 # Fonctions utilitaires (fichiers, emojis, commandes)
+├── ClipNotesWindow.py              # Application principale (menu radial, animations)
+├── utils.py                        # Fonctions utilitaires (fichiers, emojis, commandes)
 ├── ui/
 │   ├── __init__.py
-│   └── EmojiSelector.py     # Sélecteur d'emojis avec pagination
-├── launch_clipnotes.sh      # Script de lancement avec gestion d'instances
-├── clip_notes.json          # Fichier de données (vos clips)
-├── config.json              # Configuration (couleurs, opacités, etc.)
-├── stored_clips.json        # Groupes de clips sauvegardés
-├── thumbnails/              # Dossier des miniatures d'images
-├── emojis.txt               # Liste des emojis disponibles
-├── seguiemj.ttf             # Police pour le rendu des emojis
-├── requirements.txt         # Dépendances Python
-└── README.md                # Ce fichier
+│   └── EmojiSelector.py            # Sélecteur d'emojis avec pagination
+│   └── AutoScrollListWidget.py     # Liste custom premettant le Drag & Drop
+│   └── WhiteDropIndicatorStyle.py  # Style de ligne blanche épaisse pour un Drag & Drop
+│   └── HoverSubMenu.py             # Sous-menu diponible en hover
+│   └── RadialKeyboardListener.py   # Listener global pour intercepter les événements clavier
+│   └── CursorTracker.py            # Tracker de curseur pour Wayland
+├── launch_clipnotes.sh             # Script de lancement avec gestion d'instances
+├── clip_notes.json                 # Fichier de données (vos clips)
+├── config.json                     # Configuration (couleurs, opacités, etc.)
+├── stored_clips.json               # Groupes de clips sauvegardés
+├── thumbnails/                     # Dossier des miniatures d'images
+├── emojis.txt                      # Liste des emojis disponibles
+├── seguiemj.ttf                    # Police pour le rendu des emojis
+├── requirements.txt                # Dépendances Python
+└── README.md                       # Ce fichier
 ```
 
 ### Technologies utilisées
