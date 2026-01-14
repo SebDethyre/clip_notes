@@ -1,37 +1,13 @@
-import sys
-import math
-import subprocess
-import signal
-import os
-import getpass
-import json
-from PyQt6.QtGui import QCursor
-from PyQt6.QtGui import QPainter, QColor, QIcon, QRadialGradient, QFont, QPalette, QPixmap, QPainterPath, QPen
-from PyQt6.QtCore import Qt, QSize, QTimer, QPropertyAnimation, QRect, QEasingCurve, QVariantAnimation, QEvent, QPointF, QObject
-from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QMainWindow, QVBoxLayout, QHBoxLayout, QSlider
-from PyQt6.QtWidgets import QDialog, QLineEdit, QMessageBox, QTextEdit, QTextBrowser, QToolTip, QLabel, QFileDialog, QComboBox, QCheckBox, QColorDialog, QScrollArea
+import sys, os, time, math, json, hashlib, subprocess, signal
+from PyQt6.QtGui import QPainter, QColor, QIcon, QRadialGradient, QFont, QPalette, QPixmap, QPainterPath, QPen, QCursor, QFontMetrics
+from PyQt6.QtCore import Qt, QSize, QTimer, QRect, QEasingCurve, QVariantAnimation, QEvent, QPointF, QObject
+from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QMainWindow, QVBoxLayout, QHBoxLayout, QSlider, QDialog, QLineEdit
+from PyQt6.QtWidgets import QTextEdit, QTextBrowser, QLabel, QFileDialog, QCheckBox, QColorDialog, QScrollArea, QListWidgetItem, QAbstractItemView
 from PIL import Image, ImageDraw
-import hashlib
 
 from utils import *
-from utils import has_rich_formatting, get_json_order, reorder_json_clips                
-from ui import EmojiSelector
-from PyQt6.QtWidgets import QProxyStyle, QStyle
-from PyQt6.QtGui import QColor
-from PyQt6.QtCore import Qt
+from ui import EmojiSelector, AutoScrollListWidget, WhiteDropIndicatorStyle
 
-class WhiteDropIndicatorStyle(QProxyStyle):
-    def drawPrimitive(self, element, option, painter, widget=None):
-        if element == QStyle.PrimitiveElement.PE_IndicatorItemViewItemDrop:
-            painter.save()
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(255, 255, 255))  # BLANC
-            rect = option.rect
-            rect.setHeight(6)  # 👈 ÉPAISSEUR RÉELLE
-            painter.drawRect(rect)
-            painter.restore()
-        else:
-            super().drawPrimitive(element, option, painter, widget)
 # 🗑️ 📝 ✏️
 # Constantes de configuration
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -618,7 +594,6 @@ class TooltipWindow(QWidget):
         else:
             # Textes courts : nouveau comportement avec taille fixe
             self.text_browser.setPlainText(text)
-            from PyQt6.QtGui import QFontMetrics
             font = self.text_browser.font()
             fm = QFontMetrics(font)
             # Calculer la taille du texte multi-lignes
@@ -817,6 +792,25 @@ class RadialMenu(QWidget):
         # self._hover_close_timer.setSingleShot(True)
         # self._hover_close_timer.timeout.connect(self._check_hover_submenu_close)
         
+        # === ANIMATION BOUTONS SPÉCIAUX (hover sur ➕) ===
+        self._special_buttons_revealed = False  # Les boutons spéciaux sont-ils complètement révélés ?
+        self._special_animating = False  # Animation en cours ?
+        self._special_reveal_timer = QTimer(self)
+        self._special_reveal_timer.setSingleShot(True)
+        self._special_reveal_timer.timeout.connect(self._reveal_next_special_button)
+        self._special_reveal_queue = []  # File d'attente des boutons à révéler
+        self._plus_button_index = None  # Index du bouton ➕
+        self._special_button_indices = []  # Indices des boutons spéciaux (sauf ➕)
+        
+        # Animation de fermeture (reverse)
+        self._special_hide_timer = QTimer(self)
+        self._special_hide_timer.setSingleShot(True)
+        self._special_hide_timer.timeout.connect(self._hide_next_special_button)
+        self._special_hide_queue = []  # File d'attente des boutons à cacher
+        
+        # Tracking de la zone spéciale
+        self._mouse_in_special_zone = False  # La souris est-elle dans la zone des boutons spéciaux ?
+        
         # Créer les boutons initiaux
         self._create_buttons(buttons)
 
@@ -909,6 +903,11 @@ class RadialMenu(QWidget):
                 elif NB_ICONS_MENU == 6:   
                     special_buttons = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
                 if label in special_buttons:
+                    # Stocker l'index du bouton ➕ et des autres boutons spéciaux
+                    if label == "➕":
+                        self._plus_button_index = i
+                    else:
+                        self._special_button_indices.append(i)
                     btn.setStyleSheet(f"""
                         QPushButton {{
                             background-color: transparent;
@@ -1016,6 +1015,15 @@ class RadialMenu(QWidget):
         self._button_labels.clear()
         self._action_badges = {}
         self._storage_button_index = None  # Réinitialiser l'index du bouton ➖
+        self._plus_button_index = None  # Réinitialiser l'index du bouton ➕
+        self._special_button_indices = []  # Réinitialiser les indices des boutons spéciaux
+        self._special_buttons_revealed = False  # Réinitialiser l'état de révélation
+        self._special_animating = False  # Réinitialiser l'état d'animation
+        self._special_reveal_queue = []  # Vider la file d'attente de révélation
+        self._special_hide_queue = []  # Vider la file d'attente de fermeture
+        self._special_reveal_timer.stop()
+        self._special_hide_timer.stop()
+        self._mouse_in_special_zone = False  # Réinitialiser le tracking de zone
         
         # Fermer le sous-menu hover s'il existe
         if self._hover_submenu is not None:
@@ -1051,8 +1059,8 @@ class RadialMenu(QWidget):
         # Restaurer l'état
         if was_visible:
             self.set_widget_opacity(current_opacity)
-            for btn in self.buttons:
-                btn.setVisible(True)
+            # Utiliser reveal_buttons pour respecter la logique des boutons spéciaux
+            self.reveal_buttons()
         
         # CRITIQUE: Réactiver le mouse tracking après la reconstruction
         self.setMouseTracking(True)
@@ -1075,14 +1083,22 @@ class RadialMenu(QWidget):
                 button_index = self.buttons.index(watched)
                 self._hovered_button_index = button_index
                 
+                # Vérifier si on entre dans la zone spéciale
+                all_special_indices = self._special_button_indices + ([self._plus_button_index] if self._plus_button_index is not None else [])
+                if button_index in all_special_indices:
+                    if not self._mouse_in_special_zone:
+                        self._mouse_in_special_zone = True
+                        self._on_enter_special_zone()
+                else:
+                    # On entre sur un bouton non-spécial
+                    # Ne pas interrompre l'animation de révélation en cours
+                    if self._mouse_in_special_zone and not (self._special_animating and self._special_reveal_queue):
+                        self._mouse_in_special_zone = False
+                        self._on_leave_special_zone()
+                
                 # Cas spécial : hover sur le bouton ➖ -> ouvrir le sous-menu
                 if button_index == self._storage_button_index:
                     self._show_storage_submenu(watched)
-                    # Annuler la fermeture si on revient sur le bouton
-                    # if self._hover_close_timer.isActive():
-                    #     self._hover_close_timer.stop()
-                    # if self._hover_submenu:
-                    #     self._hover_submenu.cancel_close()
                 
                 # Créer l'icône centrale pour ce bouton
                 if button_index < len(self._button_labels):
@@ -1114,12 +1130,6 @@ class RadialMenu(QWidget):
         elif event.type() == QEvent.Type.Leave:
             # Effacer l'icône centrale quand on quitte le bouton
             if watched in self.buttons and SHOW_CENTRAL_ICON:
-                button_index = self.buttons.index(watched)
-                
-                # Cas spécial : quitter le bouton ➖ -> planifier fermeture du sous-menu
-                # if button_index == self._storage_button_index and self._hover_submenu:
-                #     self._hover_close_timer.start(150)  # 150ms de délai
-                
                 self._central_icon = None
                 self._hovered_button_index = None
                 self.update()
@@ -1128,6 +1138,219 @@ class RadialMenu(QWidget):
             self.tooltip_window.hide()
         
         return super().eventFilter(watched, event)
+    
+    def _is_angle_in_special_zone(self, mouse_angle):
+        """Détermine si l'angle de la souris correspond à une zone de bouton spécial"""
+        # Obtenir les boutons visibles
+        visible_indices = [i for i, btn in enumerate(self.buttons) if btn.isVisible()]
+        if not visible_indices:
+            return False
+        
+        num_visible = len(visible_indices)
+        angle_step = 360 / num_visible
+        
+        # Tous les indices spéciaux (y compris ➕)
+        all_special_indices = self._special_button_indices + ([self._plus_button_index] if self._plus_button_index is not None else [])
+        
+        # Trouver la position de chaque bouton spécial visible dans le cercle
+        for pos, btn_index in enumerate(visible_indices):
+            if btn_index in all_special_indices:
+                # Calculer l'angle de ce bouton
+                button_angle = pos * angle_step
+                
+                # Vérifier si l'angle de la souris est dans cette zone
+                half_step = angle_step / 2
+                min_angle = (button_angle - half_step) % 360
+                max_angle = (button_angle + half_step) % 360
+                
+                # Gérer le cas où la zone traverse 0°
+                if min_angle > max_angle:
+                    if mouse_angle >= min_angle or mouse_angle < max_angle:
+                        return True
+                else:
+                    if min_angle <= mouse_angle < max_angle:
+                        return True
+        
+        return False
+    
+    def _on_enter_special_zone(self):
+        """Appelé quand la souris entre dans la zone des boutons spéciaux"""
+        # Arrêter l'animation de fermeture si en cours
+        self._special_hide_timer.stop()
+        self._special_hide_queue = []
+        
+        # Démarrer l'animation de révélation si pas déjà révélé
+        if not self._special_buttons_revealed and not self._special_animating:
+            self._start_special_reveal_animation()
+    
+    def _on_leave_special_zone(self):
+        """Appelé quand la souris sort de la zone des boutons spéciaux"""
+        # Ne pas interrompre l'animation de révélation en cours
+        # Une fois démarrée, elle doit aller jusqu'au bout
+        if self._special_animating and self._special_reveal_queue:
+            return
+        
+        # Ne pas cacher si le sous-menu hover est ouvert
+        if self._hover_submenu is not None:
+            try:
+                if self._hover_submenu.isVisible():
+                    return
+            except RuntimeError:
+                self._hover_submenu = None
+        
+        # Démarrer l'animation de fermeture si les boutons sont révélés
+        if self._special_buttons_revealed or self._special_animating:
+            self._start_special_hide_animation()
+    
+    def _start_special_reveal_animation(self):
+        """Démarre l'animation de révélation des boutons spéciaux"""
+        if self._special_buttons_revealed and not self._special_animating:
+            return
+        
+        # Arrêter l'animation de fermeture si en cours
+        self._special_hide_timer.stop()
+        self._special_hide_queue = []
+        
+        self._special_animating = True
+        
+        # Créer la file d'attente des boutons à révéler (en partant du plus proche de ➕)
+        # Seulement les boutons qui ne sont pas encore visibles
+        # Les indices sont dans l'ordre ["➖", "📦"?, "↔️", "⚙️", "🔧"] 
+        # On veut révéler dans l'ordre inverse : "🔧" → "⚙️" → "↔️" → "📦"? → "➖"
+        hidden_special = [i for i in self._special_button_indices if not self.buttons[i].isVisible()]
+        self._special_reveal_queue = list(reversed(hidden_special))
+        
+        # Révéler le premier bouton immédiatement
+        if self._special_reveal_queue:
+            self._reveal_next_special_button()
+        else:
+            # Tous déjà visibles
+            self._special_buttons_revealed = True
+            self._special_animating = False
+    
+    def _reveal_next_special_button(self):
+        """Révèle le prochain bouton de la file d'attente et repositionne le cercle"""
+        if not self._special_reveal_queue:
+            # Animation terminée
+            self._special_buttons_revealed = True
+            self._special_animating = False
+            return
+        
+        # Extraire le prochain index
+        next_index = self._special_reveal_queue.pop(0)
+        
+        # Révéler le bouton
+        if next_index < len(self.buttons):
+            self.buttons[next_index].setVisible(True)
+        
+        # Repositionner tous les boutons visibles (le cercle grandit)
+        self._reposition_visible_buttons()
+        
+        # Planifier le prochain si la file n'est pas vide
+        if self._special_reveal_queue:
+            self._special_reveal_timer.start(30)  # 30ms entre chaque bouton
+        else:
+            # Animation terminée
+            self._special_buttons_revealed = True
+            self._special_animating = False
+    
+    def _start_special_hide_animation(self):
+        """Démarre l'animation de fermeture des boutons spéciaux (animation inverse)"""
+        # Arrêter l'animation de révélation si elle est en cours
+        self._special_reveal_timer.stop()
+        self._special_reveal_queue = []
+        
+        self._special_animating = True
+        
+        # Créer la file d'attente des boutons à cacher (ordre inverse de la révélation)
+        # On cache dans l'ordre : "➖" → "📦"? → "↔️" → "⚙️" → "🔧"
+        # C'est l'ordre normal de _special_button_indices (pas reversed)
+        visible_special = [i for i in self._special_button_indices if self.buttons[i].isVisible()]
+        self._special_hide_queue = list(visible_special)  # Ordre normal pour cacher
+        
+        # Cacher le premier bouton immédiatement
+        if self._special_hide_queue:
+            self._hide_next_special_button()
+        else:
+            # Tous déjà cachés
+            self._special_buttons_revealed = False
+            self._special_animating = False
+    
+    def _hide_next_special_button(self):
+        """Cache le prochain bouton de la file d'attente et repositionne le cercle"""
+        if not self._special_hide_queue:
+            # Animation terminée
+            self._special_buttons_revealed = False
+            self._special_animating = False
+            return
+        
+        # Extraire le prochain index à cacher
+        next_index = self._special_hide_queue.pop(0)
+        
+        # Cacher le bouton
+        if next_index < len(self.buttons):
+            self.buttons[next_index].setVisible(False)
+        
+        # Repositionner tous les boutons visibles (le cercle rétrécit)
+        self._reposition_visible_buttons()
+        
+        # Planifier le prochain si la file n'est pas vide
+        if self._special_hide_queue:
+            self._special_hide_timer.start(30)  # 30ms entre chaque bouton
+        else:
+            # Animation terminée
+            self._special_buttons_revealed = False
+            self._special_animating = False
+    
+    def _reposition_visible_buttons(self):
+        """Repositionne les boutons visibles uniformément sur le cercle et ajuste le rayon"""
+        # Obtenir les indices des boutons visibles (dans l'ordre)
+        visible_indices = [i for i, btn in enumerate(self.buttons) if btn.isVisible()]
+        
+        if not visible_indices:
+            return
+        
+        num_visible = len(visible_indices)
+        
+        # Recalculer le rayon en fonction du nombre de boutons visibles
+        old_radius = self.radius
+        if num_visible <= 7:
+            self.radius = 80
+        else:
+            self.radius = int(80 * (num_visible / 7))
+        
+        # Redimensionner le widget si le rayon a changé
+        if old_radius != self.radius:
+            self.diameter = 2 * (self.radius + self.btn_size)
+            self.widget_size = self.diameter + 100
+            self.resize(self.widget_size, self.widget_size)
+            self.move(self._x - self.widget_size // 2, self._y - self.widget_size // 2)
+        
+        # Repositionner chaque bouton visible uniformément sur le cercle
+        angle_step = 360 / num_visible
+        center_offset = self.widget_size // 2
+        
+        for pos, btn_index in enumerate(visible_indices):
+            angle = math.radians(pos * angle_step)
+            bx = center_offset + self.radius * math.cos(angle) - self.btn_size // 2
+            by = center_offset + self.radius * math.sin(angle) - self.btn_size // 2
+            
+            btn = self.buttons[btn_index]
+            btn.move(int(bx), int(by))
+            btn.setFixedSize(self.btn_size, self.btn_size)
+            
+            # Mettre à jour la taille de l'icône selon le type
+            label = self._button_labels[btn_index] if btn_index < len(self._button_labels) else ""
+            if "/" in label:
+                btn.setIconSize(QSize(48, 48))
+            else:
+                btn.setIconSize(QSize(32, 32))
+        
+        # Mettre à jour la position de la tooltip
+        self._update_tooltip_position()
+        
+        # Redessiner
+        self.update()
     
     def _show_storage_submenu(self, storage_button):
         """Affiche le sous-menu de stockage au hover du bouton ➖"""
@@ -1350,11 +1573,25 @@ class RadialMenu(QWidget):
             self._central_icon = None
             self._hovered_button_index = None
             self.update()
-    
+        
+        # Sortie de zone spéciale si on était dedans
+        if self._mouse_in_special_zone:
+            self._mouse_in_special_zone = False
+            self._on_leave_special_zone()
+
+        
     def mouseMoveEvent(self, event):
-        """Détecte quelle action est survolée par la souris (zone angulaire complète)"""
+        """Détecte quelle action est survolée par la souris (zone angulaire complète)
+        et gère également la détection des zones spéciales pour l'expand/collapse"""
         if not self.buttons:
             return
+        
+        # Obtenir les boutons visibles
+        visible_indices = [i for i, btn in enumerate(self.buttons) if btn.isVisible()]
+        if not visible_indices:
+            return
+        
+        num_visible = len(visible_indices)
         
         # Calculer la position relative au centre
         center = self.rect().center()
@@ -1374,6 +1611,10 @@ class RadialMenu(QWidget):
                 for badge in self._action_badges.values():
                     badge.setVisible(False)
                 self.update()
+            # Sortie de zone spéciale si on était dedans
+            if self._mouse_in_special_zone:
+                self._mouse_in_special_zone = False
+                self._on_leave_special_zone()
             return
         
         # Calculer l'angle de la souris (0° = droite, sens horaire)
@@ -1386,9 +1627,25 @@ class RadialMenu(QWidget):
         # Convertir en degrés
         angle_deg = math.degrees(angle_rad)
         
-        # Trouver l'index du bouton correspondant à cet angle
-        angle_step = 360 / len(self.buttons)
-        button_index = int(round(angle_deg / angle_step)) % len(self.buttons)
+        # === GESTION DE LA ZONE SPÉCIALE (expand/collapse) ===
+        in_special_zone = self._is_angle_in_special_zone(angle_deg)
+        
+        if in_special_zone and not self._mouse_in_special_zone:
+            # On entre dans la zone spéciale
+            self._mouse_in_special_zone = True
+            self._on_enter_special_zone()
+        elif not in_special_zone and self._mouse_in_special_zone:
+            # On sort de la zone spéciale
+            self._mouse_in_special_zone = False
+            self._on_leave_special_zone()
+        
+        # === GESTION DES HOVERS D'ACTIONS (basé sur boutons VISIBLES) ===
+        # Trouver l'index du bouton VISIBLE correspondant à cet angle
+        angle_step = 360 / num_visible
+        visible_pos = int(round(angle_deg / angle_step)) % num_visible
+        
+        # Convertir la position visible en index réel du bouton
+        button_index = visible_indices[visible_pos]
         
         # Récupérer l'action de ce bouton
         hovered_action = None
@@ -1405,14 +1662,13 @@ class RadialMenu(QWidget):
             
             # Si une action est survolée, calculer la position et afficher son badge
             if self._hovered_action and self._hovered_action in self._action_badges:
-                # Trouver tous les indices des boutons ayant cette action
-                indices = [i for i, action in enumerate(self._button_actions) if action == self._hovered_action]
+                # Trouver tous les indices des boutons VISIBLES ayant cette action
+                indices_visible_pos = [pos for pos, idx in enumerate(visible_indices) 
+                                       if idx < len(self._button_actions) and self._button_actions[idx] == self._hovered_action]
                 
-                if indices:
-                    angle_step = 360 / len(self.buttons)
-                    
+                if indices_visible_pos:
                     # Calculer l'angle moyen de tous ces boutons avec moyenne vectorielle
-                    angles_rad = [math.radians(i * angle_step) for i in indices]
+                    angles_rad = [math.radians(pos * angle_step) for pos in indices_visible_pos]
                     avg_x = sum(math.cos(a) for a in angles_rad) / len(angles_rad)
                     avg_y = sum(math.sin(a) for a in angles_rad) / len(angles_rad)
                     avg_angle_rad = math.atan2(avg_y, avg_x)
@@ -1520,8 +1776,20 @@ class RadialMenu(QWidget):
                 self._central_icon = text_pixmap(label, 48)
     
     def reveal_buttons(self):
-        for btn in self.buttons:
-            btn.setVisible(True)
+        # Réinitialiser l'état des boutons spéciaux
+        self._special_buttons_revealed = False
+        self._special_animating = False
+        self._mouse_in_special_zone = False
+        
+        for i, btn in enumerate(self.buttons):
+            # Les boutons spéciaux (sauf ➕) restent cachés jusqu'au hover sur ➕
+            if i in self._special_button_indices:
+                btn.setVisible(False)
+            else:
+                btn.setVisible(True)
+        
+        # Repositionner les boutons visibles pour que le cercle soit adapté
+        self._reposition_visible_buttons()
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -1550,8 +1818,8 @@ class RadialMenu(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(circle_rect)
         
-        # Dessiner les zones colorées pour TOUS les boutons avec des actions
-        # Toutes les zones sont toujours visibles avec une opacité de base légère
+        # Dessiner les zones colorées seulement pour les boutons VISIBLES
+        # Les zones sont positionnées selon la position dans le cercle des visibles
         action_colors_base = {
             action: QColor(*rgb, ZONE_BASIC_OPACITY)
             for action, rgb in ACTION_ZONE_COLORS.items()
@@ -1561,11 +1829,17 @@ class RadialMenu(QWidget):
             action: QColor(*rgb, ZONE_HOVER_OPACITY)
             for action, rgb in ACTION_ZONE_COLORS.items()
         }
-        if self.buttons:
-            angle_step = 360 / len(self.buttons)
+        
+        # Obtenir les indices des boutons visibles
+        visible_indices = [i for i, btn in enumerate(self.buttons) if btn.isVisible()]
+        
+        if visible_indices:
+            angle_step = 360 / len(visible_indices)
             
-            # Dessiner toutes les zones
-            for i, action in enumerate(self._button_actions):
+            # Dessiner les zones seulement pour les boutons visibles
+            for pos, btn_index in enumerate(visible_indices):
+                action = self._button_actions[btn_index] if btn_index < len(self._button_actions) else None
+                
                 if action in action_colors_base:
                     # Choisir la couleur selon si c'est survolé ou non
                     if action == self._hovered_action:
@@ -1573,8 +1847,8 @@ class RadialMenu(QWidget):
                     else:
                         color = action_colors_base[action]
                     
-                    # Calculer l'angle de ce bouton
-                    button_angle = i * angle_step
+                    # Calculer l'angle basé sur la position dans les visibles
+                    button_angle = pos * angle_step
                     
                     # Convertir en angle Qt (0° à droite, sens anti-horaire)
                     start_angle = -button_angle - (angle_step / 2)
@@ -1616,29 +1890,34 @@ class RadialMenu(QWidget):
         
         # Dessiner le cercle de focus (seulement si le clavier a été utilisé)
         if self._focused_index >= 0 and self._focused_index < len(self.buttons):
-            # Calculer la position du bouton focusé
-            angle_step = 360 / len(self.buttons)
-            angle = math.radians(self._focused_index * angle_step)
-            center_offset = self.widget_size // 2
-            
-            # Position du centre du bouton focusé (scalée)
-            btn_center_x = center_offset + (self.radius * math.cos(angle)) * self._scale_factor
-            btn_center_y = center_offset + (self.radius * math.sin(angle)) * self._scale_factor
-            
-            # Rayon du cercle de focus
-            focus_radius = int((self.btn_size // 2 + 5) * self._scale_factor)
-            
-            # Dessiner le cercle de fond
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(255, 255, 255, 60))
-            painter.drawEllipse(QPointF(btn_center_x, btn_center_y), focus_radius, focus_radius)
-            
-            # Dessiner le contour
-            pen = QPen(QColor(255, 255, 255, 200))
-            pen.setWidth(3)
-            painter.setPen(pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawEllipse(QPointF(btn_center_x, btn_center_y), focus_radius, focus_radius)
+            # Vérifier si le bouton focusé est visible
+            if self.buttons[self._focused_index].isVisible():
+                # Trouver la position du bouton focusé parmi les visibles
+                visible_indices = [i for i, btn in enumerate(self.buttons) if btn.isVisible()]
+                if self._focused_index in visible_indices:
+                    pos_in_visible = visible_indices.index(self._focused_index)
+                    angle_step = 360 / len(visible_indices)
+                    angle = math.radians(pos_in_visible * angle_step)
+                    center_offset = self.widget_size // 2
+                    
+                    # Position du centre du bouton focusé (scalée)
+                    btn_center_x = center_offset + (self.radius * math.cos(angle)) * self._scale_factor
+                    btn_center_y = center_offset + (self.radius * math.sin(angle)) * self._scale_factor
+                    
+                    # Rayon du cercle de focus
+                    focus_radius = int((self.btn_size // 2 + 5) * self._scale_factor)
+                    
+                    # Dessiner le cercle de fond
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(QColor(255, 255, 255, 60))
+                    painter.drawEllipse(QPointF(btn_center_x, btn_center_y), focus_radius, focus_radius)
+                    
+                    # Dessiner le contour
+                    pen = QPen(QColor(255, 255, 255, 200))
+                    pen.setWidth(3)
+                    painter.setPen(pen)
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.drawEllipse(QPointF(btn_center_x, btn_center_y), focus_radius, focus_radius)
 
 
     def handle_click_outside(self):
@@ -1685,6 +1964,18 @@ class RadialMenu(QWidget):
         # Configurer le tracker pour qu'il ferme ce menu quand on clique dessus
         if self.tracker:
             self.tracker.on_click_callback = self.handle_click_outside
+        
+        # Calculer le rayon initial basé sur les boutons qui seront visibles
+        # (tous sauf les spéciaux, sauf ➕)
+        initial_visible_count = len(self.buttons) - len(self._special_button_indices)
+        if initial_visible_count <= 7:
+            self.radius = 80
+        else:
+            self.radius = int(80 * (initial_visible_count / 7))
+        self.diameter = 2 * (self.radius + self.btn_size)
+        self.widget_size = self.diameter + 100
+        self.resize(self.widget_size, self.widget_size)
+        self.move(self._x - self.widget_size // 2, self._y - self.widget_size // 2)
         
         self.anim = QVariantAnimation(self)
         self.anim.setDuration(200)  # Réduit de 350ms à 250ms
@@ -3744,7 +4035,6 @@ class App(QMainWindow):
         
         def create_list_widget(action, clips):
             """Crée un QListWidget avec drag and drop pour une action"""
-            from PyQt6.QtWidgets import QListWidget, QListWidgetItem, QAbstractItemView
             
             group_widget = QWidget()
             group_layout = QVBoxLayout(group_widget)
@@ -3772,8 +4062,8 @@ class App(QMainWindow):
                 group_layout.addWidget(empty_label)
                 return group_widget, None
             
-            # Liste avec drag and drop
-            list_widget = QListWidget()
+            # Liste avec drag and drop et auto-scroll
+            list_widget = AutoScrollListWidget()
             list_widget.setStyle(WhiteDropIndicatorStyle())
             list_widget.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
             list_widget.setDefaultDropAction(Qt.DropAction.MoveAction)
@@ -4682,7 +4972,7 @@ if __name__ == "__main__":
     # calibration_window = CalibrationWindow(tracker)
     # calibration_window.show()
     
-    import time
+
     max_wait = 0.3
     elapsed = 0.0
     while (tracker.last_x == 0 and tracker.last_y == 0) and elapsed < max_wait:
