@@ -1005,7 +1005,12 @@ class RadialMenu(QWidget):
         """Gère la flèche droite"""
         if not self.buttons:
             return
-        
+        print(len(self.buttons))
+        print(self.focused_index)
+        if self.focused_index == len(self.buttons) - 1:
+            self.start_special_reveal_animation()
+        if self.focused_index == 4:
+            self.start_special_hide_animation()
         # Première utilisation : initialiser le focus
         if not self.keyboard_used:
             self.keyboard_used = True
@@ -1021,6 +1026,11 @@ class RadialMenu(QWidget):
         """Gère la flèche gauche"""
         if not self.buttons:
             return
+        print(self.focused_index)
+        if self.focused_index == 5:
+            self.start_special_reveal_animation()
+        if self.focused_index == 0:
+            self.start_special_hide_animation()
         
         # Première utilisation : initialiser le focus
         if not self.keyboard_used:
