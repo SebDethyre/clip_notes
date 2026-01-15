@@ -1046,13 +1046,9 @@ class RadialMenu(QWidget):
         """Initialise le focus sur le premier clip ou sur ➕"""
         # Les 5 boutons spéciaux sont toujours présents : ➖ ↔️ ⚙️ 🔧 ➕
         # S'il y a plus de 5 boutons, les clips commencent à l'index 5
-        # if len(self.buttons) > 5:
         button_mumber = self.nb_icons_menu
-        # if self.nb_icons_menu == 5:
-        #     button_mumber = 4
         if len(self.buttons) > button_mumber:
             # Il y a des clips, aller au premier clip
-            # self.focused_index = 5
             self.focused_index = button_mumber
         else:
             # Pas de clips, trouver le bouton ➕
@@ -1108,11 +1104,7 @@ class RadialMenu(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Ne pas appliquer l'opacité globalement - seulement au fond
-        # painter.setOpacity(self.widget_opacity)  # SUPPRIMÉ
-        
         center = self.rect().center()
-        
         # Appliquer le scale au diamètre
         scaled_diameter = int(self.diameter * self.scale_factor)
         
@@ -1231,7 +1223,6 @@ class RadialMenu(QWidget):
                     painter.setPen(pen)
                     painter.setBrush(Qt.BrushStyle.NoBrush)
                     painter.drawEllipse(QPointF(btn_center_x, btn_center_y), focus_radius, focus_radius)
-
 
     def handle_click_outside(self):
         """Gère le clic en dehors du menu (sur le tracker ou au centre)"""
@@ -1376,7 +1367,6 @@ class RadialMenu(QWidget):
                             background-color: rgba(255, 255, 255, 100);
                         }}
                     """)
-        
         self.update()
 
     def on_animation_finished(self):
