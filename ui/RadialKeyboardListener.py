@@ -22,41 +22,41 @@ class RadialKeyboardListener(QObject):
             
             # Vérifier si un sous-menu hover est ouvert (et s'il existe encore)
             submenu = None
-            if hasattr(self.radial_menu, '_hover_submenu') and self.radial_menu._hover_submenu is not None:
+            if hasattr(self.radial_menu, '_hover_submenu') and self.radial_menu.hover_submenu is not None:
                 try:
-                    if self.radial_menu._hover_submenu.isVisible():
-                        submenu = self.radial_menu._hover_submenu
+                    if self.radial_menu.hover_submenu.isVisible():
+                        submenu = self.radial_menu.hover_submenu
                 except RuntimeError:
                     # L'objet a été détruit
-                    self.radial_menu._hover_submenu = None
+                    self.radial_menu.hover_submenu = None
             
             if submenu is not None:
                 # Rediriger les événements vers le sous-menu
                 if key == Qt.Key.Key_Right:
-                    submenu._handle_key_right()
+                    submenu.handle_key_right()
                     return True
                 elif key == Qt.Key.Key_Left:
-                    submenu._handle_key_left()
+                    submenu.handle_key_left()
                     return True
                 elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter or key == Qt.Key.Key_Down:
-                    submenu._handle_key_enter()
+                    submenu.handle_key_enter()
                     return True
                 elif key == Qt.Key.Key_Escape or key == Qt.Key.Key_Up:
-                    submenu._handle_key_escape()
+                    submenu.handle_key_escape()
                     return True
             else:
                 # Comportement normal pour le menu principal
                 if key == Qt.Key.Key_Right:
-                    self.radial_menu._handle_key_right()
+                    self.radial_menu.handle_key_right()
                     return True
                 elif key == Qt.Key.Key_Left:
-                    self.radial_menu._handle_key_left()
+                    self.radial_menu.handle_key_left()
                     return True
                 elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter or key == Qt.Key.Key_Down:
-                    self.radial_menu._handle_key_enter()
+                    self.radial_menu.handle_key_enter()
                     return True
                 elif key == Qt.Key.Key_Escape or key == Qt.Key.Key_Up:
-                    self.radial_menu._handle_key_escape()
+                    self.radial_menu.handle_key_escape()
                     return True
 
         return False

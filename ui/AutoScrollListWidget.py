@@ -12,14 +12,14 @@ class AutoScrollListWidget(QListWidget):
         super().__init__(parent)
         
         # Configuration de l'auto-scroll
-        self._auto_scroll_margin = 40  # Zone de détection en pixels
-        self._auto_scroll_speed = 3    # Pixels par tick
-        self._auto_scroll_interval = 20  # Intervalle en ms (plus petit = plus fluide)
+        self.auto_scroll_margin = 40  # Zone de détection en pixels
+        self.auto_scroll_speed = 3    # Pixels par tick
+        self.auto_scroll_interval = 20  # Intervalle en ms (plus petit = plus fluide)
         
         # Timer pour l'auto-scroll
-        self._auto_scroll_timer = QTimer(self)
-        self._auto_scroll_timer.timeout.connect(self._do_auto_scroll)
-        self._auto_scroll_direction = 0  # -1 = haut, 0 = stop, 1 = bas
+        self.auto_scroll_timer = QTimer(self)
+        self.auto_scroll_timer.timeout.connect(self.do_auto_scroll)
+        self.auto_scroll_direction = 0  # -1 = haut, 0 = stop, 1 = bas
     
     def dragMoveEvent(self, event):
         """Gère le déplacement pendant le drag pour activer l'auto-scroll"""
@@ -28,44 +28,44 @@ class AutoScrollListWidget(QListWidget):
         widget_height = self.viewport().height()
         
         # Déterminer si on est dans une zone d'auto-scroll
-        if pos.y() < self._auto_scroll_margin:
+        if pos.y() < self.auto_scroll_margin:
             # Zone haute - scroller vers le haut
-            self._auto_scroll_direction = -1
-            if not self._auto_scroll_timer.isActive():
-                self._auto_scroll_timer.start(self._auto_scroll_interval)
-        elif pos.y() > widget_height - self._auto_scroll_margin:
+            self.auto_scroll_direction = -1
+            if not self.auto_scroll_timer.isActive():
+                self.auto_scroll_timer.start(self.auto_scroll_interval)
+        elif pos.y() > widget_height - self.auto_scroll_margin:
             # Zone basse - scroller vers le bas
-            self._auto_scroll_direction = 1
-            if not self._auto_scroll_timer.isActive():
-                self._auto_scroll_timer.start(self._auto_scroll_interval)
+            self.auto_scroll_direction = 1
+            if not self.auto_scroll_timer.isActive():
+                self.auto_scroll_timer.start(self.auto_scroll_interval)
         else:
             # Zone centrale - arrêter l'auto-scroll
-            self._auto_scroll_direction = 0
-            self._auto_scroll_timer.stop()
+            self.auto_scroll_direction = 0
+            self.auto_scroll_timer.stop()
         
         # Appeler l'implémentation parente pour le comportement normal du drag
         super().dragMoveEvent(event)
     
     def dragLeaveEvent(self, event):
         """Arrête l'auto-scroll quand le drag quitte le widget"""
-        self._auto_scroll_direction = 0
-        self._auto_scroll_timer.stop()
+        self.auto_scroll_direction = 0
+        self.auto_scroll_timer.stop()
         super().dragLeaveEvent(event)
     
     def dropEvent(self, event):
         """Arrête l'auto-scroll quand on drop"""
-        self._auto_scroll_direction = 0
-        self._auto_scroll_timer.stop()
+        self.auto_scroll_direction = 0
+        self.auto_scroll_timer.stop()
         super().dropEvent(event)
     
-    def _do_auto_scroll(self):
+    def do_auto_scroll(self):
         """Effectue le scroll automatique"""
-        if self._auto_scroll_direction == 0:
-            self._auto_scroll_timer.stop()
+        if self.auto_scroll_direction == 0:
+            self.auto_scroll_timer.stop()
             return
         
         # Récupérer la scrollbar verticale
         scrollbar = self.verticalScrollBar()
         if scrollbar:
-            new_value = scrollbar.value() + (self._auto_scroll_direction * self._auto_scroll_speed)
+            new_value = scrollbar.value() + (self.auto_scroll_direction * self.auto_scroll_speed)
             scrollbar.setValue(new_value)

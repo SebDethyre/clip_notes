@@ -71,15 +71,15 @@ class ClipNotesWindow(QMainWindow):
         
         # Créer une fenêtre tooltip pour l'application (utilisée dans les dialogues)
         self.tooltip_window = TooltipWindow()
-        self._dialog_emoji_labels = []
+        self.dialog_emoji_labels = []
         self.nb_icons_config_labels = []
-        self._dialog_help_label = None
-        self._dialog_help_browser = None  # QTextBrowser pour preview multilignes avec HTML
-        self._dialog_slider = None
-        self._nb_icons_dialog_slider = None
-        self._dialog_image_preview = None  # Label pour l'aperçu de l'image
-        self._dialog_temp_image_path = None  # Chemin temporaire de l'image sélectionnée
-        self._dialog_remove_image_button = None  # Bouton pour supprimer l'image
+        self.dialog_help_label = None
+        self.dialog_help_browser = None  # QTextBrowser pour preview multilignes avec HTML
+        self.dialog_slider = None
+        self.nb_icons_dialog_slider = None
+        self.dialog_image_preview = None  # Label pour l'aperçu de l'image
+        self.dialog_temp_image_path = None  # Chemin temporaire de l'image sélectionnée
+        self.dialog_remove_image_button = None  # Bouton pour supprimer l'image
 
         self.central_neon = False
         self.zone_basic_opacity = 15
@@ -261,13 +261,13 @@ class ClipNotesWindow(QMainWindow):
         """Gère les événements de hover et de clic sur les widgets du dialogue"""
         if event.type() == QEvent.Type.Enter:
             # Vérifier les icônes d'action (avec tooltip_text)
-            if watched in self._dialog_emoji_labels:
+            if watched in self.dialog_emoji_labels:
                 tooltip_text = watched.property("tooltip_text")
-                if tooltip_text and self._dialog_help_label:
-                    self._dialog_help_label.setText(tooltip_text)
-                    self._dialog_help_label.setVisible(True)
-                    if hasattr(self, '_dialog_help_browser') and self._dialog_help_browser:
-                        self._dialog_help_browser.setVisible(False)
+                if tooltip_text and self.dialog_help_label:
+                    self.dialog_help_label.setText(tooltip_text)
+                    self.dialog_help_label.setVisible(True)
+                    if hasattr(self, '_dialog_help_browser') and self.dialog_help_browser:
+                        self.dialog_help_browser.setVisible(False)
             # Vérifier les autres widgets (avec help_text)
             else:
                 help_text = watched.property("help_text")
@@ -278,47 +278,47 @@ class ClipNotesWindow(QMainWindow):
                     line_count = help_text.count('\n') + 1
                     is_multiline = line_count > 1
                     
-                    if is_multiline and hasattr(self, '_dialog_help_browser') and self._dialog_help_browser:
+                    if is_multiline and hasattr(self, '_dialog_help_browser') and self.dialog_help_browser:
                         # Multilignes → utiliser le QTextBrowser
                         if html_string:
-                            self._dialog_help_browser.setHtml(html_string)
+                            self.dialog_help_browser.setHtml(html_string)
                         else:
-                            self._dialog_help_browser.setPlainText(help_text)
-                        self._dialog_help_browser.setVisible(True)
-                        if self._dialog_help_label:
-                            self._dialog_help_label.setVisible(False)
-                    elif self._dialog_help_label:
+                            self.dialog_help_browser.setPlainText(help_text)
+                        self.dialog_help_browser.setVisible(True)
+                        if self.dialog_help_label:
+                            self.dialog_help_label.setVisible(False)
+                    elif self.dialog_help_label:
                         # Une seule ligne → utiliser le label simple (avec HTML si disponible)
                         if html_string:
                             # Activer le rendu HTML et afficher le HTML
-                            self._dialog_help_label.setTextFormat(Qt.TextFormat.RichText)
-                            self._dialog_help_label.setText(html_string)
+                            self.dialog_help_label.setTextFormat(Qt.TextFormat.RichText)
+                            self.dialog_help_label.setText(html_string)
                         else:
                             # Texte simple
-                            self._dialog_help_label.setTextFormat(Qt.TextFormat.PlainText)
-                            self._dialog_help_label.setText(help_text)
-                        self._dialog_help_label.setVisible(True)
-                        if hasattr(self, '_dialog_help_browser') and self._dialog_help_browser:
-                            self._dialog_help_browser.setVisible(False)
+                            self.dialog_help_label.setTextFormat(Qt.TextFormat.PlainText)
+                            self.dialog_help_label.setText(help_text)
+                        self.dialog_help_label.setVisible(True)
+                        if hasattr(self, '_dialog_help_browser') and self.dialog_help_browser:
+                            self.dialog_help_browser.setVisible(False)
         elif event.type() == QEvent.Type.Leave:
             # Vider et cacher les widgets d'aide
-            if self._dialog_help_label:
-                self._dialog_help_label.setTextFormat(Qt.TextFormat.PlainText)
-                self._dialog_help_label.setText("")
-                self._dialog_help_label.setVisible(True)
-            if hasattr(self, '_dialog_help_browser') and self._dialog_help_browser:
-                self._dialog_help_browser.clear()
-                self._dialog_help_browser.setVisible(False)
+            if self.dialog_help_label:
+                self.dialog_help_label.setTextFormat(Qt.TextFormat.PlainText)
+                self.dialog_help_label.setText("")
+                self.dialog_help_label.setVisible(True)
+            if hasattr(self, '_dialog_help_browser') and self.dialog_help_browser:
+                self.dialog_help_browser.clear()
+                self.dialog_help_browser.setVisible(False)
         elif event.type() == QEvent.Type.MouseButtonPress:
             # Gérer les clics sur les emojis pour changer le slider
-            if watched in self._dialog_emoji_labels and self._dialog_slider:
+            if watched in self.dialog_emoji_labels and self.dialog_slider:
                 slider_value = watched.property("slider_value")
                 if slider_value is not None:
-                    self._dialog_slider.setValue(slider_value)
-            if watched in self.nb_icons_config_labels and self._nb_icons_dialog_slider:
+                    self.dialog_slider.setValue(slider_value)
+            if watched in self.nb_icons_config_labels and self.nb_icons_dialog_slider:
                 slider_value = watched.property("slider_value")
                 if slider_value is not None:
-                    self._nb_icons_dialog_slider.setValue(slider_value)
+                    self.nb_icons_dialog_slider.setValue(slider_value)
         
         return super().eventFilter(watched, event)
 
@@ -379,7 +379,7 @@ class ClipNotesWindow(QMainWindow):
 
         # Reconstruire buttons_sub depuis actions_map_sub avec tri
         self.buttons_sub = []
-        x, y = self._x, self._y
+        x, y = self.x, self.y
         if self.nb_icons_menu == 5:
             special_button_tooltips = {
                 "➕": "Ajouter",
@@ -432,14 +432,14 @@ class ClipNotesWindow(QMainWindow):
             if name in self.actions_map_sub:
                 action_data, value, action = self.actions_map_sub[name]
                 tooltip = value.replace(r'\n', '\n')
-                self.buttons_sub.append((name, self.make_handler_sub(name, value, self._x, self._y), tooltip, action))
+                self.buttons_sub.append((name, self.make_handler_sub(name, value, self.x, self.y), tooltip, action))
         
         # Puis ajouter les clips triés (avec le HTML pour les tooltips)
         for name, (action_data, value, action) in sorted_clips:
             tooltip = value.replace(r'\n', '\n')
             # Récupérer le HTML du clip pour le tooltip
             _, clip_html = self.get_clip_data_from_json(name)
-            self.buttons_sub.append((name, self.make_handler_sub(name, value, self._x, self._y), tooltip, action, clip_html))
+            self.buttons_sub.append((name, self.make_handler_sub(name, value, self.x, self.y), tooltip, action, clip_html))
         
         # Mettre à jour les boutons du menu existant
         self.current_popup.update_buttons(self.buttons_sub)
@@ -672,24 +672,24 @@ class ClipNotesWindow(QMainWindow):
                         # Afficher le message et fermer après 1 seconde
                         if message and self.current_popup:
                             self.current_popup.tooltip_window.show_message(message, 1000)
-                            self.current_popup._update_tooltip_position()
+                            self.current_popup.update_tooltip_position()
                             # Fermer après 1 seconde
-                            QTimer.singleShot(300, self._close_popup)
+                            QTimer.singleShot(300, self.close_popup)
                         else:
                             # Fermer immédiatement si pas de message
-                            self._close_popup()
+                            self.close_popup()
                 else:
                     print(f"Aucune fonction associée à '{name}'")
         return handler_sub
     
-    def _close_popup(self):
+    def close_popup(self):
         """Méthode helper pour fermer le popup"""
         if self.tracker:
             self.tracker.close()
         if self.current_popup:
             self.current_popup.close()
 
-    def _create_clip_dialog(self, title, button_text, x, y, initial_name="", initial_value="", 
+    def create_clip_dialog(self, title, button_text, x, y, initial_name="", initial_value="", 
                            initial_slider_value=0, initial_html=None, placeholder="", on_submit_callback=None, on_close_callback=None):
         dialog = QDialog(self.tracker)
         dialog.setWindowTitle(title)
@@ -786,8 +786,8 @@ class ClipNotesWindow(QMainWindow):
         emoji_tooltips = ["Copier", "Exécuter dans un terminal", "Exécuter"]
         
         # Stocker les labels pour l'event filter
-        self._dialog_emoji_labels = []
-        self._dialog_slider = None  # Référence au slider pour les clics sur emojis
+        self.dialog_emoji_labels = []
+        self.dialog_slider = None  # Référence au slider pour les clics sur emojis
         
         for i, emoji in enumerate(emoji_labels):
             if i > 0:
@@ -804,7 +804,7 @@ class ClipNotesWindow(QMainWindow):
             # Installer l'event filter pour détecter le hover et les clics
             label.installEventFilter(self)
             label.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
-            self._dialog_emoji_labels.append(label)
+            self.dialog_emoji_labels.append(label)
             
             emoji_labels_layout.addWidget(label)
             if i < len(emoji_labels) - 1:
@@ -822,7 +822,7 @@ class ClipNotesWindow(QMainWindow):
         slider.setPageStep(1)
         slider.setProperty("help_text", "Associer une action")
         slider.installEventFilter(self)
-        self._dialog_slider = slider  # Stocker pour les clics sur emojis
+        self.dialog_slider = slider  # Stocker pour les clics sur emojis
         slider.setStyleSheet("""
             QSlider::groove:horizontal {
                 height: 6px;
@@ -866,7 +866,7 @@ class ClipNotesWindow(QMainWindow):
         help_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         help_label.setStyleSheet("color: white; font-size: 14px; padding: 4px; font-weight: bold;")
         help_label.setMinimumHeight(20)
-        self._dialog_help_label = help_label  # Stocker pour l'event filter
+        self.dialog_help_label = help_label  # Stocker pour l'event filter
 
         layout.addWidget(name_input)
         
@@ -888,7 +888,7 @@ class ClipNotesWindow(QMainWindow):
             }
         """)
         image_preview.setVisible(False)
-        self._dialog_image_preview = image_preview
+        self.dialog_image_preview = image_preview
         
         # Bouton de suppression de l'image
         remove_image_button = QPushButton("❌")
@@ -909,16 +909,16 @@ class ClipNotesWindow(QMainWindow):
         remove_image_button.setVisible(False)
         remove_image_button.setProperty("help_text", "Supprimer l'image")
         remove_image_button.installEventFilter(self)
-        self._dialog_remove_image_button = remove_image_button
+        self.dialog_remove_image_button = remove_image_button
         
         def remove_image():
             """Supprime l'aperçu de l'image et vide le champ nom"""
-            self._dialog_temp_image_path = None
-            if self._dialog_image_preview:
-                self._dialog_image_preview.setVisible(False)
-                self._dialog_image_preview.clear()
-            if self._dialog_remove_image_button:
-                self._dialog_remove_image_button.setVisible(False)
+            self.dialog_temp_image_path = None
+            if self.dialog_image_preview:
+                self.dialog_image_preview.setVisible(False)
+                self.dialog_image_preview.clear()
+            if self.dialog_remove_image_button:
+                self.dialog_remove_image_button.setVisible(False)
             name_input.clear()
         
         remove_image_button.clicked.connect(remove_image)
@@ -927,24 +927,24 @@ class ClipNotesWindow(QMainWindow):
         def on_name_changed(text):
             """Cache l'aperçu si l'utilisateur modifie le texte manuellement"""
             # Si on a une image temporaire et que le texte ne correspond plus au nom attendu
-            if self._dialog_temp_image_path:
-                expected_name = os.path.splitext(os.path.basename(self._dialog_temp_image_path))[0]
+            if self.dialog_temp_image_path:
+                expected_name = os.path.splitext(os.path.basename(self.dialog_temp_image_path))[0]
                 if text != expected_name:
                     # L'utilisateur a modifié le texte, effacer l'aperçu
-                    self._dialog_temp_image_path = None
-                    if self._dialog_image_preview:
-                        self._dialog_image_preview.setVisible(False)
-                        self._dialog_image_preview.clear()
-                    if self._dialog_remove_image_button:
-                        self._dialog_remove_image_button.setVisible(False)
+                    self.dialog_temp_image_path = None
+                    if self.dialog_image_preview:
+                        self.dialog_image_preview.setVisible(False)
+                        self.dialog_image_preview.clear()
+                    if self.dialog_remove_image_button:
+                        self.dialog_remove_image_button.setVisible(False)
             # Si on édite une image existante et que le texte change
             elif initial_name_stored and "/" in initial_name_stored and text != initial_name_stored:
                 # L'utilisateur a modifié le chemin, effacer l'aperçu
-                if self._dialog_image_preview:
-                    self._dialog_image_preview.setVisible(False)
-                    self._dialog_image_preview.clear()
-                if self._dialog_remove_image_button:
-                    self._dialog_remove_image_button.setVisible(False)
+                if self.dialog_image_preview:
+                    self.dialog_image_preview.setVisible(False)
+                    self.dialog_image_preview.clear()
+                if self.dialog_remove_image_button:
+                    self.dialog_remove_image_button.setVisible(False)
         
         name_input.textChanged.connect(on_name_changed)
         
@@ -1025,7 +1025,7 @@ class ClipNotesWindow(QMainWindow):
             
             if file_path:
                 # Stocker le chemin temporairement (ne pas créer le thumbnail maintenant)
-                self._dialog_temp_image_path = file_path
+                self.dialog_temp_image_path = file_path
                 
                 # Mettre seulement le nom de fichier (sans chemin) dans name_input
                 file_name = os.path.basename(file_path)
@@ -1033,7 +1033,7 @@ class ClipNotesWindow(QMainWindow):
                 name_input.setText(name_without_ext)
                 
                 # Afficher l'aperçu de l'image
-                if self._dialog_image_preview:
+                if self.dialog_image_preview:
                     pixmap = QPixmap(file_path)
                     if not pixmap.isNull():
                         # Redimensionner en gardant les proportions
@@ -1060,12 +1060,12 @@ class ClipNotesWindow(QMainWindow):
                         painter.drawPixmap(x, y, scaled_pixmap)
                         painter.end()
                         
-                        self._dialog_image_preview.setPixmap(rounded)
-                        self._dialog_image_preview.setVisible(True)
+                        self.dialog_image_preview.setPixmap(rounded)
+                        self.dialog_image_preview.setVisible(True)
                         
                         # Rendre visible le bouton de suppression
-                        if self._dialog_remove_image_button:
-                            self._dialog_remove_image_button.setVisible(True)
+                        if self.dialog_remove_image_button:
+                            self.dialog_remove_image_button.setVisible(True)
                         
                         print(f"Image sélectionnée: {file_path}")
                     else:
@@ -1109,9 +1109,9 @@ class ClipNotesWindow(QMainWindow):
             on_close_callback()
         
         # CRITIQUE: Nettoyer les variables du dialogue
-        self._dialog_temp_image_path = None
-        self._dialog_image_preview = None
-        self._dialog_remove_image_button = None
+        self.dialog_temp_image_path = None
+        self.dialog_image_preview = None
+        self.dialog_remove_image_button = None
         
         # CRITIQUE: Réactiver le mouse tracking du menu radial après fermeture du dialogue
         if self.current_popup:
@@ -1465,8 +1465,8 @@ class ClipNotesWindow(QMainWindow):
         layout.addWidget(preview_container)
         
         # Stocker les références pour l'event filter
-        self._dialog_help_label = help_label
-        self._dialog_help_browser = help_browser
+        self.dialog_help_label = help_label
+        self.dialog_help_browser = help_browser
         
         # Bouton Fermer
         close_button = QPushButton("Fermer")
@@ -2062,7 +2062,7 @@ class ClipNotesWindow(QMainWindow):
         
         # Stocker les labels pour l'event filter
         self.nb_icons_config_labels = []
-        self._nb_icons_dialog_slider = None  # Référence au slider pour les clics sur emojis
+        self.nb_icons_dialog_slider = None  # Référence au slider pour les clics sur emojis
         
         for i, emoji in enumerate(emoji_labels):
             if i > 0:
@@ -2099,7 +2099,7 @@ class ClipNotesWindow(QMainWindow):
         slider.setPageStep(1)
         slider.setProperty("help_text", "Associer une action")
         slider.installEventFilter(self)
-        self._nb_icons_dialog_slider = slider  # Stocker pour les clics sur emojis
+        self.nb_icons_dialog_slider = slider  # Stocker pour les clics sur emojis
         slider.setStyleSheet("""
             QSlider::groove:horizontal {
                 height: 6px;
@@ -2330,8 +2330,8 @@ class ClipNotesWindow(QMainWindow):
             
             if name and value:
                 # Si une image a été sélectionnée, créer le thumbnail
-                if self._dialog_temp_image_path:
-                    thumbnail_path = create_thumbnail(self._dialog_temp_image_path, self.thumbnails_dir)
+                if self.dialog_temp_image_path:
+                    thumbnail_path = create_thumbnail(self.dialog_temp_image_path, self.thumbnails_dir)
                     if thumbnail_path:
                         name = thumbnail_path  # Utiliser le chemin du thumbnail comme nom
                         print(f"Thumbnail créé: {thumbnail_path}")
@@ -2366,7 +2366,7 @@ class ClipNotesWindow(QMainWindow):
             else:
                 print("Les deux champs doivent être remplis")
         
-        self._create_clip_dialog(
+        self.create_clip_dialog(
             title="➕ Ajouter",
             button_text="Ajouter",
             x=x, y=y,
@@ -2405,8 +2405,8 @@ class ClipNotesWindow(QMainWindow):
                 old_name = name
                 
                 # Si une nouvelle image a été sélectionnée, créer le thumbnail
-                if self._dialog_temp_image_path:
-                    thumbnail_path = create_thumbnail(self._dialog_temp_image_path, self.thumbnails_dir)
+                if self.dialog_temp_image_path:
+                    thumbnail_path = create_thumbnail(self.dialog_temp_image_path, self.thumbnails_dir)
                     if thumbnail_path:
                         new_name = thumbnail_path  # Utiliser le chemin du thumbnail comme nom
                         print(f"Nouveau thumbnail créé: {thumbnail_path}")
@@ -2466,7 +2466,7 @@ class ClipNotesWindow(QMainWindow):
             else:
                 print("Les deux champs doivent être remplis")
 
-        self._create_clip_dialog(
+        self.create_clip_dialog(
             title="🔧 Modifier",
             button_text="Modifier",
             x=x, y=y,
@@ -2484,8 +2484,8 @@ class ClipNotesWindow(QMainWindow):
             x, y = self.tracker.last_x, self.tracker.last_y
         
         # Stocker les coordonnées pour refresh_menu
-        self._x = x
-        self._y = y
+        self.x = x
+        self.y = y
         
         try:
             if self.current_popup:

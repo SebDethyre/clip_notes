@@ -87,7 +87,7 @@ class TooltipWindow(QWidget):
             # S'assurer d'une largeur minimale raisonnable
             content_width = max(content_width, 200)
             self.text_browser.setFixedSize(content_width, content_height)
-            self._calculated_width = content_width
+            self.calculated_width = content_width
             self.setFixedSize(content_width, content_height)
         else:
             # Textes courts : nouveau comportement avec taille fixe
@@ -107,7 +107,7 @@ class TooltipWindow(QWidget):
             content_height = min(content_height, 400)
             
             self.text_browser.setFixedSize(content_width, content_height)
-            self._calculated_width = content_width
+            self.calculated_width = content_width
             self.setFixedSize(content_width, content_height)
         
         self.show()
