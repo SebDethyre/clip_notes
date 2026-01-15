@@ -73,7 +73,9 @@ class ClipNotesWindow(QMainWindow):
 
         self.special_buttons_by_5 = ["➖", "↔️", "⚙️", "🔧", "➕"]
         self.special_buttons_by_6 = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
+        self.special_buttons_by_7 = ["➖", "📋", "💾", "↔️", "⚙️", "🔧", "➕"]
         
+
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
         self.clip_notes_file_json = os.path.join(self.script_dir, "clip_notes.json")
         self.emojis_file = os.path.join(self.script_dir, "emojis.txt")
@@ -366,10 +368,31 @@ class ClipNotesWindow(QMainWindow):
                 "📦": [(self.show_storage_menu, [x,y], {}), special_button_tooltips["📦"], None],
                 "➖": [(self.delete_clip, [x,y], {}), special_button_tooltips["➖"], None],
             }
+        elif self.nb_icons_menu == 7:
+            special_button_tooltips = {
+                "➕": "Ajouter",
+                "🔧": "Modifier",
+                "⚙️": "Configurer",
+                "↔️": "Ordonner",
+                "💾": "Stocker",
+                "📋": "Stock",
+                "➖": "Supprimer",
+            }
+            self.actions_map_sub = {
+                "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
+                "🔧": [(self.update_clip, [x,y], {}), special_button_tooltips["🔧"], None],
+                "⚙️": [(self.show_config_dialog, [x,y], {}), special_button_tooltips["⚙️"], None],
+                "↔️": [(self.show_reorder_dialog, [x,y], {}), special_button_tooltips["↔️"], None],
+                "💾": [(self.store_clip_mode, [x,y], {}), special_button_tooltips["💾"], None],
+                "📋": [(self.show_stored_clips_dialog, [x,y], {}), special_button_tooltips["📋"], None],
+                "➖": [(self.delete_clip, [x,y], {}), special_button_tooltips["➖"], None],
+            }
         if self.nb_icons_menu == 5:
             special_buttons = self.special_buttons_by_5
         elif self.nb_icons_menu == 6:
             special_buttons = self.special_buttons_by_6
+        elif self.nb_icons_menu == 7:
+            special_buttons = self.special_buttons_by_7
         populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
         # Séparer les boutons spéciaux des autres
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
@@ -393,6 +416,15 @@ class ClipNotesWindow(QMainWindow):
             # Récupérer le HTML du clip pour le tooltip
             _, clip_html = self.get_clip_data_from_json(name)
             self.buttons_sub.append((name, self.make_handler_sub(name, value, self.x, self.y), tooltip, action, clip_html))
+        
+        # CRITIQUE: Propager nb_icons_menu et autres paramètres au popup AVANT update_buttons
+        # Sinon l'escamotage des icônes fixes ne correspondra pas à la nouvelle configuration
+        self.current_popup.nb_icons_menu = self.nb_icons_menu
+        self.current_popup.action_zone_colors = self.action_zone_colors
+        self.current_popup.show_central_icon = self.show_central_icon
+        self.current_popup.menu_background_color = self.menu_background_color
+        self.current_popup.zone_basic_opacity = self.zone_basic_opacity
+        self.current_popup.zone_hover_opacity = self.zone_hover_opacity
         
         # Mettre à jour les boutons du menu existant
         self.current_popup.update_buttons(self.buttons_sub)
@@ -422,8 +454,10 @@ class ClipNotesWindow(QMainWindow):
         # Filtrer les clips (sans les boutons d'action)
         if self.nb_icons_menu == 5:
             special_buttons = self.special_buttons_by_5
-        elif self.nb_icons_menu == 6:    
+        elif self.nb_icons_menu == 6:
             special_buttons = self.special_buttons_by_6
+        elif self.nb_icons_menu == 7:
+            special_buttons = self.special_buttons_by_7
         clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         # print(clips_only)
         # Trier les clips
@@ -469,8 +503,10 @@ class ClipNotesWindow(QMainWindow):
         # Filtrer les clips (sans les boutons d'action)
         if self.nb_icons_menu == 5:
             special_buttons = self.special_buttons_by_5
-        elif self.nb_icons_menu == 6:    
+        elif self.nb_icons_menu == 6:
             special_buttons = self.special_buttons_by_6
+        elif self.nb_icons_menu == 7:
+            special_buttons = self.special_buttons_by_7
         clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Trier les clips
@@ -608,8 +644,10 @@ class ClipNotesWindow(QMainWindow):
                     func(*args, **kwargs)
                     if self.nb_icons_menu == 5:
                         special_buttons = self.special_buttons_by_5
-                    elif self.nb_icons_menu == 6:   
+                    elif self.nb_icons_menu == 6:
                         special_buttons = self.special_buttons_by_6
+                    elif self.nb_icons_menu == 7:
+                        special_buttons = self.special_buttons_by_7
                     if name not in special_buttons:
                         # Récupérer l'action et générer le message
                         action = self.actions_map_sub[name][2]
@@ -1084,6 +1122,8 @@ class ClipNotesWindow(QMainWindow):
             special_buttons = self.special_buttons_by_5
         elif self.nb_icons_menu == 6:
             special_buttons = self.special_buttons_by_6
+        elif self.nb_icons_menu == 7:
+            special_buttons = self.special_buttons_by_7
         # Filtrer les clips (sans les boutons d'action)
         clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
@@ -1160,6 +1200,9 @@ class ClipNotesWindow(QMainWindow):
                 ("💾", lambda: self.store_clip_mode(x, y), "Stocker", None)
             ]
             central_icon = "➖"
+        elif self.nb_icons_menu == 7:
+            self.buttons_sub = []
+            central_icon = ""
         # Remplacer temporairement les boutons par les 2 options
         
         if self.current_popup:
@@ -2010,8 +2053,8 @@ class ClipNotesWindow(QMainWindow):
         emoji_labels_layout = QHBoxLayout()
         emoji_labels_layout.setContentsMargins(8, 0, 8, 0)
         emoji_labels_layout.setSpacing(0)
-        emoji_labels = ["5", "6"]
-        emoji_tooltips = ["5", "6"]
+        emoji_labels = ["5", "6", "7"]
+        emoji_tooltips = ["5", "6", "7"]
         
         # Stocker les labels pour l'event filter
         self.nb_icons_config_labels = []
@@ -2044,7 +2087,7 @@ class ClipNotesWindow(QMainWindow):
 
         slider = QSlider(Qt.Orientation.Horizontal)
         slider.setMinimum(5)
-        slider.setMaximum(6)
+        slider.setMaximum(7)
         slider.setValue(self.nb_icons_menu)  # INITIALISER avec la bonne valeur
         slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         slider.setTickInterval(1)
@@ -2484,12 +2527,33 @@ class ClipNotesWindow(QMainWindow):
                 "➖": [(self.delete_clip, [x,y], {}), special_button_tooltips["➖"], None],
             }
             populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
-
+        elif self.nb_icons_menu == 7:
+            special_button_tooltips = {
+                "➕": "Ajouter",
+                "🔧": "Modifier",
+                "⚙️": "Configurer",
+                "↔️": "Ordonner",
+                "💾": "Stocker",
+                "📋": "Stock",
+                "➖": "Supprimer",
+            }
+            self.actions_map_sub = {
+                "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
+                "🔧": [(self.update_clip, [x,y], {}), special_button_tooltips["🔧"], None],
+                "⚙️": [(self.show_config_dialog, [x,y], {}), special_button_tooltips["⚙️"], None],
+                "↔️": [(self.show_reorder_dialog, [x,y], {}), special_button_tooltips["↔️"], None],
+                "💾": [(self.store_clip_mode, [x,y], {}), special_button_tooltips["💾"], None],
+                "📋": [(self.show_stored_clips_dialog, [x,y], {}), special_button_tooltips["📋"], None],
+                "➖": [(self.delete_clip, [x,y], {}), special_button_tooltips["➖"], None],
+            }
+            populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
         # Séparer les boutons spéciaux des autres
         if self.nb_icons_menu == 5:
             special_buttons = self.special_buttons_by_5
-        elif self.nb_icons_menu == 6:   
+        elif self.nb_icons_menu == 6:
             special_buttons = self.special_buttons_by_6
+        elif self.nb_icons_menu == 7:
+            special_buttons = self.special_buttons_by_7
         # special_buttons = special_buttons
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         

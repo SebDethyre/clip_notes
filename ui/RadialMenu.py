@@ -103,7 +103,9 @@ class RadialMenu(QWidget):
         # self.hover_close_timer = QTimer(self)  # Timer pour fermeture retardée
         # self.hover_close_timer.setSingleShot(True)
         # self.hover_close_timer.timeout.connect(self.check_hover_submenu_close)
-        
+        self.special_buttons_by_5 = ["➖", "↔️", "⚙️", "🔧", "➕"]
+        self.special_buttons_by_6 = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
+        self.special_buttons_by_7 = ["➖", "📋", "💾", "↔️", "⚙️", "🔧", "➕"]
         # === ANIMATION BOUTONS SPÉCIAUX (hover sur ➕) ===
         self.special_buttons_revealed = False  # Les boutons spéciaux sont-ils complètement révélés ?
         self.special_animating = False  # Animation en cours ?
@@ -151,6 +153,16 @@ class RadialMenu(QWidget):
                 "⚙️": "Configurer",
                 "➖": "Supprimer",
                 "📦": "Stocker"
+            }
+        elif self.nb_icons_menu == 7:
+            special_tooltips = {
+                "➕": "Ajouter",
+                "🔧": "Modifier",
+                "⚙️": "Configurer",
+                "↔️": "Ordonner",
+                "💾": "Stocker",
+                "📋": "Stock",
+                "➖": "Supprimer",
             }
         if buttons:
             angle_step = 360 / len(buttons)
@@ -211,9 +223,11 @@ class RadialMenu(QWidget):
                 
                 # Les boutons spéciaux (➕ 🔧 ➖) ont un fond transparent MAIS coloré au hover
                 if self.nb_icons_menu == 5:
-                    special_buttons = ["➖", "↔️", "⚙️", "🔧", "➕"]
+                    special_buttons = self.special_buttons_by_5
                 elif self.nb_icons_menu == 6:   
-                    special_buttons = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
+                    special_buttons = self.special_buttons_by_6
+                elif self.nb_icons_menu == 7:   
+                    special_buttons = self.special_buttons_by_7
                 if label in special_buttons:
                     # Stocker l'index du bouton ➕ et des autres boutons spéciaux
                     if label == "➕":
@@ -272,6 +286,8 @@ class RadialMenu(QWidget):
                         btn.clicked.connect(lambda checked=False, b=btn: self.show_storage_submenu(b))
                     else:
                         btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
+                elif self.nb_icons_menu == 7:   
+                    btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
                 
                 # Installer l'eventFilter pour tous les boutons (pour tooltips et badges)
                 btn.installEventFilter(self)
@@ -579,7 +595,7 @@ class RadialMenu(QWidget):
         # C'est l'ordre normal de _special_button_indices (pas reversed)
         visible_special = [i for i in self.special_button_indices if self.buttons[i].isVisible()]
         self.special_hide_queue = list(visible_special)  # Ordre normal pour cacher
-        
+        print(self.special_hide_queue)
         # Cacher le premier bouton immédiatement
         if self.special_hide_queue:
             self.hide_next_special_button()
@@ -996,7 +1012,7 @@ class RadialMenu(QWidget):
         print(self.focused_index)
         if self.focused_index == len(self.buttons) - 1:
             self.start_special_reveal_animation()
-        if self.focused_index == 4:
+        if self.focused_index == self.nb_icons_menu - 1:
             self.start_special_hide_animation()
         # Première utilisation : initialiser le focus
         if not self.keyboard_used:
@@ -1014,7 +1030,7 @@ class RadialMenu(QWidget):
         if not self.buttons:
             return
         print(self.focused_index)
-        if self.focused_index == 5:
+        if self.focused_index == self.nb_icons_menu:
             self.start_special_reveal_animation()
         if self.focused_index == 0:
             self.start_special_hide_animation()
@@ -1242,6 +1258,8 @@ class RadialMenu(QWidget):
             button_mumber = 3
         elif self.nb_icons_menu == 6:
             button_mumber = 2
+        elif self.nb_icons_menu == 7:
+            button_mumber = 1
         if self.app_instance and (self.app_instance.update_mode or self.app_instance.delete_mode or self.app_instance.store_mode):
             self.app_instance.update_mode = False
             self.app_instance.delete_mode = False
@@ -1326,9 +1344,11 @@ class RadialMenu(QWidget):
                 
                 # Mettre à jour le style avec le border-radius scalé
                 if self.nb_icons_menu == 5:
-                    special_buttons = ["➖", "↔️", "⚙️", "🔧", "➕"]
+                    special_buttons = self.special_buttons_by_5
                 elif self.nb_icons_menu == 6:  
-                    special_buttons = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
+                    special_buttons = self.special_buttons_by_6
+                elif self.nb_icons_menu == 7:   
+                    special_buttons = self.special_buttons_by_7
                 if label in special_buttons:
                     btn.setStyleSheet(f"""
                         QPushButton {{
