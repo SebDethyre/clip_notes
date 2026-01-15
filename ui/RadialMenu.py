@@ -332,7 +332,7 @@ class RadialMenu(QWidget):
             btn.deleteLater()
         
         # Détruire les anciens badges
-        if hasattr(self, '_action_badges'):
+        if hasattr(self, 'action_badges'):
             for badge in self.action_badges.values():
                 badge.deleteLater()
         

@@ -22,7 +22,7 @@ class RadialKeyboardListener(QObject):
             
             # Vérifier si un sous-menu hover est ouvert (et s'il existe encore)
             submenu = None
-            if hasattr(self.radial_menu, '_hover_submenu') and self.radial_menu.hover_submenu is not None:
+            if hasattr(self.radial_menu, 'hover_submenu') and self.radial_menu.hover_submenu is not None:
                 try:
                     if self.radial_menu.hover_submenu.isVisible():
                         submenu = self.radial_menu.hover_submenu

@@ -131,7 +131,7 @@ class TooltipWindow(QWidget):
         distance_below = menu_radius + 20  # Rayon du menu + marge
         
         # Utiliser la largeur calculée si disponible, sinon self.width()
-        width = getattr(self, '_calculated_width', self.width())
+        width = getattr(self, 'calculated_width', self.width())
         
         # Calculer la position
         tooltip_x = menu_center_x - width // 2

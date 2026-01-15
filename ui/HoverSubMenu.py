@@ -64,7 +64,7 @@ class HoverSubMenu(QWidget):
     
     def on_destroyed(self):
         """Appelé quand le widget est détruit - nettoie la référence dans le parent"""
-        if self.parent_menu and hasattr(self.parent_menu, '_hover_submenu'):
+        if self.parent_menu and hasattr(self.parent_menu, 'hover_submenu'):
             self.parent_menu.hover_submenu = None
     
     def create_buttons(self, buttons):
@@ -205,7 +205,7 @@ class HoverSubMenu(QWidget):
             return  # Souris encore sur le sous-menu
         
         # Vérifier si la souris est sur le bouton ➖ du menu parent
-        if self.parent_menu and hasattr(self.parent_menu, '_storage_button_index'):
+        if self.parent_menu and hasattr(self.parent_menu, 'storage_button_index'):
             storage_idx = self.parent_menu.storage_button_index
             if storage_idx is not None and storage_idx < len(self.parent_menu.buttons):
                 storage_btn = self.parent_menu.buttons[storage_idx]

@@ -221,7 +221,7 @@ class ClipNotesWindow(QMainWindow):
                 if tooltip_text and self.dialog_help_label:
                     self.dialog_help_label.setText(tooltip_text)
                     self.dialog_help_label.setVisible(True)
-                    if hasattr(self, '_dialog_help_browser') and self.dialog_help_browser:
+                    if hasattr(self, 'dialog_help_browser') and self.dialog_help_browser:
                         self.dialog_help_browser.setVisible(False)
             # Vérifier les autres widgets (avec help_text)
             else:
@@ -233,7 +233,7 @@ class ClipNotesWindow(QMainWindow):
                     line_count = help_text.count('\n') + 1
                     is_multiline = line_count > 1
                     
-                    if is_multiline and hasattr(self, '_dialog_help_browser') and self.dialog_help_browser:
+                    if is_multiline and hasattr(self, 'dialog_help_browser') and self.dialog_help_browser:
                         # Multilignes → utiliser le QTextBrowser
                         if html_string:
                             self.dialog_help_browser.setHtml(html_string)
@@ -253,7 +253,7 @@ class ClipNotesWindow(QMainWindow):
                             self.dialog_help_label.setTextFormat(Qt.TextFormat.PlainText)
                             self.dialog_help_label.setText(help_text)
                         self.dialog_help_label.setVisible(True)
-                        if hasattr(self, '_dialog_help_browser') and self.dialog_help_browser:
+                        if hasattr(self, 'dialog_help_browser') and self.dialog_help_browser:
                             self.dialog_help_browser.setVisible(False)
         elif event.type() == QEvent.Type.Leave:
             # Vider et cacher les widgets d'aide
@@ -261,7 +261,7 @@ class ClipNotesWindow(QMainWindow):
                 self.dialog_help_label.setTextFormat(Qt.TextFormat.PlainText)
                 self.dialog_help_label.setText("")
                 self.dialog_help_label.setVisible(True)
-            if hasattr(self, '_dialog_help_browser') and self.dialog_help_browser:
+            if hasattr(self, 'dialog_help_browser') and self.dialog_help_browser:
                 self.dialog_help_browser.clear()
                 self.dialog_help_browser.setVisible(False)
         elif event.type() == QEvent.Type.MouseButtonPress:
