@@ -5,7 +5,6 @@ from PyQt6.QtWidgets import QApplication, QWidget, QPushButton
 from PyQt6.QtWidgets import QLabel
 
 from utils import *
-
 from ui import HoverSubMenu, RadialKeyboardListener, TooltipWindow
 
 class RadialMenu(QWidget):
