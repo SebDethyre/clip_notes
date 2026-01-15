@@ -5,32 +5,7 @@ from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QMainWindow, QVB
 from PyQt6.QtWidgets import QTextEdit, QTextBrowser, QLabel, QFileDialog, QCheckBox, QColorDialog, QScrollArea, QListWidgetItem, QAbstractItemView
 
 from utils import *
-
-from ui import EmojiSelector, AutoScrollListWidget, WhiteDropIndicatorStyle, CursorTracker, TooltipWindow, RadialMenu
-
-# 🗑️ 📝 ✏️
-# Constantes de configuration
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-# CLIP_NOTES_FILE = os.path.join(SCRIPT_DIR, "clip_notes.txt")
-CLIP_NOTES_FILE_JSON = os.path.join(SCRIPT_DIR, "clip_notes.json")
-EMOJIS_FILE = os.path.join(SCRIPT_DIR, "emojis.txt")
-THUMBNAILS_DIR = os.path.join(SCRIPT_DIR, "thumbnails")
-CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.json")
-STORED_CLIPS_FILE = os.path.join(SCRIPT_DIR, "stored_clips.json")
-
-NEON_PRINCIPAL=False
-CENTRAL_NEON = False  # Afficher le néon au centre
-ZONE_BASIC_OPACITY = 15
-ZONE_HOVER_OPACITY = 45
-SHOW_CENTRAL_ICON = True  # Afficher l'icône du clip survolé au centre
-NB_ICONS_MENU = 4  # Menu à 4 icones inamovibles au lieu de 5 
-MENU_OPACITY = 100  # Opacité globale du menu radial (0-100)
-
-# SPECIAL_BUTTONS = ["📦", "⚙️", "➖", "🔧", "➕"]
-if NB_ICONS_MENU == 5:
-    SPECIAL_BUTTONS = ["➖", "↔️", "⚙️", "🔧", "➕"]
-elif NB_ICONS_MENU == 6:
-    SPECIAL_BUTTONS = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
+from ui import EmojiSelector, AutoScrollListWidget, WhiteDropIndicatorStyle, CursorTracker, TooltipWindow, RadialMenu, CalibrationWindow
 
 # Palette de couleurs disponibles (RGB)
 COLOR_PALETTE = {
@@ -83,197 +58,7 @@ COLOR_PALETTE = {
     "Gris foncé": (100, 100, 100),
 }
 
-# Couleurs des zones par action (RGB)
-ACTION_ZONE_COLORS = {
-    "copy": (255, 150, 100),  # Orange par défaut
-    "term": (100, 255, 150),  # Vert par défaut
-    "exec": (100, 150, 255),  # Bleu par défaut
-}
-
-# Couleur du fond du menu radial (RGB)
-MENU_BACKGROUND_COLOR = (50, 50, 50)
-
-# Couleur du néon central (RGB)
-NEON_COLOR = (0, 255, 255)  # Cyan par défaut
-
-# Vitesse du battement du néon (en millisecondes)
-NEON_SPEED = 80  # Plus petit = plus rapide
-
-# Créer le dossier des miniatures s'il n'existe pas
-os.makedirs(THUMBNAILS_DIR, exist_ok=True)
-
-def load_config():
-    """Charge la configuration depuis le fichier JSON"""
-    global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, NB_ICONS_MENU, ACTION_ZONE_COLORS, MENU_OPACITY, MENU_BACKGROUND_COLOR, NEON_COLOR, NEON_SPEED
-    
-    if not os.path.exists(CONFIG_FILE):
-        return
-    
-    try:
-        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-        
-        CENTRAL_NEON = config.get('central_neon', CENTRAL_NEON)
-        ZONE_BASIC_OPACITY = config.get('zone_basic_opacity', ZONE_BASIC_OPACITY)
-        ZONE_HOVER_OPACITY = config.get('zone_hover_opacity', ZONE_HOVER_OPACITY)
-        SHOW_CENTRAL_ICON = config.get('show_central_icon', SHOW_CENTRAL_ICON)
-        NB_ICONS_MENU = config.get('nb_icons_menu', NB_ICONS_MENU)
-        MENU_OPACITY = config.get('menu_opacity', MENU_OPACITY)
-        NEON_SPEED = config.get('neon_speed', NEON_SPEED)
-        
-        # Charger la couleur du fond du menu
-        menu_bg = config.get('menu_background_color', MENU_BACKGROUND_COLOR)
-        MENU_BACKGROUND_COLOR = tuple(menu_bg) if isinstance(menu_bg, list) else menu_bg
-        
-        # Charger la couleur du néon
-        neon_col = config.get('neon_color', NEON_COLOR)
-        NEON_COLOR = tuple(neon_col) if isinstance(neon_col, list) else neon_col
-        
-        # Charger les couleurs et migrer l'ancien format si nécessaire
-        loaded_colors = config.get('action_zone_colors', ACTION_ZONE_COLORS)
-        ACTION_ZONE_COLORS = {}
-        
-        for action, color_value in loaded_colors.items():
-            if isinstance(color_value, str):
-                # Ancien format : nom de couleur -> convertir en RGB
-                if color_value in COLOR_PALETTE:
-                    ACTION_ZONE_COLORS[action] = COLOR_PALETTE[color_value]
-                    print(f"[Config] Migration: {action} '{color_value}' -> {COLOR_PALETTE[color_value]}")
-                else:
-                    # Couleur inconnue, utiliser la valeur par défaut
-                    default_colors = {
-                        "copy": (255, 150, 100),
-                        "term": (100, 255, 150),
-                        "exec": (100, 150, 255)
-                    }
-                    ACTION_ZONE_COLORS[action] = default_colors.get(action, (255, 255, 255))
-            elif isinstance(color_value, list):
-                # Nouveau format : liste RGB -> convertir en tuple
-                ACTION_ZONE_COLORS[action] = tuple(color_value)
-            else:
-                # Déjà un tuple
-                ACTION_ZONE_COLORS[action] = color_value
-        
-        print(f"[Config] Configuration chargée: {config}")
-    except Exception as e:
-        print(f"[Erreur] Impossible de charger la configuration: {e}")
-
-
-def save_config():
-    """Sauvegarde la configuration dans le fichier JSON"""
-    config = {
-        'central_neon': CENTRAL_NEON,
-        'zone_basic_opacity': ZONE_BASIC_OPACITY,
-        'zone_hover_opacity': ZONE_HOVER_OPACITY,
-        'show_central_icon': SHOW_CENTRAL_ICON,
-        'nb_icons_menu': NB_ICONS_MENU,
-        'action_zone_colors': ACTION_ZONE_COLORS,
-        'menu_opacity': MENU_OPACITY,
-        'menu_background_color': MENU_BACKGROUND_COLOR,
-        'neon_color': NEON_COLOR,
-        'neon_speed': NEON_SPEED
-    }
-    
-    try:
-        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-            json.dump(config, f, indent=4, ensure_ascii=False)
-        # print(f"[Config] Configuration sauvegardée: {config}")
-    except Exception as e:
-        print(f"[Erreur] Impossible de sauvegarder la configuration: {e}")
-
-# ===== GESTION DES CLIPS STOCKÉS =====
-
-def load_stored_clips():
-    """Charge les clips stockés depuis le fichier JSON"""
-    if not os.path.exists(STORED_CLIPS_FILE):
-        return []
-    
-    try:
-        with open(STORED_CLIPS_FILE, 'r', encoding='utf-8') as f:
-            clips = json.load(f)
-        print(f"[Stored Clips] {len(clips)} clips chargés")
-        return clips
-    except Exception as e:
-        print(f"[Erreur] Impossible de charger les clips stockés: {e}")
-        return []
-
-def save_stored_clips(clips):
-    """Sauvegarde les clips stockés dans le fichier JSON"""
-    try:
-        with open(STORED_CLIPS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(clips, f, indent=4, ensure_ascii=False)
-        print(f"[Stored Clips] {len(clips)} clips sauvegardés")
-    except Exception as e:
-        print(f"[Erreur] Impossible de sauvegarder les clips stockés: {e}")
-
-def add_stored_clip(alias, action, string, html_string=None):
-    """Ajoute un clip au stockage"""
-    clips = load_stored_clips()
-    new_clip = {
-        'alias': alias,
-        'action': action,
-        'string': string
-    }
-    # Ajouter le HTML seulement s'il est fourni
-    if html_string:
-        new_clip['html_string'] = html_string
-    clips.append(new_clip)
-    save_stored_clips(clips)
-    return clips
-
-def remove_stored_clip(alias):
-    """Supprime un clip du stockage"""
-    clips = load_stored_clips()
-    clips = [clip for clip in clips if clip.get('alias') != alias]
-    save_stored_clips(clips)
-    return clips
-
-
-# Charger la configuration au démarrage
-load_config()
-
-DIALOG_STYLE = """
-    QWidget {
-        background-color: rgba(30, 30, 30, 180);
-        border-radius: 12px;
-        color: white;
-    }
-    QLineEdit, QTextEdit {
-        background-color: rgba(255, 255, 255, 30);
-        border: 1px solid rgba(255, 255, 255, 50);
-        border-radius: 6px;
-        padding: 4px;
-        color: white;
-    }
-    QPushButton {
-        background-color: rgba(255, 255, 255, 30);
-        border: 1px solid rgba(255, 255, 255, 60);
-        border-radius: 6px;
-        padding: 6px;
-        color: white;
-    }
-    QPushButton:hover {
-        background-color: rgba(255, 255, 255, 60);
-    }
-"""
-
-os.environ.pop("XDG_SESSION_TYPE", None)
-
-LOCK_FILE = os.path.join(SCRIPT_DIR, ".clipnotes.lock")
-
-def create_lock_file():
-    with open(LOCK_FILE, 'w') as f:
-        f.write(str(os.getpid()))
-
-def remove_lock_file():
-    try:
-        if os.path.exists(LOCK_FILE):
-            os.remove(LOCK_FILE)
-    except:
-        pass
-
-
-class App(QMainWindow):
+class ClipNotesWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.tracker = None
@@ -295,6 +80,183 @@ class App(QMainWindow):
         self._dialog_image_preview = None  # Label pour l'aperçu de l'image
         self._dialog_temp_image_path = None  # Chemin temporaire de l'image sélectionnée
         self._dialog_remove_image_button = None  # Bouton pour supprimer l'image
+
+
+        self.central_neon = False
+        self.zone_basic_opacity = 15
+        self.zone_hover_opacity = 45
+        self.show_central_icon = True
+        self.nb_icons_menu = 5
+
+        self.menu_opacity = 100
+        self.menu_background_color = (50, 50, 50)
+        self.neon_speed = 80
+        self.neon_color = (0, 255, 255)
+
+        self.action_zone_colors = {
+            "copy": (255, 150, 100),  # Orange par défaut
+            "term": (100, 255, 150),  # Vert par défaut
+            "exec": (100, 150, 255),  # Bleu par défaut
+        }
+        self.dialog_style = """
+            QWidget {
+                background-color: rgba(30, 30, 30, 180);
+                border-radius: 12px;
+                color: white;
+            }
+            QLineEdit, QTextEdit {
+                background-color: rgba(255, 255, 255, 30);
+                border: 1px solid rgba(255, 255, 255, 50);
+                border-radius: 6px;
+                padding: 4px;
+                color: white;
+            }
+            QPushButton {
+                background-color: rgba(255, 255, 255, 30);
+                border: 1px solid rgba(255, 255, 255, 60);
+                border-radius: 6px;
+                padding: 6px;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 60);
+            }
+        """
+        self.script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.clip_notes_file_json = os.path.join(self.script_dir, "clip_notes.json")
+        self.emojis_file = os.path.join(self.script_dir, "emojis.txt")
+        self.thumbnails_dir = os.path.join(self.script_dir, "thumbnails")
+        self.config_file = os.path.join(self.script_dir, "config.json")
+        self.stored_clips_file = os.path.join(self.script_dir, "stored_clips.json")
+
+        # Créer le dossier des miniatures s'il n'existe pas
+        os.makedirs(self.thumbnails_dir, exist_ok=True)
+        # Charger la configuration au démarrage
+        self.load_config()
+
+    def load_config(self):
+        """Charge la configuration depuis le fichier JSON"""
+        
+        if not os.path.exists(self.config_file):
+            return
+        
+        try:
+            with open(self.config_file, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            self.central_neon = config.get('central_neon', self.central_neon)
+            self.zone_basic_opacity = config.get('zone_basic_opacity', self.zone_basic_opacity)
+            self.zone_hover_opacity = config.get('zone_hover_opacity', self.zone_hover_opacity)
+            self.show_central_icon = config.get('show_central_icon', self.show_central_icon)
+            self.nb_icons_menu = config.get('nb_icons_menu', self.nb_icons_menu)
+            self.menu_opacity = config.get('menu_opacity', self.menu_opacity)
+            self.neon_speed = config.get('neon_speed', self.neon_speed)
+
+            menu_bg = config.get('menu_background_color', self.menu_background_color)
+            self.menu_background_color = tuple(menu_bg) if isinstance(menu_bg, list) else menu_bg
+            
+            # Charger la couleur du néon
+            neon_col = config.get('neon_color', self.neon_color)
+            self.neon_color = tuple(neon_col) if isinstance(neon_col, list) else neon_col
+            
+            # Charger les couleurs et migrer l'ancien format si nécessaire
+            loaded_colors = config.get('action_zone_colors', self.action_zone_colors)
+            self.action_zone_colors = {}
+            
+            for action, color_value in loaded_colors.items():
+                if isinstance(color_value, str):
+                    # Ancien format : nom de couleur -> convertir en RGB
+                    if color_value in COLOR_PALETTE:
+                        self.action_zone_colors[action] = COLOR_PALETTE[color_value]
+                        print(f"[Config] Migration: {action} '{color_value}' -> {COLOR_PALETTE[color_value]}")
+                    else:
+                        # Couleur inconnue, utiliser la valeur par défaut
+                        default_colors = {
+                            "copy": (255, 150, 100),
+                            "term": (100, 255, 150),
+                            "exec": (100, 150, 255)
+                        }
+                        self.action_zone_colors[action] = default_colors.get(action, (255, 255, 255))
+                elif isinstance(color_value, list):
+                    # Nouveau format : liste RGB -> convertir en tuple
+                    self.action_zone_colors[action] = tuple(color_value)
+                else:
+                    # Déjà un tuple
+                    self.action_zone_colors[action] = color_value
+            
+            print(f"[Config] Configuration chargée: {config}")
+        except Exception as e:
+            print(f"[Erreur] Impossible de charger la configuration: {e}")
+
+
+    def save_config(self):
+        """Sauvegarde la configuration dans le fichier JSON"""
+        config = {
+            'central_neon': self.central_neon,
+            'zone_basic_opacity': self.zone_basic_opacity,
+            'zone_hover_opacity': self.zone_hover_opacity,
+            'show_central_icon': self.show_central_icon,
+            'nb_icons_menu': self.nb_icons_menu,
+            'action_zone_colors': self.action_zone_colors,
+            'menu_opacity': self.menu_opacity,
+            'menu_background_color': self.menu_background_color,
+            'neon_color': self.neon_color,
+            'neon_speed': self.neon_speed
+        }
+        
+        try:
+            with open(self.config_file, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=4, ensure_ascii=False)
+            # print(f"[Config] Configuration sauvegardée: {config}")
+        except Exception as e:
+            print(f"[Erreur] Impossible de sauvegarder la configuration: {e}")
+
+    # ===== GESTION DES CLIPS STOCKÉS =====
+
+    def load_stored_clips(self):
+        """Charge les clips stockés depuis le fichier JSON"""
+        if not os.path.exists(self.stored_clips_file):
+            return []
+        
+        try:
+            with open(self.stored_clips_file, 'r', encoding='utf-8') as f:
+                clips = json.load(f)
+            print(f"[Stored Clips] {len(clips)} clips chargés")
+            return clips
+        except Exception as e:
+            print(f"[Erreur] Impossible de charger les clips stockés: {e}")
+            return []
+
+    def save_stored_clips(self, clips):
+        """Sauvegarde les clips stockés dans le fichier JSON"""
+        try:
+            with open(self.stored_clips_file, 'w', encoding='utf-8') as f:
+                json.dump(clips, f, indent=4, ensure_ascii=False)
+            print(f"[Stored Clips] {len(clips)} clips sauvegardés")
+        except Exception as e:
+            print(f"[Erreur] Impossible de sauvegarder les clips stockés: {e}")
+
+    def add_stored_clip(self, alias, action, string, html_string=None):
+        """Ajoute un clip au stockage"""
+        clips = self.load_stored_clips()
+        new_clip = {
+            'alias': alias,
+            'action': action,
+            'string': string
+        }
+        # Ajouter le HTML seulement s'il est fourni
+        if html_string:
+            new_clip['html_string'] = html_string
+        clips.append(new_clip)
+        self.save_stored_clips(clips)
+        return clips
+
+    def remove_stored_clip(self, alias):
+        """Supprime un clip du stockage"""
+        clips = self.load_stored_clips()
+        clips = [clip for clip in clips if clip.get('alias') != alias]
+        self.save_stored_clips(clips)
+        return clips
 
     def eventFilter(self, watched, event):
         """Gère les événements de hover et de clic sur les widgets du dialogue"""
@@ -364,8 +326,8 @@ class App(QMainWindow):
     def get_action_from_json(self, alias):
         """Lit l'action d'un clip depuis le fichier JSON"""
         try:
-            if os.path.exists(CLIP_NOTES_FILE_JSON):
-                with open(CLIP_NOTES_FILE_JSON, 'r', encoding='utf-8') as f:
+            if os.path.exists(self.clip_notes_file_json):
+                with open(self.clip_notes_file_json, 'r', encoding='utf-8') as f:
                     clips = json.load(f)
                     for clip in clips:
                         if clip.get('alias') == alias:
@@ -388,8 +350,8 @@ class App(QMainWindow):
             tuple: (slider_value, html_string ou None)
         """
         try:
-            if os.path.exists(CLIP_NOTES_FILE_JSON):
-                with open(CLIP_NOTES_FILE_JSON, 'r', encoding='utf-8') as f:
+            if os.path.exists(self.clip_notes_file_json):
+                with open(self.clip_notes_file_json, 'r', encoding='utf-8') as f:
                     clips = json.load(f)
                     for clip in clips:
                         if clip.get('alias') == alias:
@@ -413,18 +375,13 @@ class App(QMainWindow):
         
         # Réinitialiser le state
         self.current_popup.set_central_text("")
-        self.current_popup.set_neon_color(NEON_COLOR)
-        # ===== NÉON BLEU MENU PRINCIPAL =====
-        # Pour activer le néon bleu clignotant sur le menu principal :
-        self.current_popup.toggle_neon(CENTRAL_NEON)
-        # self.current_popup.timer.start(80)  # 100ms = clignotement lent (50ms = rapide)
-        # Pour désactiver, changez True en False et commentez la ligne timer.start()
-        # ====================================
-        
+        self.current_popup.set_neon_color(self.neon_color)
+        self.current_popup.toggle_neon(self.central_neon)
+
         # Reconstruire buttons_sub depuis actions_map_sub avec tri
         self.buttons_sub = []
         x, y = self._x, self._y
-        if NB_ICONS_MENU == 5:
+        if self.nb_icons_menu == 5:
             special_button_tooltips = {
                 "➕": "Ajouter",
                 "🔧": "Modifier",
@@ -432,7 +389,7 @@ class App(QMainWindow):
                 "↔️": "Ordonner",
                 "➖": "Supprimer",
             }
-            # populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
+            # populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
             self.actions_map_sub = {
                 "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
                 "🔧": [(self.update_clip, [x,y], {}), special_button_tooltips["🔧"], None],
@@ -440,7 +397,7 @@ class App(QMainWindow):
                 "↔️": [(self.show_reorder_dialog, [x,y], {}), special_button_tooltips["↔️"], None],
                 "➖": [(self.show_storage_menu, [x,y], {}), special_button_tooltips["➖"], None],
             }
-        elif NB_ICONS_MENU == 6:
+        elif self.nb_icons_menu == 6:
             special_button_tooltips = {
                 "➕": "Ajouter",
                 "🔧": "Modifier",
@@ -457,16 +414,16 @@ class App(QMainWindow):
                 "📦": [(self.show_storage_menu, [x,y], {}), special_button_tooltips["📦"], None],
                 "➖": [(self.delete_clip, [x,y], {}), special_button_tooltips["➖"], None],
             }
-        if NB_ICONS_MENU == 5:
+        if self.nb_icons_menu == 5:
             special_buttons = ["➖", "↔️", "⚙️", "🔧", "➕"]
-        elif NB_ICONS_MENU == 6:
+        elif self.nb_icons_menu == 6:
             special_buttons = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
-        populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
+        populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
         # Séparer les boutons spéciaux des autres
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Récupérer l'ordre du JSON pour le tri personnalisé
-        json_order = get_json_order(CLIP_NOTES_FILE_JSON)
+        json_order = get_json_order(self.clip_notes_file_json)
         
         # Trier seulement les clips (pas les boutons spéciaux)
         sorted_clips = sort_actions_map(clips_to_sort, json_order)
@@ -489,14 +446,14 @@ class App(QMainWindow):
         self.current_popup.update_buttons(self.buttons_sub)
         
         # Réappliquer l'opacité configurée
-        self.current_popup.set_widget_opacity(MENU_OPACITY / 100.0)
+        self.current_popup.set_widget_opacity(self.menu_opacity / 100.0)
         
         # Réappliquer le néon central configuré
-        self.current_popup.toggle_neon(CENTRAL_NEON)
-        if CENTRAL_NEON:
+        self.current_popup.toggle_neon(self.central_neon)
+        if self.central_neon:
             # Redémarrer le timer avec la nouvelle vitesse
             self.current_popup.timer.stop()
-            self.current_popup.timer.start(NEON_SPEED)
+            self.current_popup.timer.start(self.neon_speed)
         
         # CRITIQUE: Forcer le mouse tracking après le refresh
         self.current_popup.setMouseTracking(True)
@@ -511,9 +468,9 @@ class App(QMainWindow):
             self.update_mode = True
         
         # Filtrer les clips (sans les boutons d'action)
-        if NB_ICONS_MENU == 5:
+        if self.nb_icons_menu == 5:
             special_buttons = ["➖", "↔️", "⚙️", "🔧", "➕"]
-        elif NB_ICONS_MENU == 6:    
+        elif self.nb_icons_menu == 6:    
             special_buttons = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
         clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         # print(clips_only)
@@ -558,9 +515,9 @@ class App(QMainWindow):
         # Activer le mode suppression
         self.delete_mode = True
         # Filtrer les clips (sans les boutons d'action)
-        if NB_ICONS_MENU == 5:
+        if self.nb_icons_menu == 5:
             special_buttons = ["➖", "↔️", "⚙️", "🔧", "➕"]
-        elif NB_ICONS_MENU == 6:    
+        elif self.nb_icons_menu == 6:    
             special_buttons = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
         clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
@@ -630,7 +587,7 @@ class App(QMainWindow):
         dialog.move(x - dialog.width() // 2, y - dialog.height() // 2)
 
         content = QWidget()
-        content.setStyleSheet(DIALOG_STYLE)
+        content.setStyleSheet(self.dialog_style)
 
         layout = QVBoxLayout(content)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -666,7 +623,7 @@ class App(QMainWindow):
         
         def confirm_delete():
             self.actions_map_sub.pop(name, None)
-            delete_from_json(CLIP_NOTES_FILE_JSON, name)
+            delete_from_json(self.clip_notes_file_json, name)
             # Supprimer l'ancien thumbnail s'il existe
             if os.path.exists(name):
                 os.remove(name)
@@ -697,9 +654,9 @@ class App(QMainWindow):
                 if isinstance(func_data, tuple) and len(func_data) == 3:
                     func, args, kwargs = func_data
                     func(*args, **kwargs)
-                    if NB_ICONS_MENU == 5:
+                    if self.nb_icons_menu == 5:
                         special_buttons = ["➖", "↔️", "⚙️", "🔧", "➕"]
-                    elif NB_ICONS_MENU == 6:   
+                    elif self.nb_icons_menu == 6:   
                         special_buttons = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
                     if name not in special_buttons:
                         # Récupérer l'action et générer le message
@@ -758,18 +715,9 @@ class App(QMainWindow):
         dialog.setPalette(palette)
         
         dialog.setFixedSize(500, 800)
-        
-        # if x is None or y is None:
-        #     screen = QApplication.primaryScreen().geometry()
-        #     x = screen.center().x() - dialog.width() // 2
-        #     y = screen.center().y() - dialog.height() // 2
-        # if self.tracker:
-        #     self.tracker.update_pos()
-        #     x, y = self.tracker.last_x, self.tracker.last_y
-        # dialog.move(x, y)
 
         content = QWidget()
-        content.setStyleSheet(DIALOG_STYLE)
+        content.setStyleSheet(self.dialog_style)
 
         layout = QVBoxLayout(content)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -1125,7 +1073,7 @@ class App(QMainWindow):
                         print("Erreur lors du chargement de l'image")
 
         def open_emoji_selector():
-            path = EMOJIS_FILE
+            path = self.emojis_file
             if not os.path.exists(path):
                 print(f"Fichier introuvable : {path}")
                 return
@@ -1169,7 +1117,6 @@ class App(QMainWindow):
         # CRITIQUE: Réactiver le mouse tracking du menu radial après fermeture du dialogue
         if self.current_popup:
             self.current_popup.setMouseTracking(True)
-        
         return dialog
     
     # ===== MODE STOCKAGE DE CLIPS =====
@@ -1181,9 +1128,9 @@ class App(QMainWindow):
         
         # Activer le mode stockage
         self.store_mode = True
-        if NB_ICONS_MENU == 5:
+        if self.nb_icons_menu == 5:
             special_buttons = ["➖", "↔️", "⚙️", "🔧", "➕"]
-        elif NB_ICONS_MENU == 6:
+        elif self.nb_icons_menu == 6:
             special_buttons = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
         # Filtrer les clips (sans les boutons d'action)
         clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
@@ -1224,15 +1171,11 @@ class App(QMainWindow):
             _, html_string = self.get_clip_data_from_json(name)
             
             # Stocker le clip avec le HTML s'il existe
-            add_stored_clip(name, action if action else "copy", value, html_string)
+            self.add_stored_clip(name, action if action else "copy", value, html_string)
             
             # Supprimer le clip du menu radial
             self.actions_map_sub.pop(name, None)
-            delete_from_json(CLIP_NOTES_FILE_JSON, name)
-            
-            # NE PAS supprimer le thumbnail - on en a besoin pour l'affichage dans le stockage
-            # if os.path.exists(name):
-            #     os.remove(name)
+            delete_from_json(self.clip_notes_file_json, name)
             
             # Afficher une confirmation brève
             if self.current_popup:
@@ -1251,14 +1194,14 @@ class App(QMainWindow):
             self.tracker.update_pos()
             x, y = self.tracker.last_x, self.tracker.last_y
         # Menu à 4 icones
-        if NB_ICONS_MENU == 5:
+        if self.nb_icons_menu == 5:
             self.buttons_sub = [
                 ("📋", lambda: self.show_stored_clips_dialog(x, y), "Clips stockés", None),
                 ("🗑️", lambda: self.delete_clip(x, y), "Supprimer", None),
                 ("💾", lambda: self.store_clip_mode(x, y), "Stocker", None)
             ]
             central_icon = "➖"
-        elif NB_ICONS_MENU == 6:
+        elif self.nb_icons_menu == 6:
             self.buttons_sub = [
                 ("📋", lambda: self.show_stored_clips_dialog(x, y), "Clips stockés", None),
                 ("🗑️", lambda: self.delete_clip(x, y), "Supprimer", None),
@@ -1270,7 +1213,6 @@ class App(QMainWindow):
         if self.current_popup:
             self.current_popup.update_buttons(self.buttons_sub)
             self.current_popup.set_central_text(central_icon)
-
     
     def show_stored_clips_dialog(self, x, y):
         """Affiche la fenêtre de dialogue avec la liste des clips stockés"""
@@ -1279,7 +1221,7 @@ class App(QMainWindow):
             x, y = self.tracker.last_x, self.tracker.last_y
         
         # Charger les clips stockés
-        stored_clips = load_stored_clips()
+        stored_clips = self.load_stored_clips()
         
         dialog = QDialog(self.tracker)
         dialog.setWindowTitle("📋 Clips stockés")
@@ -1300,8 +1242,6 @@ class App(QMainWindow):
         palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
         dialog.setPalette(palette)
         
-        # dialog.setFixedSize(750, 500)
-
         dialog.resize(750, 500)
         dialog.setMinimumSize(850, 650)
         
@@ -1309,21 +1249,9 @@ class App(QMainWindow):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(10)
         
-        # Titre
-        # title_label = QLabel("📋 Clips stockés")
-        # title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
-        # layout.addWidget(title_label)
-        
         # Zone de défilement pour la liste
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        # scroll.setStyleSheet("""
-        #     QScrollArea {
-        #         background-color: rgba(35, 35, 35, 255);
-        #         border: 1px solid rgba(100, 100, 100, 150);
-        #         border-radius: 6px;
-        #     }
-        # """)
         
         scroll_content = QWidget()
         scroll_content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -1393,8 +1321,6 @@ class App(QMainWindow):
                     alias_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 else:
                     # C'est du texte
-                    # pixmap = text_pixmap(alias, 32)
-                    # alias_label.setPixmap(pixmap)
                     alias_label.setText(alias)
                     alias_label.setStyleSheet("color: white;")
                     alias_label.setWordWrap(True)
@@ -1643,7 +1569,7 @@ class App(QMainWindow):
             if os.path.exists(alias):
                 os.remove(alias)
             
-            remove_stored_clip(alias)
+            self.remove_stored_clip(alias)
             confirm_dialog.accept()
             self.show_stored_clips_dialog(x, y)
         
@@ -1667,7 +1593,7 @@ class App(QMainWindow):
         html_string = clip_data.get('html_string', None)  # Récupérer le HTML s'il existe
         
         # Ajouter au menu radial (dans le fichier JSON) avec le HTML
-        append_to_actions_file_json(CLIP_NOTES_FILE_JSON, alias, string, action, html_string)
+        append_to_actions_file_json(self.clip_notes_file_json, alias, string, action, html_string)
         
         # Ajouter directement dans actions_map_sub pour mise à jour immédiate
         if action == "copy":
@@ -1678,7 +1604,7 @@ class App(QMainWindow):
             self.actions_map_sub[alias] = [(execute_command, [string], {}), string, action]
         
         # Supprimer du stockage
-        remove_stored_clip(alias)
+        self.remove_stored_clip(alias)
         
         # Mettre à jour le menu en arrière-plan
         self.refresh_menu()
@@ -1692,10 +1618,6 @@ class App(QMainWindow):
         if self.tracker:
             self.tracker.update_pos()
             x, y = self.tracker.last_x, self.tracker.last_y
-        
-        # Désactiver temporairement le menu radial
-        # if self.current_popup:
-        #     self.current_popup.setEnabled(False)
         
         dialog = QDialog(self.tracker)
         dialog.setWindowTitle("↔️ Ordonner")
@@ -1728,7 +1650,7 @@ class App(QMainWindow):
         
         # Charger les clips depuis le JSON
         try:
-            with open(CLIP_NOTES_FILE_JSON, 'r', encoding='utf-8') as f:
+            with open(self.clip_notes_file_json, 'r', encoding='utf-8') as f:
                 all_clips = json.load(f)
         except Exception:
             all_clips = []
@@ -1769,9 +1691,9 @@ class App(QMainWindow):
         
         # Infos sur les actions
         action_info = {
-            "copy": ("✂️ Copier", "rgba(98, 160, 234, 80)", ACTION_ZONE_COLORS.get("copy", (98, 160, 234))),
-            "term": ("💻 Terminal", "rgba(248, 228, 92, 80)", ACTION_ZONE_COLORS.get("term", (248, 228, 92))),
-            "exec": ("🚀 Exécuter", "rgba(224, 27, 36, 80)", ACTION_ZONE_COLORS.get("exec", (224, 27, 36)))
+            "copy": ("✂️ Copier", "rgba(98, 160, 234, 80)", self.action_zone_colors.get("copy", (98, 160, 234))),
+            "term": ("💻 Terminal", "rgba(248, 228, 92, 80)", self.action_zone_colors.get("term", (248, 228, 92))),
+            "exec": ("🚀 Exécuter", "rgba(224, 27, 36, 80)", self.action_zone_colors.get("exec", (224, 27, 36)))
         }
         
         def create_list_widget(action, clips):
@@ -1881,7 +1803,7 @@ class App(QMainWindow):
                 new_order.append(alias)
             
             # Sauvegarder dans le JSON
-            reorder_json_clips(CLIP_NOTES_FILE_JSON, action, new_order)
+            reorder_json_clips(self.clip_notes_file_json, action, new_order)
             
             # Rafraîchir le menu radial
             self.refresh_menu()
@@ -1913,13 +1835,6 @@ class App(QMainWindow):
         """)
         close_btn.clicked.connect(dialog.accept)
         main_layout.addWidget(close_btn)
-        
-        # Réactiver le menu à la fermeture
-        # def reactivate_menu():
-        #     if self.current_popup:
-        #         self.current_popup.setEnabled(True)
-        
-        # dialog.finished.connect(reactivate_menu)
         
         dialog.exec()
     
@@ -1959,7 +1874,7 @@ class App(QMainWindow):
         dialog.move(x, y)
         
         content = QWidget()
-        content.setStyleSheet(DIALOG_STYLE)
+        content.setStyleSheet(self.dialog_style)
         
         layout = QVBoxLayout(content)
         layout.setSpacing(12)
@@ -1981,7 +1896,7 @@ class App(QMainWindow):
         menu_bg_color_button.setFixedWidth(150)
         
         # Variable pour stocker la couleur du fond du menu
-        selected_menu_bg_color = list(MENU_BACKGROUND_COLOR)
+        selected_menu_bg_color = list(self.menu_background_color)
         
         def update_menu_bg_button():
             r, g, b = selected_menu_bg_color
@@ -2022,9 +1937,9 @@ class App(QMainWindow):
 
         # Variables pour stocker les couleurs sélectionnées
         selected_colors = {
-            "copy": ACTION_ZONE_COLORS["copy"],
-            "term": ACTION_ZONE_COLORS["term"],
-            "exec": ACTION_ZONE_COLORS["exec"]
+            "copy": self.action_zone_colors["copy"],
+            "term": self.action_zone_colors["term"],
+            "exec": self.action_zone_colors["exec"]
         }
         
         def create_color_button(action_name, label_text, rgb):
@@ -2069,13 +1984,13 @@ class App(QMainWindow):
             return layout_h
         
         # Boutons pour chaque action
-        copy_layout = create_color_button("copy", "✂️ Copie", ACTION_ZONE_COLORS["copy"])
+        copy_layout = create_color_button("copy", "✂️ Copie", self.action_zone_colors["copy"])
         layout.addLayout(copy_layout)
         
-        term_layout = create_color_button("term", "💻 Terminal", ACTION_ZONE_COLORS["term"])
+        term_layout = create_color_button("term", "💻 Terminal", self.action_zone_colors["term"])
         layout.addLayout(term_layout)
         
-        exec_layout = create_color_button("exec", "🚀 Exécution", ACTION_ZONE_COLORS["exec"])
+        exec_layout = create_color_button("exec", "🚀 Exécution", self.action_zone_colors["exec"])
         layout.addLayout(exec_layout)
 
         # --- Opacités ---
@@ -2085,11 +2000,11 @@ class App(QMainWindow):
         
         # Slider pour opacité du menu
         menu_opacity_layout = QVBoxLayout()
-        menu_opacity_label = QLabel(f"Opacité générale ➤ <b>{MENU_OPACITY}</b>")
+        menu_opacity_label = QLabel(f"Opacité générale ➤ <b>{self.menu_opacity}</b>")
         menu_opacity_slider = QSlider(Qt.Orientation.Horizontal)
         menu_opacity_slider.setMinimum(0)
         menu_opacity_slider.setMaximum(100)
-        menu_opacity_slider.setValue(MENU_OPACITY)
+        menu_opacity_slider.setValue(self.menu_opacity)
         menu_opacity_slider.valueChanged.connect(
             lambda v: menu_opacity_label.setText(f"Opacité générale ➤ <b>{v}</b>")
         )
@@ -2100,11 +2015,11 @@ class App(QMainWindow):
                
         # Slider pour opacité de base
         basic_opacity_layout = QVBoxLayout()
-        basic_opacity_label = QLabel(f"Opacité des zones ➤ <b>{ZONE_BASIC_OPACITY}</b>")
+        basic_opacity_label = QLabel(f"Opacité des zones ➤ <b>{self.zone_basic_opacity}</b>")
         basic_opacity_slider = QSlider(Qt.Orientation.Horizontal)
         basic_opacity_slider.setMinimum(0)
         basic_opacity_slider.setMaximum(100)
-        basic_opacity_slider.setValue(ZONE_BASIC_OPACITY)
+        basic_opacity_slider.setValue(self.zone_basic_opacity)
         basic_opacity_slider.valueChanged.connect(
             lambda v: basic_opacity_label.setText(f"Opacité des zones ➤ <b>{v}</b>")
         )
@@ -2115,11 +2030,11 @@ class App(QMainWindow):
         
         # Slider pour opacité au survol
         hover_opacity_layout = QVBoxLayout()
-        hover_opacity_label = QLabel(f"Opacité des zones au survol ➤ <b>{ZONE_HOVER_OPACITY}</b>")
+        hover_opacity_label = QLabel(f"Opacité des zones au survol ➤ <b>{self.zone_hover_opacity}</b>")
         hover_opacity_slider = QSlider(Qt.Orientation.Horizontal)
         hover_opacity_slider.setMinimum(0)
         hover_opacity_slider.setMaximum(100)
-        hover_opacity_slider.setValue(ZONE_HOVER_OPACITY)
+        hover_opacity_slider.setValue(self.zone_hover_opacity)
         hover_opacity_slider.valueChanged.connect(
             lambda v: hover_opacity_label.setText(f"Opacité des zones au survol ➤ <b>{v}</b>")
         )
@@ -2132,7 +2047,6 @@ class App(QMainWindow):
         options_label = QLabel("⚡ Options")
         options_label.setStyleSheet("font-weight: bold; color: white; margin-top: 10px;")
         layout.addWidget(options_label)
-
 
         # Slider pour le nombre d'icones "fixes" du menu
         slider_container = QWidget()
@@ -2177,10 +2091,9 @@ class App(QMainWindow):
         slider_layout.addLayout(emoji_labels_layout)
 
         slider = QSlider(Qt.Orientation.Horizontal)
-        # slider.setMinimum(3)
         slider.setMinimum(5)
         slider.setMaximum(6)
-        slider.setValue(NB_ICONS_MENU)  # INITIALISER avec la bonne valeur
+        slider.setValue(self.nb_icons_menu)  # INITIALISER avec la bonne valeur
         slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         slider.setTickInterval(1)
         slider.setSingleStep(1)
@@ -2188,7 +2101,6 @@ class App(QMainWindow):
         slider.setProperty("help_text", "Associer une action")
         slider.installEventFilter(self)
         self._nb_icons_dialog_slider = slider  # Stocker pour les clics sur emojis
-        # slider.valueChanged.connect(self.refresh_menu)
         slider.setStyleSheet("""
             QSlider::groove:horizontal {
                 height: 6px;
@@ -2213,7 +2125,7 @@ class App(QMainWindow):
         
         # Checkbox pour l'icône centrale
         central_icon_checkbox = QCheckBox("Icône centrale au survol")
-        central_icon_checkbox.setChecked(SHOW_CENTRAL_ICON)
+        central_icon_checkbox.setChecked(self.show_central_icon)
         central_icon_checkbox.setStyleSheet("""
             QCheckBox::indicator {
                 background-color: white;
@@ -2230,7 +2142,7 @@ class App(QMainWindow):
         
         # Checkbox pour le néon central
         neon_checkbox = QCheckBox("Néon central")
-        neon_checkbox.setChecked(CENTRAL_NEON)
+        neon_checkbox.setChecked(self.central_neon)
         neon_checkbox.setStyleSheet("""
             QCheckBox::indicator {
                 background-color: white;
@@ -2255,7 +2167,7 @@ class App(QMainWindow):
         neon_color_button.setFixedWidth(150)
         
         # Variable pour stocker la couleur du néon
-        selected_neon_color = list(NEON_COLOR)
+        selected_neon_color = list(self.neon_color)
         
         def update_neon_button():
             r, g, b = selected_neon_color
@@ -2292,12 +2204,12 @@ class App(QMainWindow):
         
         # Slider pour la vitesse du néon
         neon_speed_layout = QVBoxLayout()
-        neon_speed_label = QLabel(f"Vitesse du néon ➤ <b>{NEON_SPEED}</b> ms")
+        neon_speed_label = QLabel(f"Vitesse du néon ➤ <b>{self.neon_speed}</b> ms")
         neon_speed_slider = QSlider(Qt.Orientation.Horizontal)
         # Bornes des vitesses
         neon_speed_slider.setMinimum(1)
         neon_speed_slider.setMaximum(200)
-        neon_speed_slider.setValue(NEON_SPEED)
+        neon_speed_slider.setValue(self.neon_speed)
         neon_speed_slider.valueChanged.connect(
             lambda v: neon_speed_label.setText(f"Vitesse du néon ➤ <b>{v}</b> ms")
         )
@@ -2363,24 +2275,23 @@ class App(QMainWindow):
         """)
         
         def save_and_close():
-            global CENTRAL_NEON, ZONE_BASIC_OPACITY, ZONE_HOVER_OPACITY, SHOW_CENTRAL_ICON, NB_ICONS_MENU, ACTION_ZONE_COLORS, MENU_OPACITY, MENU_BACKGROUND_COLOR, NEON_COLOR, NEON_SPEED
             
             # Mettre à jour les variables globales
-            ACTION_ZONE_COLORS["copy"] = selected_colors["copy"]
-            ACTION_ZONE_COLORS["term"] = selected_colors["term"]
-            ACTION_ZONE_COLORS["exec"] = selected_colors["exec"]
-            ZONE_BASIC_OPACITY = basic_opacity_slider.value()
-            ZONE_HOVER_OPACITY = hover_opacity_slider.value()
-            MENU_OPACITY = menu_opacity_slider.value()
-            MENU_BACKGROUND_COLOR = tuple(selected_menu_bg_color)
-            NEON_COLOR = tuple(selected_neon_color)
-            NEON_SPEED = neon_speed_slider.value()
-            SHOW_CENTRAL_ICON = central_icon_checkbox.isChecked()
-            NB_ICONS_MENU = slider.value()
-            CENTRAL_NEON = neon_checkbox.isChecked()
+            self.action_zone_colors["copy"] = selected_colors["copy"]
+            self.action_zone_colors["term"] = selected_colors["term"]
+            self.action_zone_colors["exec"] = selected_colors["exec"]
+            self.zone_basic_opacity = basic_opacity_slider.value()
+            self.zone_hover_opacity = hover_opacity_slider.value()
+            self.menu_opacity = menu_opacity_slider.value()
+            self.menu_background_color = tuple(selected_menu_bg_color)
+            self.neon_color = tuple(selected_neon_color)
+            self.neon_speed = neon_speed_slider.value()
+            self.show_central_icon = central_icon_checkbox.isChecked()
+            self.nb_icons_menu = slider.value()
+            self.central_neon = neon_checkbox.isChecked()
             
             # Sauvegarder dans le fichier
-            save_config()
+            self.save_config()
             
             # Fermer le dialogue
             dialog.accept()
@@ -2421,7 +2332,7 @@ class App(QMainWindow):
             if name and value:
                 # Si une image a été sélectionnée, créer le thumbnail
                 if self._dialog_temp_image_path:
-                    thumbnail_path = create_thumbnail(self._dialog_temp_image_path, THUMBNAILS_DIR)
+                    thumbnail_path = create_thumbnail(self._dialog_temp_image_path, self.thumbnails_dir)
                     if thumbnail_path:
                         name = thumbnail_path  # Utiliser le chemin du thumbnail comme nom
                         print(f"Thumbnail créé: {thumbnail_path}")
@@ -2446,7 +2357,7 @@ class App(QMainWindow):
                     self.actions_map_sub[name] = [(execute_command, [value], {}), value, action]
                 
                 # Sauvegarder avec le HTML si présent
-                append_to_actions_file_json(CLIP_NOTES_FILE_JSON, name, value, action, html_to_save)
+                append_to_actions_file_json(self.clip_notes_file_json, name, value, action, html_to_save)
                 
                 dialog.accept()
                 self.delete_mode = False
@@ -2496,7 +2407,7 @@ class App(QMainWindow):
                 
                 # Si une nouvelle image a été sélectionnée, créer le thumbnail
                 if self._dialog_temp_image_path:
-                    thumbnail_path = create_thumbnail(self._dialog_temp_image_path, THUMBNAILS_DIR)
+                    thumbnail_path = create_thumbnail(self._dialog_temp_image_path, self.thumbnails_dir)
                     if thumbnail_path:
                         new_name = thumbnail_path  # Utiliser le chemin du thumbnail comme nom
                         print(f"Nouveau thumbnail créé: {thumbnail_path}")
@@ -2509,7 +2420,7 @@ class App(QMainWindow):
                     if context == "from_radial":
                         self.actions_map_sub.pop(old_name, None)
                         # Supprimer l'ancien alias du JSON
-                        delete_from_json(CLIP_NOTES_FILE_JSON, old_name)
+                        delete_from_json(self.clip_notes_file_json, old_name)
                     
                     # Supprimer l'ancien thumbnail s'il existe (si c'est un chemin de fichier)
                     if "/" in old_name and os.path.exists(old_name):
@@ -2523,7 +2434,7 @@ class App(QMainWindow):
                 if context == "from_storage":
                     # Sauvegarder dans le fichier de stockage
                     # D'abord supprimer l'ancien clip du stockage
-                    remove_stored_clip(old_name)
+                    self.remove_stored_clip(old_name)
                     # Supprimer l'ancien thumbnail si le nom a changé
                     if new_name != old_name and "/" in old_name and os.path.exists(old_name):
                         try:
@@ -2532,7 +2443,7 @@ class App(QMainWindow):
                         except Exception as e:
                             print(f"Erreur lors de la suppression de l'ancien thumbnail: {e}")
                     # Ajouter le nouveau clip au stockage avec le HTML si présent
-                    add_stored_clip(new_name, action, new_value, new_html_to_save)
+                    self.add_stored_clip(new_name, action, new_value, new_html_to_save)
                 else:
                     # Seulement pour le menu radial : ajouter à actions_map_sub
                     if action == "copy":
@@ -2543,7 +2454,7 @@ class App(QMainWindow):
                         self.actions_map_sub[new_name] = [(execute_command, [new_value], {}), new_value, action]
                     
                     # Sauvegarder dans le menu radial avec le HTML si présent
-                    replace_or_append_json(CLIP_NOTES_FILE_JSON, new_name, new_value, action, new_html_to_save)
+                    replace_or_append_json(self.clip_notes_file_json, new_name, new_value, action, new_html_to_save)
                 
                 dialog.accept()
                 
@@ -2587,9 +2498,7 @@ class App(QMainWindow):
         self.buttons_sub = []
         
         # Définir les tooltips pour les boutons spéciaux
-
-
-        if NB_ICONS_MENU == 5:
+        if self.nb_icons_menu == 5:
             special_button_tooltips = {
                 "➕": "Ajouter",
                 "🔧": "Modifier",
@@ -2597,7 +2506,6 @@ class App(QMainWindow):
                 "↔️": "Ordonner",
                 "➖": "Supprimer",
             }
-            # populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
             self.actions_map_sub = {
                 "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
                 "🔧": [(self.update_clip, [x,y], {}), special_button_tooltips["🔧"], None],
@@ -2605,8 +2513,8 @@ class App(QMainWindow):
                 "↔️": [(self.show_reorder_dialog, [x,y], {}), special_button_tooltips["↔️"], None],
                 "➖": [(self.show_storage_menu, [x,y], {}), special_button_tooltips["➖"], None],
             }
-            populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
-        elif NB_ICONS_MENU == 6:
+            populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
+        elif self.nb_icons_menu == 6:
             special_button_tooltips = {
                 "➕": "Ajouter",
                 "🔧": "Modifier",
@@ -2615,7 +2523,6 @@ class App(QMainWindow):
                 "📦": "Stocker",
                 "➖": "Supprimer",
             }
-            
             self.actions_map_sub = {
                 "➕": [(self.new_clip,    [x,y], {}), special_button_tooltips["➕"], None],
                 "🔧": [(self.update_clip, [x,y], {}), special_button_tooltips["🔧"], None],
@@ -2624,18 +2531,18 @@ class App(QMainWindow):
                 "📦": [(self.show_storage_menu, [x,y], {}), special_button_tooltips["📦"], None],
                 "➖": [(self.delete_clip, [x,y], {}), special_button_tooltips["➖"], None],
             }
-            populate_actions_map_from_file(CLIP_NOTES_FILE_JSON, self.actions_map_sub, execute_command)
+            populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
 
         # Séparer les boutons spéciaux des autres
-        if NB_ICONS_MENU == 5:
+        if self.nb_icons_menu == 5:
             special_buttons = ["➖", "↔️", "⚙️", "🔧", "➕"]
-        elif NB_ICONS_MENU == 6:   
+        elif self.nb_icons_menu == 6:   
             special_buttons = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
         # special_buttons = special_buttons
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Récupérer l'ordre du JSON pour le tri personnalisé
-        json_order = get_json_order(CLIP_NOTES_FILE_JSON)
+        json_order = get_json_order(self.clip_notes_file_json)
         
         # Trier seulement les clips (pas les boutons spéciaux)
         sorted_clips = sort_actions_map(clips_to_sort, json_order)
@@ -2654,20 +2561,31 @@ class App(QMainWindow):
             _, clip_html = self.get_clip_data_from_json(name)
             self.buttons_sub.append((name, self.make_handler_sub(name, value, x, y), tooltip, action, clip_html))
         
-        self.current_popup = RadialMenu(x, y, self.buttons_sub, sub=True, tracker=self.tracker, app_instance=self, neon_color=NEON_COLOR, action_zone_colors=ACTION_ZONE_COLORS, nb_icons_menu=NB_ICONS_MENU, show_central_icon=SHOW_CENTRAL_ICON, menu_background_color=MENU_BACKGROUND_COLOR, zone_basic_opacity=ZONE_BASIC_OPACITY, zone_hover_opacity=ZONE_HOVER_OPACITY)
+        self.current_popup = RadialMenu(x, y, self.buttons_sub, sub=True, tracker=self.tracker, app_instance=self, neon_color=self.neon_color, action_zone_colors=self.action_zone_colors, nb_icons_menu=self.nb_icons_menu, show_central_icon=self.show_central_icon, menu_background_color=self.menu_background_color, zone_basic_opacity=self.zone_basic_opacity, zone_hover_opacity=self.zone_hover_opacity)
         self.current_popup.show()
         self.current_popup.animate_open()
         
         # Appliquer l'opacité configurée
-        self.current_popup.set_widget_opacity(MENU_OPACITY / 100.0)
+        self.current_popup.set_widget_opacity(self.menu_opacity / 100.0)
         
-        # ===== NÉON BLEU MENU PRINCIPAL =====
         # Activer le néon bleu clignotant dès l'ouverture
-        self.current_popup.toggle_neon(CENTRAL_NEON)
-        self.current_popup.timer.start(NEON_SPEED)
-        # ====================================
+        self.current_popup.toggle_neon(self.central_neon)
+        self.current_popup.timer.start(self.neon_speed)
 
 if __name__ == "__main__":
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    LOCK_FILE = os.path.join(SCRIPT_DIR, ".clipnotes.lock")
+    
+    def create_lock_file():
+        with open(LOCK_FILE, 'w') as f:
+            f.write(str(os.getpid()))
+
+    def remove_lock_file():
+        try:
+            if os.path.exists(LOCK_FILE):
+                os.remove(LOCK_FILE)
+        except:
+            pass
     create_lock_file()
     
     def cleanup_handler(sig, frame):
@@ -2683,10 +2601,6 @@ if __name__ == "__main__":
     global tracker
     tracker = CursorTracker()
     tracker.show()
-    ## AJOUTER LA FENÊTRE DE CALIBRATION
-    # calibration_window = CalibrationWindow(tracker)
-    # calibration_window.show()
-    
 
     max_wait = 0.3
     elapsed = 0.0
@@ -2700,11 +2614,13 @@ if __name__ == "__main__":
     
     QApplication.processEvents()
     
-    main_app = App()
+    main_app = ClipNotesWindow()
     main_app.tracker = tracker
+
     # Fenêtre de calibration du menu Radial
     # calibration_window = CalibrationWindow(tracker, main_app)
     # calibration_window.show()
+
     main_app.show_window_at(x, y, "")
 
     try:
