@@ -7,51 +7,6 @@ from PyQt6.QtWidgets import QTextEdit, QTextBrowser, QLabel, QFileDialog, QCheck
 from utils import *
 from ui import EmojiSelector, AutoScrollListWidget, WhiteDropIndicatorStyle, CursorTracker, TooltipWindow, RadialMenu, CalibrationWindow
 
-# Palette de couleurs disponibles (RGB)
-COLOR_PALETTE = {
-    # Rouges
-    "Rouge": (255, 0, 0),
-    "Rouge clair": (255, 100, 100),
-    "Rose": (255, 192, 203),
-    "Rose pâle": (255, 200, 200),
-    "Rouge foncé": (200, 0, 0),
-    # Oranges
-    "Orange": (255, 150, 100),
-    "Orange vif": (255, 100, 0),
-    "Orange clair": (255, 200, 150),
-    "Pêche": (255, 218, 185),
-    # Jaunes
-    "Jaune": (255, 255, 0),
-    "Jaune clair": (255, 255, 150),
-    "Jaune pâle": (255, 255, 200),
-    "Or": (255, 215, 0),
-    # Verts
-    "Vert": (100, 255, 150),
-    "Vert vif": (0, 255, 0),
-    "Vert clair": (150, 255, 150),
-    "Vert pâle": (200, 255, 200),
-    "Vert foncé": (0, 150, 0),
-    "Vert menthe": (152, 255, 152),
-    # Bleus
-    "Bleu": (100, 150, 255),
-    "Bleu vif": (0, 0, 255),
-    "Bleu clair": (150, 200, 255),
-    "Bleu pâle": (200, 200, 255),
-    "Cyan": (0, 255, 255),
-    "Cyan pâle": (200, 255, 255),
-    "Bleu foncé": (0, 0, 200),
-    # Violets
-    "Violet": (150, 100, 255),
-    "Violet clair": (200, 150, 255),
-    "Mauve": (224, 176, 255),
-    "Magenta": (255, 0, 255),
-    # Gris
-    "Gris menu": (50, 50, 50),      # Gris par défaut du menu
-    "Gris": (150, 150, 150),
-    "Gris clair": (200, 200, 200),
-    "Gris foncé": (100, 100, 100),
-}
-
 class ClipNotesWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -121,7 +76,8 @@ class ClipNotesWindow(QMainWindow):
         self.thumbnails_dir = os.path.join(self.script_dir, "thumbnails")
         self.config_file = os.path.join(self.script_dir, "config.json")
         self.stored_clips_file = os.path.join(self.script_dir, "stored_clips.json")
-
+        with open(os.path.join(os.path.dirname(__file__), "colors.json"), "r") as f:
+            self.color_palette = json.load(f)
         # Créer le dossier des miniatures s'il n'existe pas
         os.makedirs(self.thumbnails_dir, exist_ok=True)
         # Charger la configuration au démarrage
@@ -159,9 +115,9 @@ class ClipNotesWindow(QMainWindow):
             for action, color_value in loaded_colors.items():
                 if isinstance(color_value, str):
                     # Ancien format : nom de couleur -> convertir en RGB
-                    if color_value in COLOR_PALETTE:
-                        self.action_zone_colors[action] = COLOR_PALETTE[color_value]
-                        print(f"[Config] Migration: {action} '{color_value}' -> {COLOR_PALETTE[color_value]}")
+                    if color_value in self.color_palette:
+                        self.action_zone_colors[action] = self.color_palette[color_value]
+                        print(f"[Config] Migration: {action} '{color_value}' -> {self.color_palette[color_value]}")
                     else:
                         # Couleur inconnue, utiliser la valeur par défaut
                         default_colors = {
