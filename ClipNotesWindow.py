@@ -74,7 +74,6 @@ class ClipNotesWindow(QMainWindow):
         self.special_buttons_by_5 = ["➖", "↔️", "⚙️", "🔧", "➕"]
         self.special_buttons_by_6 = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
         self.special_buttons_by_7 = ["➖", "📋", "💾", "↔️", "⚙️", "🔧", "➕"]
-        
 
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
         self.clip_notes_file_json = os.path.join(self.script_dir, "clip_notes.json")
@@ -614,7 +613,8 @@ class ClipNotesWindow(QMainWindow):
             delete_from_json(self.clip_notes_file_json, name)
             # Supprimer l'ancien thumbnail s'il existe
             if os.path.exists(name):
-                os.remove(name)
+                if "/usr" not in name and "/share" not in name:
+                    os.remove(name)
             dialog.accept()
             # Rester en mode suppression au lieu de revenir au menu principal
             self.delete_clip(x, y)
