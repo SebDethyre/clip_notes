@@ -1016,8 +1016,18 @@ class ClipNotesWindow(QMainWindow):
             if not app_name or len(app_name) < 2:
                 return None
             
-            # Commande exacte pour chercher l'icône
-            cmd = f'APP="{app_name}"; find /snap/$APP/current/meta/gui -iname \'*.png\' 2>/dev/null; find /var/lib/flatpak ~/.local/share/flatpak -path "*$APP*/icons/*" -iname \'*.png\' 2>/dev/null; find /usr/share/icons /usr/share/pixmaps -iname "*$APP*.png" 2>/dev/null'
+            # Commande qui priorise les grandes icônes (512 > 256 > 128 > etc.)
+            cmd = f'''APP="{app_name}"; (
+                find /usr/share/icons -path "*/512x512/*" -iname "*$APP*.png" 2>/dev/null
+                find /usr/share/icons -path "*/256x256/*" -iname "*$APP*.png" 2>/dev/null
+                find /usr/share/icons -path "*/128x128/*" -iname "*$APP*.png" 2>/dev/null
+                find /usr/share/icons -path "*/96x96/*" -iname "*$APP*.png" 2>/dev/null
+                find /usr/share/icons -path "*/64x64/*" -iname "*$APP*.png" 2>/dev/null
+                find /usr/share/icons -path "*/48x48/*" -iname "*$APP*.png" 2>/dev/null
+                find /usr/share/pixmaps -iname "*$APP*.png" 2>/dev/null
+                find /snap/$APP/current/meta/gui -iname "*.png" 2>/dev/null
+                find /var/lib/flatpak ~/.local/share/flatpak -path "*$APP*/icons/*" -iname "*.png" 2>/dev/null
+            )'''
             
             try:
                 result = subprocess.run(
@@ -1082,10 +1092,14 @@ class ClipNotesWindow(QMainWindow):
         def on_value_text_changed():
             """Déclenche la vérification avec un délai (debounce)"""
             icon_check_timer.stop()
-            icon_check_timer.start(300)  # 300ms de délai
+            icon_check_timer.start(200)  # 200ms de délai
         
         icon_check_timer.timeout.connect(check_for_app_icon)
         value_input.textChanged.connect(on_value_text_changed)
+        
+        # Vérifier immédiatement si une icône existe pour la valeur initiale (mode modification)
+        if initial_value:
+            check_for_app_icon()
         
         def show_icon_proposal_dialog(icon_path):
             """Affiche un dialogue proposant d'utiliser l'icône trouvée"""
