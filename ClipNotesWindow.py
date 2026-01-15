@@ -81,7 +81,6 @@ class ClipNotesWindow(QMainWindow):
         self._dialog_temp_image_path = None  # Chemin temporaire de l'image sélectionnée
         self._dialog_remove_image_button = None  # Bouton pour supprimer l'image
 
-
         self.central_neon = False
         self.zone_basic_opacity = 15
         self.zone_hover_opacity = 45
@@ -94,9 +93,9 @@ class ClipNotesWindow(QMainWindow):
         self.neon_color = (0, 255, 255)
 
         self.action_zone_colors = {
-            "copy": (255, 150, 100),  # Orange par défaut
-            "term": (100, 255, 150),  # Vert par défaut
-            "exec": (100, 150, 255),  # Bleu par défaut
+            "copy": (255, 150, 100),  # Orange
+            "term": (100, 255, 150),  # Vert
+            "exec": (100, 150, 255),  # Bleu
         }
         self.dialog_style = """
             QWidget {
@@ -2575,7 +2574,7 @@ class ClipNotesWindow(QMainWindow):
 if __name__ == "__main__":
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     LOCK_FILE = os.path.join(SCRIPT_DIR, ".clipnotes.lock")
-    
+
     def create_lock_file():
         with open(LOCK_FILE, 'w') as f:
             f.write(str(os.getpid()))
