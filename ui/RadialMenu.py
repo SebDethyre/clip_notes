@@ -767,16 +767,13 @@ class RadialMenu(QWidget):
         """Vérifie si le sous-menu doit être fermé"""
         if not self.hover_submenu:
             return
-        
         # Vérifier si l'objet existe encore
         try:
             self.hover_submenu.isVisible()
         except RuntimeError:
             self.hover_submenu = None
             return
-        
         cursor_pos = QCursor.pos()
-        
         # Vérifier si la souris est sur le sous-menu
         try:
             submenu_pos = self.hover_submenu.mapFromGlobal(cursor_pos)
@@ -785,14 +782,12 @@ class RadialMenu(QWidget):
         except RuntimeError:
             self.hover_submenu = None
             return
-        
         # Vérifier si la souris est sur le bouton ➖
         if self.storage_button_index is not None and self.storage_button_index < len(self.buttons):
             storage_btn = self.buttons[self.storage_button_index]
             btn_pos = storage_btn.mapFromGlobal(cursor_pos)
             if storage_btn.rect().contains(btn_pos):
                 return  # Souris sur le bouton, ne pas fermer
-        
         # Fermer le sous-menu
         try:
             self.hover_submenu.close()
@@ -871,7 +866,6 @@ class RadialMenu(QWidget):
         if distance < 30:
             self.handle_click_outside()
             return
-        
         if not any(btn.geometry().contains(event.pos()) for btn in self.buttons):
             # Masquer tous les badges
             for badge in self.action_badges.values():
@@ -903,14 +897,12 @@ class RadialMenu(QWidget):
         visible_indices = [i for i, btn in enumerate(self.buttons) if btn.isVisible()]
         if not visible_indices:
             return
-        
         num_visible = len(visible_indices)
         
         # Calculer la position relative au centre
         center = self.rect().center()
         dx = event.pos().x() - center.x()
         dy = event.pos().y() - center.y()
-        
         # Calculer la distance au centre
         distance = math.sqrt(dx * dx + dy * dy)
         
@@ -956,10 +948,8 @@ class RadialMenu(QWidget):
         # Trouver l'index du bouton VISIBLE correspondant à cet angle
         angle_step = 360 / num_visible
         visible_pos = int(round(angle_deg / angle_step)) % num_visible
-        
         # Convertir la position visible en index réel du bouton
         button_index = visible_indices[visible_pos]
-        
         # Récupérer l'action de ce bouton
         hovered_action = None
         if button_index < len(self.button_actions):
@@ -968,7 +958,6 @@ class RadialMenu(QWidget):
         # Mettre à jour si l'action survolée a changé
         if hovered_action != self.hovered_action:
             self.hovered_action = hovered_action
-            
             # Masquer tous les badges d'abord
             for badge in self.action_badges.values():
                 badge.setVisible(False)
@@ -998,10 +987,9 @@ class RadialMenu(QWidget):
                     badge = self.action_badges[self.hovered_action]
                     badge.move(int(badge_x - badge.width() / 2), int(badge_y - badge.height() / 2))
                     badge.setVisible(True)
-            
             self.update()
     
-    def handle_key_right(self):
+    def handle_key_left(self):
         """Gère la flèche droite"""
         if not self.buttons:
             return
@@ -1022,7 +1010,7 @@ class RadialMenu(QWidget):
         self.show_focused_button_info()
         self.update()
     
-    def handle_key_left(self):
+    def handle_key_right(self):
         """Gère la flèche gauche"""
         if not self.buttons:
             return
