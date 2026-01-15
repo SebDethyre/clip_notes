@@ -15,19 +15,16 @@ COLOR_PALETTE = {
     "Rose": (255, 192, 203),
     "Rose pâle": (255, 200, 200),
     "Rouge foncé": (200, 0, 0),
-    
     # Oranges
     "Orange": (255, 150, 100),
     "Orange vif": (255, 100, 0),
     "Orange clair": (255, 200, 150),
     "Pêche": (255, 218, 185),
-    
     # Jaunes
     "Jaune": (255, 255, 0),
     "Jaune clair": (255, 255, 150),
     "Jaune pâle": (255, 255, 200),
     "Or": (255, 215, 0),
-    
     # Verts
     "Vert": (100, 255, 150),
     "Vert vif": (0, 255, 0),
@@ -35,7 +32,6 @@ COLOR_PALETTE = {
     "Vert pâle": (200, 255, 200),
     "Vert foncé": (0, 150, 0),
     "Vert menthe": (152, 255, 152),
-    
     # Bleus
     "Bleu": (100, 150, 255),
     "Bleu vif": (0, 0, 255),
@@ -44,13 +40,11 @@ COLOR_PALETTE = {
     "Cyan": (0, 255, 255),
     "Cyan pâle": (200, 255, 255),
     "Bleu foncé": (0, 0, 200),
-    
     # Violets
     "Violet": (150, 100, 255),
     "Violet clair": (200, 150, 255),
     "Mauve": (224, 176, 255),
     "Magenta": (255, 0, 255),
-    
     # Gris
     "Gris menu": (50, 50, 50),      # Gris par défaut du menu
     "Gris": (150, 150, 150),
@@ -186,7 +180,6 @@ class ClipNotesWindow(QMainWindow):
             print(f"[Config] Configuration chargée: {config}")
         except Exception as e:
             print(f"[Erreur] Impossible de charger la configuration: {e}")
-
 
     def save_config(self):
         """Sauvegarde la configuration dans le fichier JSON"""
