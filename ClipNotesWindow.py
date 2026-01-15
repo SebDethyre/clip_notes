@@ -70,6 +70,10 @@ class ClipNotesWindow(QMainWindow):
                 background-color: rgba(255, 255, 255, 60);
             }
         """
+
+        self.special_buttons_by_5 = ["➖", "↔️", "⚙️", "🔧", "➕"]
+        self.special_buttons_by_6 = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
+        
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
         self.clip_notes_file_json = os.path.join(self.script_dir, "clip_notes.json")
         self.emojis_file = os.path.join(self.script_dir, "emojis.txt")
@@ -363,9 +367,9 @@ class ClipNotesWindow(QMainWindow):
                 "➖": [(self.delete_clip, [x,y], {}), special_button_tooltips["➖"], None],
             }
         if self.nb_icons_menu == 5:
-            special_buttons = ["➖", "↔️", "⚙️", "🔧", "➕"]
+            special_buttons = self.special_buttons_by_5
         elif self.nb_icons_menu == 6:
-            special_buttons = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
+            special_buttons = self.special_buttons_by_6
         populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
         # Séparer les boutons spéciaux des autres
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
@@ -417,9 +421,9 @@ class ClipNotesWindow(QMainWindow):
         
         # Filtrer les clips (sans les boutons d'action)
         if self.nb_icons_menu == 5:
-            special_buttons = ["➖", "↔️", "⚙️", "🔧", "➕"]
+            special_buttons = self.special_buttons_by_5
         elif self.nb_icons_menu == 6:    
-            special_buttons = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
+            special_buttons = self.special_buttons_by_6
         clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         # print(clips_only)
         # Trier les clips
@@ -464,9 +468,9 @@ class ClipNotesWindow(QMainWindow):
         self.delete_mode = True
         # Filtrer les clips (sans les boutons d'action)
         if self.nb_icons_menu == 5:
-            special_buttons = ["➖", "↔️", "⚙️", "🔧", "➕"]
+            special_buttons = self.special_buttons_by_5
         elif self.nb_icons_menu == 6:    
-            special_buttons = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
+            special_buttons = self.special_buttons_by_6
         clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Trier les clips
@@ -603,9 +607,9 @@ class ClipNotesWindow(QMainWindow):
                     func, args, kwargs = func_data
                     func(*args, **kwargs)
                     if self.nb_icons_menu == 5:
-                        special_buttons = ["➖", "↔️", "⚙️", "🔧", "➕"]
+                        special_buttons = self.special_buttons_by_5
                     elif self.nb_icons_menu == 6:   
-                        special_buttons = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
+                        special_buttons = self.special_buttons_by_6
                     if name not in special_buttons:
                         # Récupérer l'action et générer le message
                         action = self.actions_map_sub[name][2]
@@ -1077,9 +1081,9 @@ class ClipNotesWindow(QMainWindow):
         # Activer le mode stockage
         self.store_mode = True
         if self.nb_icons_menu == 5:
-            special_buttons = ["➖", "↔️", "⚙️", "🔧", "➕"]
+            special_buttons = self.special_buttons_by_5
         elif self.nb_icons_menu == 6:
-            special_buttons = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
+            special_buttons = self.special_buttons_by_6
         # Filtrer les clips (sans les boutons d'action)
         clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
@@ -2483,9 +2487,9 @@ class ClipNotesWindow(QMainWindow):
 
         # Séparer les boutons spéciaux des autres
         if self.nb_icons_menu == 5:
-            special_buttons = ["➖", "↔️", "⚙️", "🔧", "➕"]
+            special_buttons = self.special_buttons_by_5
         elif self.nb_icons_menu == 6:   
-            special_buttons = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
+            special_buttons = self.special_buttons_by_6
         # special_buttons = special_buttons
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
