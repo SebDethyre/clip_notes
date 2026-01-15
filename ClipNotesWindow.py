@@ -221,7 +221,7 @@ class ClipNotesWindow(QMainWindow):
                 if tooltip_text and self.dialog_help_label:
                     self.dialog_help_label.setText(tooltip_text)
                     self.dialog_help_label.setVisible(True)
-                    if hasattr(self, 'dialog_help_browser') and self.dialog_help_browser:
+                    if hasattr(self, '_dialog_help_browser') and self.dialog_help_browser:
                         self.dialog_help_browser.setVisible(False)
             # Vérifier les autres widgets (avec help_text)
             else:
@@ -233,7 +233,7 @@ class ClipNotesWindow(QMainWindow):
                     line_count = help_text.count('\n') + 1
                     is_multiline = line_count > 1
                     
-                    if is_multiline and hasattr(self, 'dialog_help_browser') and self.dialog_help_browser:
+                    if is_multiline and hasattr(self, '_dialog_help_browser') and self.dialog_help_browser:
                         # Multilignes → utiliser le QTextBrowser
                         if html_string:
                             self.dialog_help_browser.setHtml(html_string)
@@ -253,7 +253,7 @@ class ClipNotesWindow(QMainWindow):
                             self.dialog_help_label.setTextFormat(Qt.TextFormat.PlainText)
                             self.dialog_help_label.setText(help_text)
                         self.dialog_help_label.setVisible(True)
-                        if hasattr(self, 'dialog_help_browser') and self.dialog_help_browser:
+                        if hasattr(self, '_dialog_help_browser') and self.dialog_help_browser:
                             self.dialog_help_browser.setVisible(False)
         elif event.type() == QEvent.Type.Leave:
             # Vider et cacher les widgets d'aide
@@ -261,7 +261,7 @@ class ClipNotesWindow(QMainWindow):
                 self.dialog_help_label.setTextFormat(Qt.TextFormat.PlainText)
                 self.dialog_help_label.setText("")
                 self.dialog_help_label.setVisible(True)
-            if hasattr(self, 'dialog_help_browser') and self.dialog_help_browser:
+            if hasattr(self, '_dialog_help_browser') and self.dialog_help_browser:
                 self.dialog_help_browser.clear()
                 self.dialog_help_browser.setVisible(False)
         elif event.type() == QEvent.Type.MouseButtonPress:
@@ -1004,8 +1004,215 @@ class ClipNotesWindow(QMainWindow):
             # 3 Dernier recours : HOME
             return home
         
+        def find_app_icon(app_name):
+            """Cherche l'icône d'une application installée"""
+            if not app_name:
+                return None
+            
+            # Nettoyer le nom de l'application (prendre le premier mot)
+            app_name = app_name.strip().split()[0] if app_name.strip() else ""
+            app_name = os.path.basename(app_name)
+            
+            if not app_name or len(app_name) < 2:
+                return None
+            
+            # Commande exacte pour chercher l'icône
+            cmd = f'APP="{app_name}"; find /snap/$APP/current/meta/gui -iname \'*.png\' 2>/dev/null; find /var/lib/flatpak ~/.local/share/flatpak -path "*$APP*/icons/*" -iname \'*.png\' 2>/dev/null; find /usr/share/icons /usr/share/pixmaps -iname "*$APP*.png" 2>/dev/null'
+            
+            try:
+                result = subprocess.run(
+                    ['bash', '-c', cmd + ' | head -n1'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                icon_path = result.stdout.strip()
+                
+                # Si vide, pas d'icône trouvée
+                if not icon_path:
+                    return None
+                
+                return icon_path
+            except Exception as e:
+                print(f"Erreur lors de la recherche d'icône: {e}")
+                return None
+        
+        # === Détection en temps réel d'icône d'application ===
+        # Styles pour le bouton image
+        image_button_style_normal = """
+            QPushButton {
+                background-color: rgba(255, 255, 255, 30);
+                border: 1px solid rgba(255, 255, 255, 60);
+                border-radius: 6px;
+                padding: 6px;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 60);
+            }
+        """
+        image_button_style_highlight = """
+            QPushButton {
+                background-color: rgba(100, 200, 100, 50);
+                border: 2px solid rgba(100, 255, 100, 200);
+                border-radius: 6px;
+                padding: 6px;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: rgba(100, 255, 100, 100);
+            }
+        """
+        image_button.setStyleSheet(image_button_style_normal)
+        
+        # Timer pour debounce (éviter trop de requêtes bash)
+        icon_check_timer = QTimer()
+        icon_check_timer.setSingleShot(True)
+        
+        def check_for_app_icon():
+            """Vérifie si une icône existe et met à jour le style du bouton"""
+            command_text = value_input.toPlainText().strip()
+            if command_text:
+                icon_path = find_app_icon(command_text)
+                if icon_path:
+                    image_button.setStyleSheet(image_button_style_highlight)
+                    return
+            image_button.setStyleSheet(image_button_style_normal)
+        
+        def on_value_text_changed():
+            """Déclenche la vérification avec un délai (debounce)"""
+            icon_check_timer.stop()
+            icon_check_timer.start(300)  # 300ms de délai
+        
+        icon_check_timer.timeout.connect(check_for_app_icon)
+        value_input.textChanged.connect(on_value_text_changed)
+        
+        def show_icon_proposal_dialog(icon_path):
+            """Affiche un dialogue proposant d'utiliser l'icône trouvée"""
+            proposal_dialog = QDialog(dialog)
+            proposal_dialog.setWindowTitle("🖼️ Icône détectée")
+            proposal_dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+            proposal_dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+            proposal_dialog.setFixedSize(300, 280)
+            
+            # Palette sombre
+            palette = QPalette()
+            palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+            palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
+            proposal_dialog.setPalette(palette)
+            
+            p_layout = QVBoxLayout(proposal_dialog)
+            p_layout.setContentsMargins(20, 20, 20, 20)
+            p_layout.setSpacing(15)
+            
+            # Message
+            message = QLabel("Une icône a été trouvée\npour cette application :")
+            message.setStyleSheet("color: white; font-size: 13px;")
+            message.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            p_layout.addWidget(message)
+            
+            # Aperçu de l'icône
+            icon_preview = QLabel()
+            icon_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            icon_preview.setFixedSize(80, 80)
+            pixmap = QPixmap(icon_path)
+            if not pixmap.isNull():
+                scaled = pixmap.scaled(70, 70, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                icon_preview.setPixmap(scaled)
+            p_layout.addWidget(icon_preview, alignment=Qt.AlignmentFlag.AlignCenter)
+            
+            # Boutons
+            btn_layout = QHBoxLayout()
+            
+            no_btn = QPushButton("Non, choisir")
+            no_btn.setFixedHeight(35)
+            no_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: rgba(100, 100, 100, 100);
+                    border: 1px solid rgba(150, 150, 150, 150);
+                    border-radius: 6px;
+                    color: white;
+                }
+                QPushButton:hover {
+                    background-color: rgba(150, 150, 150, 150);
+                }
+            """)
+            no_btn.clicked.connect(proposal_dialog.reject)
+            
+            yes_btn = QPushButton("✓ Utiliser")
+            yes_btn.setFixedHeight(35)
+            yes_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: rgba(100, 200, 100, 100);
+                    border: 1px solid rgba(100, 255, 100, 150);
+                    border-radius: 6px;
+                    color: white;
+                }
+                QPushButton:hover {
+                    background-color: rgba(100, 255, 100, 150);
+                }
+            """)
+            yes_btn.clicked.connect(proposal_dialog.accept)
+            
+            btn_layout.addWidget(no_btn)
+            btn_layout.addWidget(yes_btn)
+            p_layout.addLayout(btn_layout)
+            
+            return proposal_dialog.exec() == QDialog.DialogCode.Accepted
+        
+        def apply_icon_to_dialog(icon_path):
+            """Applique l'icône trouvée au dialogue (preview + chemin)"""
+            self.dialog_temp_image_path = icon_path
+            
+            # Mettre le chemin de l'icône dans name_input
+            name_input.setText(icon_path)
+            
+            # Afficher l'aperçu
+            if self.dialog_image_preview:
+                pixmap = QPixmap(icon_path)
+                if not pixmap.isNull():
+                    scaled_pixmap = pixmap.scaled(
+                        100, 100,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation
+                    )
+                    
+                    rounded = QPixmap(100, 100)
+                    rounded.fill(Qt.GlobalColor.transparent)
+                    painter = QPainter(rounded)
+                    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                    
+                    path = QPainterPath()
+                    path.addEllipse(0, 0, 100, 100)
+                    painter.setClipPath(path)
+                    
+                    x = (100 - scaled_pixmap.width()) // 2
+                    y = (100 - scaled_pixmap.height()) // 2
+                    painter.drawPixmap(x, y, scaled_pixmap)
+                    painter.end()
+                    
+                    self.dialog_image_preview.setPixmap(rounded)
+                    self.dialog_image_preview.setVisible(True)
+                    
+                    if self.dialog_remove_image_button:
+                        self.dialog_remove_image_button.setVisible(True)
+                    
+                    print(f"Icône d'application utilisée: {icon_path}")
+        
         def open_image_selector():
             """Ouvre un sélecteur de fichier pour choisir une image"""
+            
+            # D'abord, vérifier si value_input contient une commande d'application
+            command_text = value_input.toPlainText().strip()
+            icon_path = find_app_icon(command_text) if command_text else None
+            
+            # Si une icône valide est trouvée, proposer à l'utilisateur
+            if icon_path:
+                if show_icon_proposal_dialog(icon_path):
+                    apply_icon_to_dialog(icon_path)
+                    return
+            
+            # Comportement normal : ouvrir le sélecteur de fichiers
             start_dir = get_pictures_directory()
             file_path, _ = QFileDialog.getOpenFileName(
                 dialog,
