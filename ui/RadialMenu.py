@@ -103,9 +103,11 @@ class RadialMenu(QWidget):
         # self.hover_close_timer = QTimer(self)  # Timer pour fermeture retardée
         # self.hover_close_timer.setSingleShot(True)
         # self.hover_close_timer.timeout.connect(self.check_hover_submenu_close)
-        self.special_buttons_by_5 = ["➖", "↔️", "⚙️", "🔧", "➕"]
-        self.special_buttons_by_6 = ["➖", "📦", "↔️", "⚙️", "🔧", "➕"]
-        self.special_buttons_by_7 = ["➖", "📋", "💾", "↔️", "⚙️", "🔧", "➕"]
+        self.special_buttons_by_numbers = {
+            5 : ["➖", "↔️", "⚙️", "🔧", "➕"],
+            6 : ["➖", "📦", "↔️", "⚙️", "🔧", "➕"],
+            7 : ["➖", "📋", "💾", "↔️", "⚙️", "🔧", "➕"]
+        }
         # === ANIMATION BOUTONS SPÉCIAUX (hover sur ➕) ===
         self.special_buttons_revealed = False  # Les boutons spéciaux sont-ils complètement révélés ?
         self.special_animating = False  # Animation en cours ?
@@ -190,7 +192,6 @@ class RadialMenu(QWidget):
                 # Si c'est un bouton spécial sans tooltip, utiliser le tooltip par défaut
                 if label in special_tooltips and not tooltip:
                     tooltip = special_tooltips[label]
-                
                 # Stocker la couleur, l'action et le label pour ce bouton
                 color = action_colors.get(action, None)
                 self.button_colors.append(color)
@@ -222,12 +223,7 @@ class RadialMenu(QWidget):
                     btn.setIconSize(QSize(32, 32))
                 
                 # Les boutons spéciaux (➕ 🔧 ➖) ont un fond transparent MAIS coloré au hover
-                if self.nb_icons_menu == 5:
-                    special_buttons = self.special_buttons_by_5
-                elif self.nb_icons_menu == 6:   
-                    special_buttons = self.special_buttons_by_6
-                elif self.nb_icons_menu == 7:   
-                    special_buttons = self.special_buttons_by_7
+                special_buttons = self.special_buttons_by_numbers[self.nb_icons_menu]
                 if label in special_buttons:
                     # Stocker l'index du bouton ➕ et des autres boutons spéciaux
                     if label == "➕":
@@ -377,13 +373,11 @@ class RadialMenu(QWidget):
             self.resize(self.widget_size, self.widget_size)
             # Recentrer
             self.move(self.x - self.widget_size // 2, self.y - self.widget_size // 2)
-        
         # Réinitialiser le hover
         self.hovered_action = None
         
         # Créer les nouveaux boutons
         self.create_buttons(buttons)
-        
         # Restaurer l'état
         if was_visible:
             self.set_widget_opacity(current_opacity)
@@ -392,7 +386,6 @@ class RadialMenu(QWidget):
         
         # CRITIQUE: Réactiver le mouse tracking après la reconstruction
         self.setMouseTracking(True)
-        
         # Repositionner la fenêtre tooltip
         self.update_tooltip_position()
         
@@ -637,7 +630,6 @@ class RadialMenu(QWidget):
         
         if not visible_indices:
             return
-        
         num_visible = len(visible_indices)
         
         # Recalculer le rayon en fonction du nombre de boutons visibles
@@ -673,10 +665,8 @@ class RadialMenu(QWidget):
                 btn.setIconSize(QSize(48, 48))
             else:
                 btn.setIconSize(QSize(32, 32))
-        
         # Mettre à jour la position de la tooltip
         self.update_tooltip_position()
-        
         # Redessiner
         self.update()
     
@@ -1034,7 +1024,6 @@ class RadialMenu(QWidget):
             self.start_special_reveal_animation()
         if self.focused_index == 0:
             self.start_special_hide_animation()
-        
         # Première utilisation : initialiser le focus
         if not self.keyboard_used:
             self.keyboard_used = True
@@ -1343,12 +1332,7 @@ class RadialMenu(QWidget):
                     btn.setIconSize(QSize(int(32 * self.scale_factor), int(32 * self.scale_factor)))
                 
                 # Mettre à jour le style avec le border-radius scalé
-                if self.nb_icons_menu == 5:
-                    special_buttons = self.special_buttons_by_5
-                elif self.nb_icons_menu == 6:  
-                    special_buttons = self.special_buttons_by_6
-                elif self.nb_icons_menu == 7:   
-                    special_buttons = self.special_buttons_by_7
+                special_buttons = self.special_buttons_by_numbers[self.nb_icons_menu]
                 if label in special_buttons:
                     btn.setStyleSheet(f"""
                         QPushButton {{
