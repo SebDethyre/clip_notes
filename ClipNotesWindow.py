@@ -857,9 +857,17 @@ class ClipNotesWindow(QMainWindow):
         remove_image_button.installEventFilter(self)
         self.dialog_remove_image_button = remove_image_button
         
+        # Variable pour tracker si l'icône a été set automatiquement (doit être défini avant remove_image)
+        auto_icon_applied = [False]  # Liste pour pouvoir modifier dans les closures
+        last_auto_icon_path = [None]  # Tracker le dernier chemin d'icône appliqué
+        manual_override = [False]  # True si l'utilisateur a choisi manuellement via FileDialog
+        
         def remove_image():
             """Supprime l'aperçu de l'image et vide le champ nom"""
             self.dialog_temp_image_path = None
+            auto_icon_applied[0] = False  # Réinitialiser le flag
+            last_auto_icon_path[0] = None  # Réinitialiser le chemin
+            manual_override[0] = False  # Réactiver la détection auto
             if self.dialog_image_preview:
                 self.dialog_image_preview.setVisible(False)
                 self.dialog_image_preview.clear()
@@ -959,6 +967,44 @@ class ClipNotesWindow(QMainWindow):
             # 3 Dernier recours : HOME
             return home
         
+        def apply_icon_to_dialog(icon_path):
+            """Applique l'icône trouvée au dialogue (preview + chemin)"""
+            self.dialog_temp_image_path = icon_path
+            
+            # Mettre le chemin de l'icône dans name_input
+            name_input.setText(icon_path)
+            
+            # Afficher l'aperçu
+            if self.dialog_image_preview:
+                pixmap = QPixmap(icon_path)
+                if not pixmap.isNull():
+                    scaled_pixmap = pixmap.scaled(
+                        100, 100,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation
+                    )
+                    
+                    rounded = QPixmap(100, 100)
+                    rounded.fill(Qt.GlobalColor.transparent)
+                    painter = QPainter(rounded)
+                    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                    
+                    path = QPainterPath()
+                    path.addEllipse(0, 0, 100, 100)
+                    painter.setClipPath(path)
+                    
+                    x = (100 - scaled_pixmap.width()) // 2
+                    y = (100 - scaled_pixmap.height()) // 2
+                    painter.drawPixmap(x, y, scaled_pixmap)
+                    painter.end()
+                    
+                    self.dialog_image_preview.setPixmap(rounded)
+                    self.dialog_image_preview.setVisible(True)
+                    
+                    if self.dialog_remove_image_button:
+                        self.dialog_remove_image_button.setVisible(True)
+                    
+                    print(f"Icône d'application utilisée: {icon_path}")
         def find_app_icon(app_name):
             """Cherche l'icône d'une application installée"""
             if not app_name:
@@ -1035,14 +1081,37 @@ class ClipNotesWindow(QMainWindow):
         icon_check_timer.setSingleShot(True)
         
         def check_for_app_icon():
-            """Vérifie si une icône existe et met à jour le style du bouton"""
+            """Vérifie si une icône existe et met à jour le bouton + miniature en temps réel"""
+            # Si l'utilisateur a choisi manuellement, ne pas interférer
+            if manual_override[0]:
+                return
+            
             command_text = value_input.toPlainText().strip()
             if command_text:
                 icon_path = find_app_icon(command_text)
                 if icon_path:
                     image_button.setStyleSheet(image_button_style_highlight)
+                    # Set ou mettre à jour la miniature si l'icône a changé
+                    if icon_path != last_auto_icon_path[0]:
+                        apply_icon_to_dialog(icon_path)
+                        auto_icon_applied[0] = True
+                        last_auto_icon_path[0] = icon_path
                     return
+            
+            # Aucune icône trouvée - réinitialiser
             image_button.setStyleSheet(image_button_style_normal)
+            
+            # Si une icône avait été set automatiquement, la virer
+            if auto_icon_applied[0]:
+                auto_icon_applied[0] = False
+                last_auto_icon_path[0] = None
+                self.dialog_temp_image_path = None
+                if self.dialog_image_preview:
+                    self.dialog_image_preview.setVisible(False)
+                    self.dialog_image_preview.clear()
+                if self.dialog_remove_image_button:
+                    self.dialog_remove_image_button.setVisible(False)
+                name_input.clear()
         
         def on_value_text_changed():
             """Déclenche la vérification avec un délai (debounce)"""
@@ -1057,12 +1126,18 @@ class ClipNotesWindow(QMainWindow):
             check_for_app_icon()
         
         def show_icon_proposal_dialog(icon_path):
-            """Affiche un dialogue proposant d'utiliser l'icône trouvée"""
+            """
+            Affiche un dialogue proposant d'utiliser l'icône trouvée.
+            Retourne: "use" si accepté, "choose" si veut choisir autre, "cancel" si fermé
+            """
             proposal_dialog = QDialog(dialog)
             proposal_dialog.setWindowTitle("🖼️ Icône détectée")
             proposal_dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
             proposal_dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
             proposal_dialog.setFixedSize(300, 280)
+            
+            # Variable pour tracker le choix
+            user_choice = ["cancel"]  # Par défaut, cancel (croix ou Escape)
             
             # Palette sombre
             palette = QPalette()
@@ -1093,6 +1168,14 @@ class ClipNotesWindow(QMainWindow):
             # Boutons
             btn_layout = QHBoxLayout()
             
+            def on_choose():
+                user_choice[0] = "choose"
+                proposal_dialog.reject()
+            
+            def on_use():
+                user_choice[0] = "use"
+                proposal_dialog.accept()
+            
             no_btn = QPushButton("Non, choisir")
             no_btn.setFixedHeight(35)
             no_btn.setStyleSheet("""
@@ -1106,7 +1189,7 @@ class ClipNotesWindow(QMainWindow):
                     background-color: rgba(150, 150, 150, 150);
                 }
             """)
-            no_btn.clicked.connect(proposal_dialog.reject)
+            no_btn.clicked.connect(on_choose)
             
             yes_btn = QPushButton("✓ Utiliser")
             yes_btn.setFixedHeight(35)
@@ -1121,65 +1204,38 @@ class ClipNotesWindow(QMainWindow):
                     background-color: rgba(100, 255, 100, 150);
                 }
             """)
-            yes_btn.clicked.connect(proposal_dialog.accept)
+            yes_btn.clicked.connect(on_use)
             
             btn_layout.addWidget(no_btn)
             btn_layout.addWidget(yes_btn)
             p_layout.addLayout(btn_layout)
             
-            return proposal_dialog.exec() == QDialog.DialogCode.Accepted
+            proposal_dialog.exec()
+            return user_choice[0]
         
-        def apply_icon_to_dialog(icon_path):
-            """Applique l'icône trouvée au dialogue (preview + chemin)"""
-            self.dialog_temp_image_path = icon_path
-            
-            # Mettre le chemin de l'icône dans name_input
-            name_input.setText(icon_path)
-            
-            # Afficher l'aperçu
-            if self.dialog_image_preview:
-                pixmap = QPixmap(icon_path)
-                if not pixmap.isNull():
-                    scaled_pixmap = pixmap.scaled(
-                        100, 100,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation
-                    )
-                    
-                    rounded = QPixmap(100, 100)
-                    rounded.fill(Qt.GlobalColor.transparent)
-                    painter = QPainter(rounded)
-                    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                    
-                    path = QPainterPath()
-                    path.addEllipse(0, 0, 100, 100)
-                    painter.setClipPath(path)
-                    
-                    x = (100 - scaled_pixmap.width()) // 2
-                    y = (100 - scaled_pixmap.height()) // 2
-                    painter.drawPixmap(x, y, scaled_pixmap)
-                    painter.end()
-                    
-                    self.dialog_image_preview.setPixmap(rounded)
-                    self.dialog_image_preview.setVisible(True)
-                    
-                    if self.dialog_remove_image_button:
-                        self.dialog_remove_image_button.setVisible(True)
-                    
-                    print(f"Icône d'application utilisée: {icon_path}")
+
         
         def open_image_selector():
             """Ouvre un sélecteur de fichier pour choisir une image"""
             
-            # D'abord, vérifier si value_input contient une commande d'application
-            command_text = value_input.toPlainText().strip()
-            icon_path = find_app_icon(command_text) if command_text else None
-            
-            # Si une icône valide est trouvée, proposer à l'utilisateur
-            if icon_path:
-                if show_icon_proposal_dialog(icon_path):
-                    apply_icon_to_dialog(icon_path)
-                    return
+            # Si aucune miniature n'est déjà visible, proposer l'icône détectée
+            if not (self.dialog_image_preview and self.dialog_image_preview.isVisible()):
+                # Vérifier si value_input contient une commande d'application
+                command_text = value_input.toPlainText().strip()
+                icon_path = find_app_icon(command_text) if command_text else None
+                
+                # Si une icône valide est trouvée, proposer à l'utilisateur
+                if icon_path:
+                    choice = show_icon_proposal_dialog(icon_path)
+                    if choice == "use":
+                        apply_icon_to_dialog(icon_path)
+                        auto_icon_applied[0] = True
+                        last_auto_icon_path[0] = icon_path
+                        return
+                    elif choice == "cancel":
+                        # Croix ou Escape : ne rien faire
+                        return
+                    # choice == "choose" : continuer vers le sélecteur de fichiers
             
             # Comportement normal : ouvrir le sélecteur de fichiers
             start_dir = get_pictures_directory()
@@ -1191,6 +1247,11 @@ class ClipNotesWindow(QMainWindow):
             )
             
             if file_path:
+                # L'utilisateur a choisi manuellement, désactiver la détection auto
+                auto_icon_applied[0] = False
+                last_auto_icon_path[0] = None
+                manual_override[0] = True  # Protéger le choix manuel
+                
                 # Stocker le chemin temporairement (ne pas créer le thumbnail maintenant)
                 self.dialog_temp_image_path = file_path
                 
