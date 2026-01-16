@@ -71,64 +71,36 @@ class ClipNotesWindow(QMainWindow):
                 background-color: rgba(255, 255, 255, 60);
             }
         """
-
         self.special_buttons_by_number = {
             5 : ["➖", "↔️", "⚙️", "🔧", "➕"],
             6 : ["➖", "📦", "↔️", "⚙️", "🔧", "➕"],
             7 : ["➖", "📋", "💾", "↔️", "⚙️", "🔧", "➕"]
         }
-        # Attribution des tooltips aux boutons de menus "fixes"
-        self.special_button_tooltips_by_number = {
-            5 : {    
-                    "➕": "Ajouter",
-                    "🔧": "Modifier",
-                    "⚙️": "Configurer",
-                    "↔️": "Ordonner",
-                    "➖": "Supprimer",
-                },
-            6 : {  
-                    "➕": "Ajouter",
-                    "🔧": "Modifier",
-                    "⚙️": "Configurer",
-                    "↔️": "Ordonner",
-                    "📦": "Stocker",
-                    "➖": "Supprimer",
-                },
-            7 : {  
-                    "➕": "Ajouter",
-                    "🔧": "Modifier",
-                    "⚙️": "Configurer",
-                    "↔️": "Ordonner",
-                    "💾": "Stocker",
-                    "📋": "Stock",
-                    "➖": "Supprimer",
-                }
-        }
         # Attribution des fonctions aux boutons de menus "fixes"
-        self.actions_map_sub_by_number = {
+        self.buttons_actions_by_number = {
             5 : {
-                    "➕": [(self.new_clip,    [x,y], {}), self.special_button_tooltips_by_number[5]["➕"], None],
-                    "🔧": [(self.update_clip, [x,y], {}), self.special_button_tooltips_by_number[5]["🔧"], None],
-                    "⚙️": [(self.show_config_dialog, [x,y], {}), self.special_button_tooltips_by_number[5]["⚙️"], None],
-                    "↔️": [(self.show_reorder_dialog, [x,y], {}), self.special_button_tooltips_by_number[5]["↔️"], None],
-                    "➖": [(self.show_storage_menu, [x,y], {}), self.special_button_tooltips_by_number[5]["➖"], None],
+                    "➕": [(self.new_clip,    [x,y], {}), "Ajouter", None],
+                    "🔧": [(self.update_clip, [x,y], {}), "Modifier", None],
+                    "⚙️": [(self.show_config_dialog, [x,y], {}), "Configurer", None],
+                    "↔️": [(self.show_reorder_dialog, [x,y], {}), "Ordonner", None],
+                    "➖": [(self.show_storage_menu, [x,y], {}), "Supprimer", None],
                 },
             6 : {
-                    "➕": [(self.new_clip,    [x,y], {}), self.special_button_tooltips_by_number[6]["➕"], None],
-                    "🔧": [(self.update_clip, [x,y], {}), self.special_button_tooltips_by_number[6]["🔧"], None],
-                    "⚙️": [(self.show_config_dialog, [x,y], {}), self.special_button_tooltips_by_number[6]["⚙️"], None],
-                    "↔️": [(self.show_reorder_dialog, [x,y], {}), self.special_button_tooltips_by_number[6]["↔️"], None],
-                    "📦": [(self.show_storage_menu, [x,y], {}), self.special_button_tooltips_by_number[6]["📦"], None],
-                    "➖": [(self.delete_clip, [x,y], {}), self.special_button_tooltips_by_number[6]["➖"], None],
+                    "➕": [(self.new_clip,    [x,y], {}), "Ajouter", None],
+                    "🔧": [(self.update_clip, [x,y], {}), "Modifier", None],
+                    "⚙️": [(self.show_config_dialog, [x,y], {}), "Configurer", None],
+                    "↔️": [(self.show_reorder_dialog, [x,y], {}), "Ordonner", None],
+                    "📦": [(self.show_storage_menu, [x,y], {}), "Stocker", None],
+                    "➖": [(self.delete_clip, [x,y], {}), "Supprimer", None],
                 },
             7 : {
-                    "➕": [(self.new_clip,    [x,y], {}), self.special_button_tooltips_by_number[7]["➕"], None],
-                    "🔧": [(self.update_clip, [x,y], {}), self.special_button_tooltips_by_number[7]["🔧"], None],
-                    "⚙️": [(self.show_config_dialog, [x,y], {}), self.special_button_tooltips_by_number[7]["⚙️"], None],
-                    "↔️": [(self.show_reorder_dialog, [x,y], {}), self.special_button_tooltips_by_number[7]["↔️"], None],
-                    "💾": [(self.store_clip_mode, [x,y], {}), self.special_button_tooltips_by_number[7]["💾"], None],
-                    "📋": [(self.show_stored_clips_dialog, [x,y], {}), self.special_button_tooltips_by_number[7]["📋"], None],
-                    "➖": [(self.delete_clip, [x,y], {}), self.special_button_tooltips_by_number[7]["➖"], None],
+                    "➕": [(self.new_clip,    [x,y], {}), "Ajouter", None],
+                    "🔧": [(self.update_clip, [x,y], {}), "Modifier", None],
+                    "⚙️": [(self.show_config_dialog, [x,y], {}), "Configurer", None],
+                    "↔️": [(self.show_reorder_dialog, [x,y], {}), "Ordonner", None],
+                    "💾": [(self.store_clip_mode, [x,y], {}), "Stocker", None],
+                    "📋": [(self.show_stored_clips_dialog, [x,y], {}), "Stock", None],
+                    "➖": [(self.delete_clip, [x,y], {}), "Supprimer", None],
                 }
         }
 
@@ -391,7 +363,7 @@ class ClipNotesWindow(QMainWindow):
         self.buttons_sub = []
         x, y = self.x, self.y
     
-        self.actions_map_sub = self.actions_map_sub_by_number[self.nb_icons_menu]
+        self.actions_map_sub = self.buttons_actions_by_number[self.nb_icons_menu]
         special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
         populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
         # Séparer les boutons spéciaux des autres
@@ -2692,7 +2664,7 @@ class ClipNotesWindow(QMainWindow):
         self.buttons_sub = []
         
         # Définir les tooltips pour les boutons spéciaux
-        self.actions_map_sub = self.actions_map_sub_by_number[self.nb_icons_menu]
+        self.actions_map_sub = self.buttons_actions_by_number[self.nb_icons_menu]
         populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
         # Séparer les boutons spéciaux des autres
         special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
