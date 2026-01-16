@@ -35,6 +35,7 @@ class ClipNotesWindow(QMainWindow):
         self.zone_hover_opacity = 45
         self.show_central_icon = True
         self.nb_icons_menu = 5
+        self.auto_apply_icon = True  # Auto-appliquer l'icône détectée
 
         self.menu_opacity = 100
         self.menu_background_color = (50, 50, 50)
@@ -132,6 +133,7 @@ class ClipNotesWindow(QMainWindow):
             self.zone_hover_opacity = config.get('zone_hover_opacity', self.zone_hover_opacity)
             self.show_central_icon = config.get('show_central_icon', self.show_central_icon)
             self.nb_icons_menu = config.get('nb_icons_menu', self.nb_icons_menu)
+            self.auto_apply_icon = config.get('auto_apply_icon', self.auto_apply_icon)
             self.menu_opacity = config.get('menu_opacity', self.menu_opacity)
             self.neon_speed = config.get('neon_speed', self.neon_speed)
 
@@ -179,6 +181,7 @@ class ClipNotesWindow(QMainWindow):
             'zone_hover_opacity': self.zone_hover_opacity,
             'show_central_icon': self.show_central_icon,
             'nb_icons_menu': self.nb_icons_menu,
+            'auto_apply_icon': self.auto_apply_icon,
             'action_zone_colors': self.action_zone_colors,
             'menu_opacity': self.menu_opacity,
             'menu_background_color': self.menu_background_color,
@@ -248,7 +251,7 @@ class ClipNotesWindow(QMainWindow):
                 if tooltip_text and self.dialog_help_label:
                     self.dialog_help_label.setText(tooltip_text)
                     self.dialog_help_label.setVisible(True)
-                    if hasattr(self, '_dialog_help_browser') and self.dialog_help_browser:
+                    if hasattr(self, 'dialog_help_browser') and self.dialog_help_browser:
                         self.dialog_help_browser.setVisible(False)
             # Vérifier les autres widgets (avec help_text)
             else:
@@ -260,7 +263,7 @@ class ClipNotesWindow(QMainWindow):
                     line_count = help_text.count('\n') + 1
                     is_multiline = line_count > 1
                     
-                    if is_multiline and hasattr(self, '_dialog_help_browser') and self.dialog_help_browser:
+                    if is_multiline and hasattr(self, 'dialog_help_browser') and self.dialog_help_browser:
                         # Multilignes → utiliser le QTextBrowser
                         if html_string:
                             self.dialog_help_browser.setHtml(html_string)
@@ -280,7 +283,7 @@ class ClipNotesWindow(QMainWindow):
                             self.dialog_help_label.setTextFormat(Qt.TextFormat.PlainText)
                             self.dialog_help_label.setText(help_text)
                         self.dialog_help_label.setVisible(True)
-                        if hasattr(self, '_dialog_help_browser') and self.dialog_help_browser:
+                        if hasattr(self, 'dialog_help_browser') and self.dialog_help_browser:
                             self.dialog_help_browser.setVisible(False)
         elif event.type() == QEvent.Type.Leave:
             # Vider et cacher les widgets d'aide
@@ -288,7 +291,7 @@ class ClipNotesWindow(QMainWindow):
                 self.dialog_help_label.setTextFormat(Qt.TextFormat.PlainText)
                 self.dialog_help_label.setText("")
                 self.dialog_help_label.setVisible(True)
-            if hasattr(self, '_dialog_help_browser') and self.dialog_help_browser:
+            if hasattr(self, 'dialog_help_browser') and self.dialog_help_browser:
                 self.dialog_help_browser.clear()
                 self.dialog_help_browser.setVisible(False)
         elif event.type() == QEvent.Type.MouseButtonPress:
@@ -717,8 +720,35 @@ class ClipNotesWindow(QMainWindow):
         image_button.setProperty("help_text", "Attribuer une image")
         image_button.installEventFilter(self)
         
-        buttons_row.addWidget(emoji_button)
-        buttons_row.addWidget(image_button)
+        # Checkbox pour auto-appliquer l'icône détectée
+        auto_apply_checkbox = QCheckBox("Icône auto")
+        auto_apply_checkbox.setChecked(self.auto_apply_icon)
+        auto_apply_checkbox.setProperty("help_text", "Appliquer automatiquement l'icône détectée")
+        auto_apply_checkbox.setStyleSheet("""
+            QCheckBox {
+                color: white;
+                font-size: 11px;
+            }
+            QCheckBox::indicator {
+                width: 14px;
+                height: 14px;
+            }
+            QCheckBox::indicator:unchecked {
+                background-color: rgba(255, 255, 255, 30);
+                border: 1px solid rgba(255, 255, 255, 60);
+                border-radius: 3px;
+            }
+            QCheckBox::indicator:checked {
+                background-color: rgba(100, 200, 100, 150);
+                border: 1px solid rgba(100, 255, 100, 200);
+                border-radius: 3px;
+            }
+        """)
+        
+        # Répartition : Emoji et Image prennent chacun 2 parts, Auto prend 1 part
+        buttons_row.addWidget(emoji_button, 2)
+        buttons_row.addWidget(image_button, 2)
+        buttons_row.addWidget(auto_apply_checkbox, 1, Qt.AlignmentFlag.AlignCenter)
 
         slider_container = QWidget()
         slider_layout = QVBoxLayout(slider_container)
@@ -1091,6 +1121,9 @@ class ClipNotesWindow(QMainWindow):
                 icon_path = find_app_icon(command_text)
                 if icon_path:
                     image_button.setStyleSheet(image_button_style_highlight)
+                    # Si le toggle auto-apply est désactivé, ne pas appliquer l'icône
+                    if not auto_apply_checkbox.isChecked():
+                        return
                     # Set ou mettre à jour la miniature si l'icône a changé
                     if icon_path != last_auto_icon_path[0]:
                         apply_icon_to_dialog(icon_path)
@@ -1098,11 +1131,12 @@ class ClipNotesWindow(QMainWindow):
                         last_auto_icon_path[0] = icon_path
                     return
             
-            # Aucune icône trouvée - réinitialiser
+            # Aucune icône trouvée - réinitialiser le style du bouton
             image_button.setStyleSheet(image_button_style_normal)
             
-            # Si une icône avait été set automatiquement, la virer
-            if auto_icon_applied[0]:
+            # Si une icône avait été set automatiquement ET que le toggle est activé, la virer
+            # (Si le toggle est off, on ne touche pas à la miniature)
+            if auto_icon_applied[0] and auto_apply_checkbox.isChecked():
                 auto_icon_applied[0] = False
                 last_auto_icon_path[0] = None
                 self.dialog_temp_image_path = None
@@ -1120,6 +1154,16 @@ class ClipNotesWindow(QMainWindow):
         
         icon_check_timer.timeout.connect(check_for_app_icon)
         value_input.textChanged.connect(on_value_text_changed)
+        
+        # Connexion du toggle auto-apply (après définition de check_for_app_icon)
+        def on_auto_apply_toggled(checked):
+            self.auto_apply_icon = checked
+            self.save_config()
+            # Relancer la détection si on active
+            if checked:
+                check_for_app_icon()
+        
+        auto_apply_checkbox.toggled.connect(on_auto_apply_toggled)
         
         # Vérifier immédiatement si une icône existe pour la valeur initiale (mode modification)
         if initial_value:
