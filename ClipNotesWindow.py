@@ -717,13 +717,14 @@ class ClipNotesWindow(QMainWindow):
         
         image_button = QPushButton("🖼️ Image")
         image_button.setFixedHeight(30)
-        image_button.setProperty("help_text", "Attribuer une image")
+        image_button.setProperty("help_text", "Attribuer une image ( 🟩 : icône trouvée )")
         image_button.installEventFilter(self)
         
         # Checkbox pour auto-appliquer l'icône détectée
         auto_apply_checkbox = QCheckBox("Icône auto")
         auto_apply_checkbox.setChecked(self.auto_apply_icon)
         auto_apply_checkbox.setProperty("help_text", "Appliquer automatiquement l'icône détectée")
+        auto_apply_checkbox.installEventFilter(self)
         auto_apply_checkbox.setStyleSheet("""
             QCheckBox {
                 color: white;
