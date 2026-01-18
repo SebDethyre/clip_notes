@@ -1,6 +1,6 @@
 import math
 from PyQt6.QtGui import QPainter, QColor, QIcon, QRadialGradient, QFont, QPen, QCursor
-from PyQt6.QtCore import Qt, QSize, QTimer, QRect, QEasingCurve, QVariantAnimation, QEvent, QPointF
+from PyQt6.QtCore import Qt, QSize, QTimer, QRect, QEasingCurve, QVariantAnimation, QEvent, QPointF, QRectF
 from PyQt6.QtWidgets import QApplication, QWidget, QPushButton
 from PyQt6.QtWidgets import QLabel
 
@@ -64,7 +64,7 @@ class RadialMenu(QWidget):
         self.scale_factor = 0.1  # Démarrer petit pour l'animation
 
         self.current_index = 0
-
+        self.current_grabed_clip_label = None
 
         self.action_zone_colors = action_zone_colors
         self.nb_icons_menu = nb_icons_menu
@@ -85,6 +85,13 @@ class RadialMenu(QWidget):
         # Navigation au clavier
         self.focused_index = -1  # -1 = pas de focus visible
         self.keyboard_used = False  # Pour savoir si le clavier a été utilisé
+        
+        # === DRAG & DROP SUR LE CERCLE ===
+        self.reorder_mode = False  # Mode réordonnancement activé
+        self.drag_active = False  # Un drag est en cours
+        self.dragged_button_index = None  # Index du bouton en cours de drag
+        self.drop_indicator_angle = None  # Angle où afficher l'indicateur de drop (en degrés)
+        self.drop_target_info = None  # Info sur où insérer: (target_index, insert_before)
         
         # Activer le tracking de la souris pour détecter le hover
         self.setMouseTracking(True)
@@ -207,6 +214,8 @@ class RadialMenu(QWidget):
                 btn = QPushButton("", self)
                 # Activer le hover tracking pour ce bouton
                 btn.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+                # Activer le mouse tracking pour recevoir les événements MouseMove
+                btn.setMouseTracking(True)
                 
                 # Déterminer le type de label et utiliser la fonction appropriée
                 if "/" in label:
@@ -301,14 +310,27 @@ class RadialMenu(QWidget):
         
         for action, emoji in badge_info.items():
             badge = QLabel(emoji, self)
-            badge.setStyleSheet("""
-                QLabel {
-                    background-color: rgba(255, 255, 255, 80);
-                    border-radius: 17px;
-                    padding: 4px;
-                    font-size: 22px;
-                }
-            """)
+            # Utiliser la couleur de la zone d'action avec son opacité
+            if self.action_zone_colors and action in self.action_zone_colors:
+                r, g, b = self.action_zone_colors[action]
+                opacity = self.zone_hover_opacity if self.zone_hover_opacity else 120
+                badge.setStyleSheet(f"""
+                    QLabel {{
+                        background-color: rgba({r}, {g}, {b}, {opacity});
+                        border-radius: 17px;
+                        padding: 4px;
+                        font-size: 22px;
+                    }}
+                """)
+            else:
+                badge.setStyleSheet("""
+                    QLabel {
+                        background-color: rgba(255, 255, 255, 80);
+                        border-radius: 17px;
+                        padding: 4px;
+                        font-size: 22px;
+                    }
+                """)
             badge.setFixedSize(35, 35)
             badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
             badge.setVisible(False)
@@ -348,6 +370,14 @@ class RadialMenu(QWidget):
         self.special_reveal_timer.stop()
         self.special_hide_timer.stop()
         self.mouse_in_special_zone = False  # Réinitialiser le tracking de zone
+        
+        # Réinitialiser l'état du drag & drop
+        self.drag_active = False
+        self.dragged_button_index = None
+        self.drop_indicator_angle = None
+        self.drop_target_info = None
+        self.current_grabed_clip_label = None
+        # Note: on ne réinitialise PAS reorder_mode ici car il est géré par app_instance
         
         # Fermer le sous-menu hover s'il existe
         if self.hover_submenu is not None:
@@ -398,11 +428,43 @@ class RadialMenu(QWidget):
 
     def eventFilter(self, watched, event):
         """Gère les événements de hover sur les boutons"""
+        
+        # === GESTION DU DRAG & DROP EN MODE RÉORDONNANCEMENT ===
+        if self.reorder_mode and watched in self.buttons:
+            button_index = self.buttons.index(watched)
+            label = self.button_labels[button_index] if button_index < len(self.button_labels) else ""
+            special_buttons = self.special_buttons_by_numbers[self.nb_icons_menu]
+            is_clip = label not in special_buttons
+            
+            if event.type() == QEvent.Type.MouseButtonPress and is_clip:
+                if event.button() == Qt.MouseButton.LeftButton:
+                    self.current_grabed_clip_label = label
+                    # Démarrer le drag
+                    self.drag_active = True
+                    self.dragged_button_index = button_index
+                    self.drop_indicator_angle = None
+                    self.drop_target_info = None
+                    self.setCursor(Qt.CursorShape.ClosedHandCursor)
+                    # Masquer le tooltip pendant le drag
+                    self.tooltip_window.hide()
+                    # Capturer tous les événements souris
+                    self.grabMouse()
+                    self.update()
+                    return True  # Consommer l'événement
+        
         if event.type() == QEvent.Type.Enter:
             # Trouver l'index du bouton survolé
             if watched in self.buttons and self.show_central_icon:
                 button_index = self.buttons.index(watched)
                 self.hovered_button_index = button_index
+                
+                # === Mode réordonnancement : changer le curseur pour les clips ===
+                if self.reorder_mode and not self.drag_active:
+                    label = self.button_labels[button_index] if button_index < len(self.button_labels) else ""
+                    special_buttons = self.special_buttons_by_numbers[self.nb_icons_menu]
+                    if label not in special_buttons:
+                        # C'est un clip, montrer qu'on peut l'attraper
+                        self.setCursor(Qt.CursorShape.OpenHandCursor)
                 
                 # Vérifier si on entre dans la zone spéciale
                 all_special_indices = self.special_button_indices + ([self.plus_button_index] if self.plus_button_index is not None else [])
@@ -421,8 +483,8 @@ class RadialMenu(QWidget):
                 if button_index == self.storage_button_index:
                     self.show_storage_submenu(watched)
                 
-                # Créer l'icône centrale pour ce bouton
-                if button_index < len(self.button_labels):
+                # Créer l'icône centrale pour ce bouton (sauf pendant le drag)
+                if not self.drag_active and button_index < len(self.button_labels):
                     label = self.button_labels[button_index]
                     # Créer un pixmap adapté au type de label
                     if "/" in label:
@@ -436,8 +498,8 @@ class RadialMenu(QWidget):
                         self.central_icon = text_pixmap(label, 48)
                     self.update()
             
-            # Afficher le message de hover dans la fenêtre tooltip
-            if watched in self.tooltips:
+            # Afficher le message de hover dans la fenêtre tooltip (sauf pendant le drag)
+            if not self.drag_active and watched in self.tooltips:
                 tooltip_data = self.tooltips[watched]
                 # Supporter l'ancien format (string) et le nouveau (tuple)
                 if isinstance(tooltip_data, tuple):
@@ -449,14 +511,19 @@ class RadialMenu(QWidget):
                 self.update_tooltip_position()
                 
         elif event.type() == QEvent.Type.Leave:
-            # Effacer l'icône centrale quand on quitte le bouton
-            if watched in self.buttons and self.show_central_icon:
+            # Effacer l'icône centrale quand on quitte le bouton (sauf pendant le drag)
+            if watched in self.buttons and self.show_central_icon and not self.drag_active:
                 self.central_icon = None
                 self.hovered_button_index = None
                 self.update()
             
-            # Masquer le message quand on quitte le bouton
-            self.tooltip_window.hide()
+            # Réinitialiser le curseur en mode réordonnancement (si pas en drag)
+            if self.reorder_mode and not self.drag_active:
+                self.setCursor(Qt.CursorShape.ArrowCursor)
+            
+            # Masquer le message quand on quitte le bouton (sauf pendant le drag)
+            if not self.drag_active:
+                self.tooltip_window.hide()
         
         return super().eventFilter(watched, event)
     
@@ -871,6 +938,26 @@ class RadialMenu(QWidget):
         if distance < 30:
             self.handle_click_outside()
             return
+        
+        # === MODE RÉORDONNANCEMENT : Début du drag ===
+        if self.reorder_mode and event.button() == Qt.MouseButton.LeftButton:
+            # Vérifier si on clique sur un bouton (clip)
+            for i, btn in enumerate(self.buttons):
+                if btn.geometry().contains(event.pos()) and btn.isVisible():
+                    # Vérifier que c'est un clip et pas un bouton spécial
+                    label = self.button_labels[i] if i < len(self.button_labels) else ""
+                    special_buttons = self.special_buttons_by_numbers[self.nb_icons_menu]
+                    if label not in special_buttons:
+                        # Démarrer le drag
+                        self.drag_active = True
+                        self.dragged_button_index = i
+                        self.drop_indicator_angle = None
+                        self.drop_target_info = None
+                        # Changer le curseur
+                        self.setCursor(Qt.CursorShape.ClosedHandCursor)
+                        self.update()
+                        return
+        
         if not any(btn.geometry().contains(event.pos()) for btn in self.buttons):
             # Masquer tous les badges
             for badge in self.action_badges.values():
@@ -878,6 +965,65 @@ class RadialMenu(QWidget):
             # Masquer la fenêtre tooltip
             self.tooltip_window.hide()
             self.handle_click_outside()
+    
+    def mouseReleaseEvent(self, event):
+        """Gère la fin du drag en mode réordonnancement"""
+        if self.drag_active and event.button() == Qt.MouseButton.LeftButton:
+            # Libérer la capture de la souris
+            self.releaseMouse()
+            
+            # Fin du drag
+            if self.drop_target_info is not None and self.dragged_button_index is not None:
+                # drop_target_info contient (target_index, insert_before, target_action)
+                target_index, insert_before, target_action = self.drop_target_info
+                
+                # Récupérer les alias
+                source_alias = self.button_labels[self.dragged_button_index] if self.dragged_button_index < len(self.button_labels) else None
+                target_alias = self.button_labels[target_index] if target_index < len(self.button_labels) else None
+                
+                if source_alias and target_alias and source_alias != target_alias:
+                    # Effectuer le déplacement via l'app_instance
+                    if self.app_instance:
+                        from utils import move_clip_in_json
+                        success = move_clip_in_json(
+                            self.app_instance.clip_notes_file_json,
+                            source_alias,
+                            target_alias,
+                            insert_before,
+                            new_action=target_action  # Passer la nouvelle action
+                        )
+                        if success:
+                            # Réinitialiser l'état du drag AVANT de rafraîchir
+                            self.drag_active = False
+                            self.dragged_button_index = None
+                            self.drop_indicator_angle = None
+                            self.drop_target_info = None
+                            self.hovered_action = None
+                            self.current_grabed_clip_label = None
+                            self.setCursor(Qt.CursorShape.ArrowCursor)
+                            # Masquer les badges
+                            for badge in self.action_badges.values():
+                                badge.setVisible(False)
+                            
+                            # Afficher un message de confirmation
+                            self.tooltip_window.show_message("✓ Clip déplacé", 1000)
+                            self.update_tooltip_position()
+                            # Rafraîchir le menu en mode réordonnancement
+                            self.app_instance.reorder_clip_mode(self.x, self.y)
+                            return
+            
+            # Réinitialiser l'état du drag
+            self.drag_active = False
+            self.dragged_button_index = None
+            self.drop_indicator_angle = None
+            self.drop_target_info = None
+            self.hovered_action = None
+            self.current_grabed_clip_label = None
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            # Masquer les badges
+            for badge in self.action_badges.values():
+                badge.setVisible(False)
+            self.update()
     
     def leaveEvent(self, event):
         """Efface l'icône centrale quand la souris quitte le widget"""
@@ -890,11 +1036,48 @@ class RadialMenu(QWidget):
         if self.mouse_in_special_zone:
             self.mouse_in_special_zone = False
             self.on_leave_special_zone()
+        
+        # Annuler le drag si en cours
+        if self.drag_active:
+            self.releaseMouse()
+            self.drag_active = False
+            self.dragged_button_index = None
+            self.drop_indicator_angle = None
+            self.drop_target_info = None
+            self.current_grabed_clip_label = None
+            self.hovered_action = None
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            # Masquer les badges
+            for badge in self.action_badges.values():
+                badge.setVisible(False)
+            self.update()
 
         
     def mouseMoveEvent(self, event):
         """Détecte quelle action est survolée par la souris (zone angulaire complète)
         et gère également la détection des zones spéciales pour l'expand/collapse"""
+        
+        # === GESTION DU DRAG EN COURS (grabMouse actif) ===
+        if self.drag_active:
+            # Calculer l'angle de la souris
+            center = self.rect().center()
+            dx = event.pos().x() - center.x()
+            dy = event.pos().y() - center.y()
+            
+            angle_rad = math.atan2(dy, dx)
+            if angle_rad < 0:
+                angle_rad += 2 * math.pi
+            angle_deg = math.degrees(angle_rad)
+            
+            # Obtenir les boutons visibles
+            visible_indices = [i for i, btn in enumerate(self.buttons) if btn.isVisible()]
+            num_visible = len(visible_indices)
+            
+            if num_visible > 0:
+                self._update_drop_indicator(angle_deg, visible_indices, num_visible)
+                self.update()
+            return  # Pas de gestion de hover pendant le drag
+        
         if not self.buttons:
             return
         
@@ -911,6 +1094,16 @@ class RadialMenu(QWidget):
         # Calculer la distance au centre
         distance = math.sqrt(dx * dx + dy * dy)
         
+        # Calculer l'angle de la souris (0° = droite, sens horaire)
+        angle_rad = math.atan2(dy, dx)
+        
+        # Normaliser pour être positif (0 à 2π)
+        if angle_rad < 0:
+            angle_rad += 2 * math.pi
+        
+        # Convertir en degrés
+        angle_deg = math.degrees(angle_rad)
+        
         # Si on est trop près du centre ou au-delà de la zone externe, pas de hover
         if distance < 30 or distance > self.radius + self.btn_size + 10:
             if self.hovered_action is not None or self.central_icon is not None:
@@ -926,16 +1119,6 @@ class RadialMenu(QWidget):
                 self.mouse_in_special_zone = False
                 self.on_leave_special_zone()
             return
-        
-        # Calculer l'angle de la souris (0° = droite, sens horaire)
-        angle_rad = math.atan2(dy, dx)
-        
-        # Normaliser pour être positif (0 à 2π)
-        if angle_rad < 0:
-            angle_rad += 2 * math.pi
-        
-        # Convertir en degrés
-        angle_deg = math.degrees(angle_rad)
         
         # === GESTION DE LA ZONE SPÉCIALE (expand/collapse) ===
         in_special_zone = self.is_angle_in_special_zone(angle_deg)
@@ -993,6 +1176,170 @@ class RadialMenu(QWidget):
                     badge.move(int(badge_x - badge.width() / 2), int(badge_y - badge.height() / 2))
                     badge.setVisible(True)
             self.update()
+    
+    def _update_drop_indicator(self, mouse_angle_deg, visible_indices, num_visible):
+        """
+        Calcule la position de l'indicateur de drop pendant un drag.
+        L'indicateur apparaît entre deux boutons adjacents, ou avant le premier / après le dernier.
+        Permet de changer l'action du clip en le déplaçant vers une autre zone.
+        Met à jour hovered_action en temps réel pour refléter la zone sous la souris.
+        
+        Args:
+            mouse_angle_deg: Angle de la souris en degrés (0° = droite)
+            visible_indices: Liste des indices des boutons visibles
+            num_visible: Nombre de boutons visibles
+        """
+        if not self.drag_active or self.dragged_button_index is None:
+            return
+        
+        # Boutons spéciaux à ignorer
+        special_buttons = self.special_buttons_by_numbers[self.nb_icons_menu]
+        
+        # Calculer l'angle par bouton visible
+        angle_step = 360 / num_visible
+        
+        # === 1. Mettre à jour hovered_action en fonction de l'angle de la souris ===
+        # Trouver quel bouton est sous l'angle de la souris
+        old_hovered_action = self.hovered_action
+        for pos, btn_index in enumerate(visible_indices):
+            button_angle = pos * angle_step
+            # Calculer la distance angulaire
+            dist = abs(button_angle - mouse_angle_deg)
+            if dist > 180:
+                dist = 360 - dist
+            # Si la souris est dans la zone de ce bouton (demi-angle de chaque côté)
+            if dist < angle_step / 2:
+                action = self.button_actions[btn_index] if btn_index < len(self.button_actions) else None
+                if action is not None:
+                    self.hovered_action = action
+                break
+        
+        # === 1b. Afficher le badge de l'action survolée (comme en mode normal) ===
+        if self.hovered_action != old_hovered_action:
+            # Masquer tous les badges d'abord
+            for badge in self.action_badges.values():
+                badge.setVisible(False)
+            
+            # Si une action est survolée, calculer la position et afficher son badge
+            if self.hovered_action and self.hovered_action in self.action_badges:
+                # Trouver tous les indices des boutons VISIBLES ayant cette action
+                indices_visible_pos = [pos for pos, idx in enumerate(visible_indices) 
+                                       if idx < len(self.button_actions) and self.button_actions[idx] == self.hovered_action]
+                
+                if indices_visible_pos:
+                    # Calculer l'angle moyen de tous ces boutons avec moyenne vectorielle
+                    angles_rad = [math.radians(pos * angle_step) for pos in indices_visible_pos]
+                    avg_x = sum(math.cos(a) for a in angles_rad) / len(angles_rad)
+                    avg_y = sum(math.sin(a) for a in angles_rad) / len(angles_rad)
+                    avg_angle_rad = math.atan2(avg_y, avg_x)
+                    
+                    # Distance du badge depuis le centre (juste après les boutons)
+                    badge_distance = self.radius + self.btn_size + 20
+                    
+                    # Position du badge
+                    center = self.rect().center()
+                    badge_x = center.x() + badge_distance * math.cos(avg_angle_rad)
+                    badge_y = center.y() + badge_distance * math.sin(avg_angle_rad)
+                    
+                    # Centrer le badge sur cette position
+                    badge = self.action_badges[self.hovered_action]
+                    badge.move(int(badge_x - badge.width() / 2), int(badge_y - badge.height() / 2))
+                    badge.setVisible(True)
+        
+        # === 2. Trouver tous les clips (pas les boutons spéciaux) ===
+        all_clips = []
+        for pos, btn_index in enumerate(visible_indices):
+            label = self.button_labels[btn_index] if btn_index < len(self.button_labels) else ""
+            action = self.button_actions[btn_index] if btn_index < len(self.button_actions) else None
+            if label not in special_buttons and action is not None:
+                all_clips.append((btn_index, pos, action))
+        
+        if len(all_clips) < 1:
+            # Pas de clips pour réordonner
+            self.drop_indicator_angle = None
+            self.drop_target_info = None
+            return
+        
+        # === 3. Calculer toutes les positions de drop possibles ===
+        drop_positions = []
+        
+        # Filtrer les clips sans celui qu'on drag
+        clips_without_dragged = [(btn_index, pos, action) for btn_index, pos, action in all_clips 
+                                  if btn_index != self.dragged_button_index]
+        
+        if not clips_without_dragged:
+            self.drop_indicator_angle = None
+            self.drop_target_info = None
+            return
+        
+        # Pour chaque paire de clips adjacents
+        for i in range(len(clips_without_dragged)):
+            curr_btn_index, curr_pos, curr_action = clips_without_dragged[i]
+            next_i = (i + 1) % len(clips_without_dragged)
+            next_btn_index, next_pos, next_action = clips_without_dragged[next_i]
+            
+            # Calculer les angles
+            curr_angle = curr_pos * angle_step
+            next_angle = next_pos * angle_step
+            
+            # Gérer le passage par 0°
+            diff = next_angle - curr_angle
+            if diff > 180:
+                diff -= 360
+            elif diff < -180:
+                diff += 360
+            
+            if curr_action == next_action:
+                # Même zone : une seule position au milieu
+                indicator_angle = (curr_angle + diff / 2) % 360
+                drop_positions.append((indicator_angle, next_btn_index, True, curr_action))
+            else:
+                # Zones différentes : deux positions distinctes
+                # Position pour "fin de zone courante" (1/3 de l'espace)
+                indicator_end_curr = (curr_angle + diff / 3) % 360
+                drop_positions.append((indicator_end_curr, curr_btn_index, False, curr_action))
+                
+                # Position pour "début de zone suivante" (2/3 de l'espace)
+                indicator_start_next = (curr_angle + 2 * diff / 3) % 360
+                drop_positions.append((indicator_start_next, next_btn_index, True, next_action))
+        
+        # === 4. Ajouter une position AVANT le tout premier clip et APRÈS le tout dernier ===
+        # (si pas déjà couvert par la boucle ci-dessus)
+        if len(clips_without_dragged) == 1:
+            # Un seul clip : ajouter des positions avant et après
+            only_btn_index, only_pos, only_action = clips_without_dragged[0]
+            only_angle = only_pos * angle_step
+            
+            # Position avant
+            indicator_before = (only_angle - angle_step / 2) % 360
+            drop_positions.append((indicator_before, only_btn_index, True, only_action))
+            
+            # Position après
+            indicator_after = (only_angle + angle_step / 2) % 360
+            drop_positions.append((indicator_after, only_btn_index, False, only_action))
+        
+        # === 5. Trouver la position de drop la plus proche de la souris ===
+        best_indicator_angle = None
+        best_target_info = None
+        min_distance = float('inf')
+        
+        for indicator_angle, btn_index, insert_before, action in drop_positions:
+            dist = abs(indicator_angle - mouse_angle_deg)
+            if dist > 180:
+                dist = 360 - dist
+            
+            if dist < min_distance:
+                min_distance = dist
+                best_indicator_angle = indicator_angle
+                best_target_info = (btn_index, insert_before, action)
+        
+        # Afficher l'indicateur si la souris est assez proche
+        if min_distance < angle_step * 0.6:
+            self.drop_indicator_angle = best_indicator_angle
+            self.drop_target_info = best_target_info
+        else:
+            self.drop_indicator_angle = None
+            self.drop_target_info = None
     
     def handle_key_left(self):
         """Gère la flèche droite"""
@@ -1164,6 +1511,261 @@ class RadialMenu(QWidget):
                     painter.setPen(Qt.PenStyle.NoPen)
                     # drawPie utilise des "16èmes de degrés"
                     painter.drawPie(circle_rect, int(start_angle * 16), int(angle_step * 16))
+        
+        # === INDICATEUR DE DROP (mode réordonnancement) ===
+        # if self.drag_active and self.drop_indicator_angle is not None:
+        #     # Dessiner une ligne blanche radiale à l'angle de drop
+        #     indicator_angle_rad = math.radians(self.drop_indicator_angle)
+            
+        #     # Points de la ligne (du centre vers l'extérieur du cercle)
+        #     inner_radius = 35 * self.scale_factor  # Commencer un peu après le centre
+        #     outer_radius = (self.radius + self.btn_size // 2) * self.scale_factor
+            
+        #     x1 = center.x() + inner_radius * math.cos(indicator_angle_rad)
+        #     y1 = center.y() + inner_radius * math.sin(indicator_angle_rad)
+        #     x2 = center.x() + outer_radius * math.cos(indicator_angle_rad)
+        #     y2 = center.y() + outer_radius * math.sin(indicator_angle_rad)
+            
+        #     # Dessiner la ligne blanche épaisse avec effet glow
+        #     # D'abord un glow blanc semi-transparent
+        #     glow_pen = QPen(QColor(255, 255, 255, 80))
+        #     glow_pen.setWidth(12)
+        #     glow_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        #     painter.setPen(glow_pen)
+        #     painter.drawLine(int(x1), int(y1), int(x2), int(y2))
+            
+        #     # Puis la ligne blanche principale
+        #     indicator_pen = QPen(QColor(255, 255, 255, 230))
+        #     indicator_pen.setWidth(6)
+        #     indicator_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        #     painter.setPen(indicator_pen)
+        #     painter.drawLine(int(x1), int(y1), int(x2), int(y2))
+        # if not self.drag_active or self.drop_indicator_angle is None:
+        #     return
+
+        # painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # indicator_angle_rad = math.radians(self.drop_indicator_angle)
+
+        # # --- Paramètres ---
+        # circle_diameter = 45 * self.scale_factor
+        # circle_radius = circle_diameter / 2
+
+        # indicator_offset = 30 * self.scale_factor  # distance avant l'extrémité
+
+        # outer_radius = (self.radius + self.btn_size // 2) * self.scale_factor
+        # indicator_radius_pos = outer_radius - indicator_offset
+
+        # # --- Position du rond ---
+        # cx = center.x() + indicator_radius_pos * math.cos(indicator_angle_rad)
+        # cy = center.y() + indicator_radius_pos * math.sin(indicator_angle_rad)
+
+        # circle_rect = QRectF(
+        #     cx - circle_radius,
+        #     cy - circle_radius,
+        #     circle_diameter,
+        #     circle_diameter
+        # )
+        # if not self.drag_active or self.drop_indicator_angle is None:
+        #     return
+
+        # painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # indicator_angle_rad = math.radians(self.drop_indicator_angle)
+
+        # # --- Paramètres du rond ---
+        # circle_diameter = 45 * self.scale_factor
+        # circle_radius = circle_diameter / 2
+
+        # indicator_offset = 30 * self.scale_factor  # distance avant l'extrémité
+        # outer_radius = (self.radius + self.btn_size // 2) * self.scale_factor
+        # indicator_radius_pos = outer_radius - indicator_offset
+
+        # # --- Position du centre du rond ---
+        # cx = center.x() + indicator_radius_pos * math.cos(indicator_angle_rad)
+        # cy = center.y() + indicator_radius_pos * math.sin(indicator_angle_rad)
+
+        # circle_rect = QRectF(
+        #     cx - circle_radius,
+        #     cy - circle_radius,
+        #     circle_diameter,
+        #     circle_diameter
+        # )
+
+        # # --- Glow ---
+        # glow_pen = QPen(QColor(255, 255, 255, 80))
+        # glow_pen.setWidth(6)
+        # painter.setPen(glow_pen)
+        # painter.setBrush(Qt.BrushStyle.NoBrush)
+        # painter.drawEllipse(circle_rect)
+
+        # # --- Cercle principal ---
+        # painter.setPen(Qt.PenStyle.NoPen)
+        # painter.setBrush(QColor(255, 255, 255, 230))
+        # painter.drawEllipse(circle_rect)
+
+        # # =========================================================
+        # # === CONTENU : IMAGE ou TEXTE (sans rescale)
+        # # =========================================================
+
+        # # --- Image ---
+        # if hasattr(self, "drop_indicator_icon") and self.drop_indicator_icon:
+        #     pixmap = self.drop_indicator_icon
+        #     if not pixmap.isNull():
+        #         painter.drawPixmap(
+        #             int(cx - pixmap.width() / 2),
+        #             int(cy - pixmap.height() / 2),
+        #             pixmap
+        #         )
+
+        # # --- Texte ---
+        # elif hasattr(self, "drop_indicator_text") and self.drop_indicator_text:
+        #     painter.setPen(QColor(0, 0, 0))  # ou blanc selon ton UX
+
+        #     if hasattr(self, "drop_indicator_font"):
+        #         painter.setFont(self.drop_indicator_font)
+
+        #     text_rect = QRectF(
+        #         cx - circle_radius,
+        #         cy - circle_radius,
+        #         circle_diameter,
+        #         circle_diameter
+        #     )
+
+        #     painter.drawText(
+        #         text_rect,
+        #         Qt.AlignmentFlag.AlignCenter,
+        #         self.drop_indicator_text
+        #     )
+
+
+        # # --- Glow ---
+        # glow_pen = QPen(QColor(255, 255, 255, 80))
+        # glow_pen.setWidth(6)
+        # glow_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        # painter.setPen(glow_pen)
+        # painter.setBrush(Qt.BrushStyle.NoBrush)
+        # painter.drawEllipse(circle_rect)
+
+        # # --- Cercle principal ---
+        # painter.setPen(Qt.PenStyle.NoPen)
+        # painter.setBrush(QColor(255, 255, 255, 230))
+        # painter.drawEllipse(circle_rect)
+
+        # # --- Image au centre ---
+        # if hasattr(self, "drop_indicator_icon"):
+        #     pixmap = QPixmap("/home/simon/repo_seb_dethyre/clip_notes/thumbnails/4697a16f14fd6d08a8ea3301b841a18c.png")
+        #     if not pixmap.isNull():
+        #         icon_size = circle_diameter * 0.6
+        #         scaled = pixmap.scaled(
+        #             int(icon_size),
+        #             int(icon_size),
+        #             Qt.AspectRatioMode.KeepAspectRatio,
+        #             Qt.TransformationMode.SmoothTransformation
+        #         )
+
+        #         painter.drawPixmap(
+        #             int(cx - scaled.width() / 2),
+        #             int(cy - scaled.height() / 2),
+        #             scaled
+        #         )
+        
+        # === INDICATEUR DE DROP (rond avec icône) ===
+        if self.drag_active and self.drop_indicator_angle is not None:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+            indicator_angle_rad = math.radians(self.drop_indicator_angle)
+
+            # --- Paramètres du rond ---
+            circle_diameter = 45 * self.scale_factor
+            circle_radius = circle_diameter / 2
+
+            indicator_offset = 30 * self.scale_factor
+            outer_radius = (self.radius + self.btn_size // 2) * self.scale_factor
+            indicator_radius_pos = outer_radius - indicator_offset
+
+            # --- Position du centre ---
+            cx = center.x() + indicator_radius_pos * math.cos(indicator_angle_rad)
+            cy = center.y() + indicator_radius_pos * math.sin(indicator_angle_rad)
+
+            circle_rect = QRectF(
+                cx - circle_radius,
+                cy - circle_radius,
+                circle_diameter,
+                circle_diameter
+            )
+
+            # --- Glow ---
+            glow_pen = QPen(QColor(255, 255, 255, 80))
+            glow_pen.setWidth(6)
+            painter.setPen(glow_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(circle_rect)
+
+            # --- Cercle principal ---
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(255, 255, 255, 230))
+            painter.drawEllipse(circle_rect)
+
+            # =================================================
+            # === CONTENU : IMAGE ou TEXTE depuis la CHAÎNE
+            # =================================================
+
+            label = getattr(self, "current_grabed_clip_label", None)
+
+            if label:
+                label_lower = label.lower()
+
+                # --- Cas IMAGE ---
+                if (
+                    "/" in label
+                    and (label_lower.endswith(".png") or
+                        label_lower.endswith(".jpg") or
+                        label_lower.endswith(".jpeg"))
+                ):
+                    pixmap = QPixmap(label)
+                    if not pixmap.isNull():
+                        max_size = int(circle_diameter * 0.85)  # marge visuelle
+
+                        src_w = pixmap.width()
+                        src_h = pixmap.height()
+
+                        # --- Cas icône : pas de scale ---
+                        if src_w <= max_size and src_h <= max_size:
+                            draw_pixmap = pixmap
+
+                        # --- Cas image : miniature ---
+                        else:
+                            draw_pixmap = pixmap.scaled(
+                                max_size,
+                                max_size,
+                                Qt.AspectRatioMode.KeepAspectRatio,
+                                Qt.TransformationMode.SmoothTransformation
+                            )
+
+                        painter.drawPixmap(
+                            int(cx - draw_pixmap.width() / 2),
+                            int(cy - draw_pixmap.height() / 2),
+                            draw_pixmap
+                        )
+
+                # --- Cas TEXTE ---
+                else:
+                    painter.setPen(QColor(0, 0, 0))  # ajuste si besoin
+
+                    text_rect = QRectF(
+                        cx - circle_radius,
+                        cy - circle_radius,
+                        circle_diameter,
+                        circle_diameter
+                    )
+
+                    painter.drawText(
+                        text_rect,
+                        Qt.AlignmentFlag.AlignCenter,
+                        label
+                    )
+
 
         if self.neon_enabled:
             scaled_neon_radius = self.neon_radius * self.scale_factor
@@ -1242,17 +1844,24 @@ class RadialMenu(QWidget):
                 pass
             self.hover_submenu = None
         
-        # Si on est en mode modification, suppression ou stockage, revenir au menu de base
+        # Si on est en mode modification, suppression, stockage ou réordonnancement, revenir au menu de base
         if self.nb_icons_menu == 5:
             button_mumber = 3
         elif self.nb_icons_menu == 6:
             button_mumber = 2
         elif self.nb_icons_menu == 7:
             button_mumber = 1
-        if self.app_instance and (self.app_instance.update_mode or self.app_instance.delete_mode or self.app_instance.store_mode):
+        if self.app_instance and (self.app_instance.update_mode or self.app_instance.delete_mode or self.app_instance.store_mode or self.app_instance.reorder_mode):
             self.app_instance.update_mode = False
             self.app_instance.delete_mode = False
             self.app_instance.store_mode = False
+            self.app_instance.reorder_mode = False
+            # Réinitialiser aussi l'état de drag du RadialMenu
+            self.reorder_mode = False
+            self.drag_active = False
+            self.dragged_button_index = None
+            self.drop_indicator_angle = None
+            self.drop_target_info = None
             self.app_instance.refresh_menu()
         # Si on est dans le menu de sélection 📦 (2 boutons seulement)
         elif len(self.buttons) == button_mumber:

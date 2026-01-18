@@ -17,6 +17,7 @@ class ClipNotesWindow(QMainWindow):
         self.update_mode = False
         self.delete_mode = False
         self.store_mode = False
+        self.reorder_mode = False  # Mode réordonnancement sur le cercle
         
         # Créer une fenêtre tooltip pour l'application (utilisée dans les dialogues)
         self.tooltip_window = TooltipWindow()
@@ -83,14 +84,14 @@ class ClipNotesWindow(QMainWindow):
                     "➕": [(self.new_clip,    [x,y], {}), "Ajouter", None],
                     "🔧": [(self.update_clip, [x,y], {}), "Modifier", None],
                     "⚙️": [(self.show_config_dialog, [x,y], {}), "Configurer", None],
-                    "↔️": [(self.show_reorder_dialog, [x,y], {}), "Ordonner", None],
+                    "↔️": [(self.reorder_clip_mode, [x,y], {}), "Ordonner", None],
                     "➖": [(self.show_storage_menu, [x,y], {}), "Supprimer", None],
                 },
             6 : {
                     "➕": [(self.new_clip,    [x,y], {}), "Ajouter", None],
                     "🔧": [(self.update_clip, [x,y], {}), "Modifier", None],
                     "⚙️": [(self.show_config_dialog, [x,y], {}), "Configurer", None],
-                    "↔️": [(self.show_reorder_dialog, [x,y], {}), "Ordonner", None],
+                    "↔️": [(self.reorder_clip_mode, [x,y], {}), "Ordonner", None],
                     "📦": [(self.show_storage_menu, [x,y], {}), "Stocker", None],
                     "➖": [(self.delete_clip, [x,y], {}), "Supprimer", None],
                 },
@@ -98,7 +99,7 @@ class ClipNotesWindow(QMainWindow):
                     "➕": [(self.new_clip,    [x,y], {}), "Ajouter", None],
                     "🔧": [(self.update_clip, [x,y], {}), "Modifier", None],
                     "⚙️": [(self.show_config_dialog, [x,y], {}), "Configurer", None],
-                    "↔️": [(self.show_reorder_dialog, [x,y], {}), "Ordonner", None],
+                    "↔️": [(self.reorder_clip_mode, [x,y], {}), "Ordonner", None],
                     "💾": [(self.store_clip_mode, [x,y], {}), "Stocker", None],
                     "📋": [(self.show_stored_clips_dialog, [x,y], {}), "Stock", None],
                     "➖": [(self.delete_clip, [x,y], {}), "Supprimer", None],
@@ -495,6 +496,60 @@ class ClipNotesWindow(QMainWindow):
             self.current_popup.set_neon_color("rouge")
             self.current_popup.toggle_neon(True)
             self.current_popup.timer.start(50)
+
+    def reorder_clip_mode(self, x, y):
+        """Active le mode réordonnancement par drag & drop sur le cercle"""
+        if self.tracker:
+            self.tracker.update_pos()
+            x, y = self.tracker.last_x, self.tracker.last_y
+        
+        # Activer le mode réordonnancement
+        self.reorder_mode = True
+        
+        # IMPORTANT: Recharger actions_map_sub depuis le JSON pour avoir les actions à jour
+        special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
+        
+        # Recréer actions_map_sub avec les boutons spéciaux
+        self.actions_map_sub = self.buttons_actions_by_number[self.nb_icons_menu].copy()
+        
+        # Recharger les clips depuis le JSON (avec leurs nouvelles actions)
+        populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
+        
+        # Filtrer les clips (sans les boutons d'action)
+        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
+        
+        # Récupérer l'ordre du JSON pour le tri personnalisé
+        json_order = get_json_order(self.clip_notes_file_json)
+        
+        # Trier les clips en respectant l'ordre du JSON
+        sorted_clips = sort_actions_map(clips_only, json_order)
+        
+        self.buttons_sub = []
+        for name, (action_data, value, action) in sorted_clips:
+            tooltip = value.replace(r'\n', '\n')
+            # Récupérer le HTML pour le tooltip
+            _, clip_html = self.get_clip_data_from_json(name)
+            self.buttons_sub.append(
+                (
+                    name, 
+                    lambda: None,  # Pas de callback car on utilise le drag & drop
+                    tooltip,
+                    action,
+                    clip_html  # 5ème élément : HTML pour le tooltip
+                )
+            )
+        
+        if self.current_popup:
+            self.current_popup.update_buttons(self.buttons_sub)
+            self.current_popup.set_central_text("↔️")
+            self.current_popup.set_neon_color("cyan")
+            self.current_popup.toggle_neon(True)
+            self.current_popup.timer.start(50)
+            # Activer le mode réordonnancement sur le RadialMenu
+            self.current_popup.reorder_mode = True
+            # Afficher un message d'aide
+            self.current_popup.tooltip_window.show_message("Glissez un clip pour le déplacer", 3000)
+            self.current_popup.update_tooltip_position()
 
     def make_handler_delete(self, name, value, x, y):
         def handler():

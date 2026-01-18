@@ -282,6 +282,86 @@ def reorder_json_clips(file_path, action, new_order):
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(new_data, f, indent=4, ensure_ascii=False)
 
+
+def move_clip_in_json(file_path, source_alias, target_position_alias, insert_before=True, new_action=None):
+    """
+    Déplace un clip vers une nouvelle position dans le fichier JSON.
+    Peut aussi changer l'action du clip si new_action est spécifié.
+    
+    Args:
+        file_path: Chemin du fichier JSON
+        source_alias: L'alias du clip à déplacer
+        target_position_alias: L'alias du clip de référence pour la position
+        insert_before: Si True, insère avant target_position_alias, sinon après
+        new_action: Nouvelle action pour le clip (optionnel, "copy", "term", "exec")
+    
+    Returns:
+        bool: True si le déplacement a réussi, False sinon
+    """
+    if not os.path.exists(file_path):
+        return False
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except:
+        return False
+    
+    # Trouver le clip source et sa position
+    source_clip = None
+    source_index = None
+    for i, item in enumerate(data):
+        if item.get('alias') == source_alias:
+            source_clip = item.copy()  # Copier pour pouvoir modifier
+            source_index = i
+            break
+    
+    if source_clip is None:
+        return False
+    
+    # Trouver la position cible
+    target_index = None
+    for i, item in enumerate(data):
+        if item.get('alias') == target_position_alias:
+            target_index = i
+            break
+    
+    if target_index is None:
+        return False
+    
+    # Changer l'action du clip si demandé
+    if new_action is not None:
+        source_clip['action'] = new_action
+    
+    # Retirer le clip source de sa position actuelle
+    data.pop(source_index)
+    
+    # Ajuster l'index cible si nécessaire (car on a supprimé un élément)
+    if source_index < target_index:
+        target_index -= 1
+    
+    # Insérer à la nouvelle position
+    if insert_before:
+        data.insert(target_index, source_clip)
+    else:
+        data.insert(target_index + 1, source_clip)
+    
+    # Réorganiser pour garder les clips groupés par action (copy, term, exec)
+    clips_by_action = {"copy": [], "term": [], "exec": []}
+    for item in data:
+        item_action = item.get('action', 'copy')
+        if item_action in clips_by_action:
+            clips_by_action[item_action].append(item)
+    
+    # Reconstruire la liste dans l'ordre correct
+    new_data = clips_by_action["copy"] + clips_by_action["term"] + clips_by_action["exec"]
+    
+    # Sauvegarder
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(new_data, f, indent=4, ensure_ascii=False)
+    
+    return True
+
 def populate_actions_map_from_file(file_path, actions_map_sub, callback):
     # Déterminer le chemin du fichier JSON
     json_path = file_path.replace('.txt', '.json')
@@ -630,4 +710,3 @@ def create_color_icon(rgb_tuple, size=16):
     pixmap = QPixmap(size, size)
     pixmap.fill(QColor(*rgb_tuple))
     return QIcon(pixmap)
-
