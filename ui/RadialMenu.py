@@ -1328,20 +1328,12 @@ class RadialMenu(QWidget):
             
             # Position AVANT le tout premier clip (juste avant lui)
             indicator_before_first = (first_angle - angle_step * 0.4) % 360
-            # Vérifier si cette position n'est pas trop proche d'une existante
-            too_close = any(abs(indicator_before_first - p[0]) < angle_step * 0.3 or 
-                           abs(indicator_before_first - p[0]) > 360 - angle_step * 0.3 
-                           for p in drop_positions)
-            if not too_close:
-                drop_positions.append((indicator_before_first, first_btn_index, True, first_action))
+            drop_positions.append((indicator_before_first, first_btn_index, True, first_action))
             
             # Position APRÈS le tout dernier clip (juste après lui)
+            # IMPORTANT: Toujours ajouter cette position pour permettre de mettre un clip en dernier
             indicator_after_last = (last_angle + angle_step * 0.4) % 360
-            too_close = any(abs(indicator_after_last - p[0]) < angle_step * 0.3 or 
-                           abs(indicator_after_last - p[0]) > 360 - angle_step * 0.3 
-                           for p in drop_positions)
-            if not too_close:
-                drop_positions.append((indicator_after_last, last_btn_index, False, last_action))
+            drop_positions.append((indicator_after_last, last_btn_index, False, last_action))
         
         # === 5. Trouver la position de drop la plus proche de la souris ===
         best_indicator_angle = None
