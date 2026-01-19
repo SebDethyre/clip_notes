@@ -92,6 +92,9 @@ class RadialMenu(QWidget):
         self.dragged_button_index = None  # Index du bouton en cours de drag
         self.drop_indicator_angle = None  # Angle où afficher l'indicateur de drop (en degrés)
         self.drop_target_info = None  # Info sur où insérer: (target_index, insert_before)
+        self.drag_pending = False  # True si on a cliqué mais pas encore bougé
+        self.drag_start_pos = None  # Position de départ du clic
+        self.drag_threshold = 10  # Distance minimale en pixels pour déclencher un drag
         
         # Activer le tracking de la souris pour détecter le hover
         self.setMouseTracking(True)
@@ -111,9 +114,9 @@ class RadialMenu(QWidget):
         # self.hover_close_timer.setSingleShot(True)
         # self.hover_close_timer.timeout.connect(self.check_hover_submenu_close)
         self.special_buttons_by_numbers = {
-            5 : ["➖", "↔️", "⚙️", "🔧", "➕"],
-            6 : ["➖", "📦", "↔️", "⚙️", "🔧", "➕"],
-            7 : ["➖", "📋", "💾", "↔️", "⚙️", "🔧", "➕"]
+            4 : ["➖", "⚙️", "🔧", "➕"],
+            5 : ["➖", "📦", "⚙️", "🔧", "➕"],
+            6 : ["➖", "📋", "💾", "⚙️", "🔧", "➕"]
         }
         # === ANIMATION BOUTONS SPÉCIAUX (hover sur ➕) ===
         self.special_buttons_revealed = False  # Les boutons spéciaux sont-ils complètement révélés ?
@@ -146,29 +149,26 @@ class RadialMenu(QWidget):
         }
         
         # Tooltips pour les boutons spéciaux
-        if self.nb_icons_menu == 5:
+        if self.nb_icons_menu == 4:
             special_tooltips = {
                 "➕": "Ajouter",
                 "🔧": "Modifier",
-                "↔️": "Ordonner",
                 "⚙️": "Configurer",
                 "➖": "Supprimer"
+            }
+        elif self.nb_icons_menu == 5:
+            special_tooltips = {
+                "➕": "Ajouter",
+                "🔧": "Modifier",
+                "⚙️": "Configurer",
+                "➖": "Supprimer",
+                "📦": "Stocker"
             }
         elif self.nb_icons_menu == 6:
             special_tooltips = {
                 "➕": "Ajouter",
                 "🔧": "Modifier",
-                "↔️": "Ordonner",
                 "⚙️": "Configurer",
-                "➖": "Supprimer",
-                "📦": "Stocker"
-            }
-        elif self.nb_icons_menu == 7:
-            special_tooltips = {
-                "➕": "Ajouter",
-                "🔧": "Modifier",
-                "⚙️": "Configurer",
-                "↔️": "Ordonner",
                 "💾": "Stocker",
                 "📋": "Stock",
                 "➖": "Supprimer",
@@ -276,14 +276,14 @@ class RadialMenu(QWidget):
                 btn.setFixedSize(self.btn_size, self.btn_size)
                 btn.move(int(bx), int(by))
                 btn.setVisible(False)
-                if self.nb_icons_menu == 5:
+                if self.nb_icons_menu == 4:
                     if label == "➖":
                         self.storage_button_index = i
                         # Le clic ouvre aussi le sous-menu (pour la navigation clavier)
                         btn.clicked.connect(lambda checked=False, b=btn: self.show_storage_submenu(b))
                     else:
                         btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
-                elif self.nb_icons_menu == 6:   
+                elif self.nb_icons_menu == 5:   
                     # Cas spécial : le bouton 📦 ouvre le sous-menu de stockage
                     if label == "📦":
                         self.storage_button_index = i
@@ -291,7 +291,7 @@ class RadialMenu(QWidget):
                         btn.clicked.connect(lambda checked=False, b=btn: self.show_storage_submenu(b))
                     else:
                         btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
-                elif self.nb_icons_menu == 7:   
+                elif self.nb_icons_menu == 6:   
                     btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
                 
                 # Installer l'eventFilter pour tous les boutons (pour tooltips et badges)
@@ -373,6 +373,8 @@ class RadialMenu(QWidget):
         
         # Réinitialiser l'état du drag & drop
         self.drag_active = False
+        self.drag_pending = False
+        self.drag_start_pos = None
         self.dragged_button_index = None
         self.drop_indicator_angle = None
         self.drop_target_info = None
@@ -429,28 +431,51 @@ class RadialMenu(QWidget):
     def eventFilter(self, watched, event):
         """Gère les événements de hover sur les boutons"""
         
-        # === GESTION DU DRAG & DROP EN MODE RÉORDONNANCEMENT ===
-        if self.reorder_mode and watched in self.buttons:
+        # === GESTION DU DRAG & DROP DES CLIPS (toujours actif) ===
+        if watched in self.buttons:
             button_index = self.buttons.index(watched)
             label = self.button_labels[button_index] if button_index < len(self.button_labels) else ""
             special_buttons = self.special_buttons_by_numbers[self.nb_icons_menu]
-            is_clip = label not in special_buttons
+            is_clip = label not in special_buttons and button_index < len(self.button_actions) and self.button_actions[button_index] is not None
             
             if event.type() == QEvent.Type.MouseButtonPress and is_clip:
                 if event.button() == Qt.MouseButton.LeftButton:
-                    self.current_grabed_clip_label = label
-                    # Démarrer le drag
-                    self.drag_active = True
+                    # Mémoriser pour détecter si c'est un drag ou un clic
+                    self.drag_pending = True
+                    self.drag_start_pos = event.globalPosition().toPoint()
                     self.dragged_button_index = button_index
-                    self.drop_indicator_angle = None
-                    self.drop_target_info = None
-                    self.setCursor(Qt.CursorShape.ClosedHandCursor)
-                    # Masquer le tooltip pendant le drag
-                    self.tooltip_window.hide()
-                    # Capturer tous les événements souris
-                    self.grabMouse()
-                    self.update()
-                    return True  # Consommer l'événement
+                    self.current_grabed_clip_label = label
+                    # Ne pas consommer l'événement tout de suite
+            
+            if event.type() == QEvent.Type.MouseMove and self.drag_pending and not self.drag_active:
+                if self.drag_start_pos is not None:
+                    # Calculer la distance parcourue
+                    current_pos = event.globalPosition().toPoint()
+                    dx = current_pos.x() - self.drag_start_pos.x()
+                    dy = current_pos.y() - self.drag_start_pos.y()
+                    distance = (dx * dx + dy * dy) ** 0.5
+                    
+                    if distance > self.drag_threshold:
+                        # C'est un vrai drag, l'activer
+                        self.drag_active = True
+                        self.drag_pending = False
+                        self.drop_indicator_angle = None
+                        self.drop_target_info = None
+                        self.setCursor(Qt.CursorShape.ClosedHandCursor)
+                        self.tooltip_window.hide()
+                        self.grabMouse()
+                        self.update()
+                        return True
+            
+            if event.type() == QEvent.Type.MouseButtonRelease and is_clip:
+                if event.button() == Qt.MouseButton.LeftButton and self.drag_pending and not self.drag_active:
+                    # C'était un clic simple, pas un drag - exécuter l'action du clip
+                    self.drag_pending = False
+                    self.drag_start_pos = None
+                    self.dragged_button_index = None
+                    self.current_grabed_clip_label = None
+                    # Laisser l'événement passer pour déclencher le clic normal
+                    return False
         
         if event.type() == QEvent.Type.Enter:
             # Trouver l'index du bouton survolé
@@ -458,11 +483,12 @@ class RadialMenu(QWidget):
                 button_index = self.buttons.index(watched)
                 self.hovered_button_index = button_index
                 
-                # === Mode réordonnancement : changer le curseur pour les clips ===
-                if self.reorder_mode and not self.drag_active:
+                # === Changer le curseur pour les clips (toujours actif) ===
+                if not self.drag_active:
                     label = self.button_labels[button_index] if button_index < len(self.button_labels) else ""
                     special_buttons = self.special_buttons_by_numbers[self.nb_icons_menu]
-                    if label not in special_buttons:
+                    is_clip = label not in special_buttons and button_index < len(self.button_actions) and self.button_actions[button_index] is not None
+                    if is_clip:
                         # C'est un clip, montrer qu'on peut l'attraper
                         self.setCursor(Qt.CursorShape.OpenHandCursor)
                 
@@ -517,8 +543,8 @@ class RadialMenu(QWidget):
                 self.hovered_button_index = None
                 self.update()
             
-            # Réinitialiser le curseur en mode réordonnancement (si pas en drag)
-            if self.reorder_mode and not self.drag_active:
+            # Réinitialiser le curseur quand on quitte un clip (si pas en drag)
+            if not self.drag_active:
                 self.setCursor(Qt.CursorShape.ArrowCursor)
             
             # Masquer le message quand on quitte le bouton (sauf pendant le drag)
@@ -603,8 +629,8 @@ class RadialMenu(QWidget):
         
         # Créer la file d'attente des boutons à révéler (en partant du plus proche de ➕)
         # Seulement les boutons qui ne sont pas encore visibles
-        # Les indices sont dans l'ordre ["➖", "📦"?, "↔️", "⚙️", "🔧"] 
-        # On veut révéler dans l'ordre inverse : "🔧" → "⚙️" → "↔️" → "📦"? → "➖"
+        # Les indices sont dans l'ordre ["➖", "📦"?, "⚙️", "🔧"] 
+        # On veut révéler dans l'ordre inverse : "🔧" → "⚙️" → "📦"? → "➖"
         hidden_special = [i for i in self.special_button_indices if not self.buttons[i].isVisible()]
         self.special_reveal_queue = list(reversed(hidden_special))
         
@@ -651,7 +677,7 @@ class RadialMenu(QWidget):
         self.special_animating = True
         
         # Créer la file d'attente des boutons à cacher (ordre inverse de la révélation)
-        # On cache dans l'ordre : "➖" → "📦"? → "↔️" → "⚙️" → "🔧"
+        # On cache dans l'ordre : "➖" → "📦"? → "⚙️" → "🔧"
         # C'est l'ordre normal de _special_button_indices (pas reversed)
         visible_special = [i for i in self.special_button_indices if self.buttons[i].isVisible()]
         self.special_hide_queue = list(visible_special)  # Ordre normal pour cacher
@@ -755,13 +781,13 @@ class RadialMenu(QWidget):
         
         # Créer les boutons du sous-menu
         x, y = self.x, self.y
-        if self.nb_icons_menu == 5:
+        if self.nb_icons_menu == 4:
             submenu_buttons = [
                 ("📋", lambda: self.storage_action_clips(x, y), "Clips stockés"),
                 ("🗑️", lambda: self.storage_action_delete(x, y), "Supprimer"),
                 ("💾", lambda: self.storage_action_store(x, y), "Stocker"),
             ]
-        elif self.nb_icons_menu == 6:
+        elif self.nb_icons_menu == 5:
             submenu_buttons = [
                 ("📋", lambda: self.storage_action_clips(x, y), "Clips stockés"),
                 ("💾", lambda: self.storage_action_store(x, y), "Stocker"),
@@ -995,6 +1021,8 @@ class RadialMenu(QWidget):
                         if success:
                             # Réinitialiser l'état du drag AVANT de rafraîchir
                             self.drag_active = False
+                            self.drag_pending = False
+                            self.drag_start_pos = None
                             self.dragged_button_index = None
                             self.drop_indicator_angle = None
                             self.drop_target_info = None
@@ -1008,12 +1036,17 @@ class RadialMenu(QWidget):
                             # Afficher un message de confirmation
                             self.tooltip_window.show_message("✓ Clip déplacé", 1000)
                             self.update_tooltip_position()
-                            # Rafraîchir le menu en mode réordonnancement
-                            self.app_instance.reorder_clip_mode(self.x, self.y)
+                            # Rafraîchir le menu selon le mode
+                            if self.reorder_mode:
+                                self.app_instance.reorder_clip_mode(self.x, self.y)
+                            else:
+                                self.app_instance.refresh_menu()
                             return
             
             # Réinitialiser l'état du drag
             self.drag_active = False
+            self.drag_pending = False
+            self.drag_start_pos = None
             self.dragged_button_index = None
             self.drop_indicator_angle = None
             self.drop_target_info = None
@@ -1038,9 +1071,12 @@ class RadialMenu(QWidget):
             self.on_leave_special_zone()
         
         # Annuler le drag si en cours
-        if self.drag_active:
-            self.releaseMouse()
+        if self.drag_active or self.drag_pending:
+            if self.drag_active:
+                self.releaseMouse()
             self.drag_active = False
+            self.drag_pending = False
+            self.drag_start_pos = None
             self.dragged_button_index = None
             self.drop_indicator_angle = None
             self.drop_target_info = None
@@ -1410,8 +1446,8 @@ class RadialMenu(QWidget):
     
     def initialize_focus(self):
         """Initialise le focus sur le premier clip ou sur ➕"""
-        # Les 5 boutons spéciaux sont toujours présents : ➖ ↔️ ⚙️ 🔧 ➕
-        # S'il y a plus de 5 boutons, les clips commencent à l'index 5
+        # Les boutons spéciaux varient selon nb_icons_menu (4, 5 ou 6 boutons)
+        # S'il y a plus de boutons que le nombre d'icônes fixes, les clips commencent après
         button_mumber = self.nb_icons_menu
         if len(self.buttons) > button_mumber:
             # Il y a des clips, aller au premier clip
@@ -1862,11 +1898,11 @@ class RadialMenu(QWidget):
             self.hover_submenu = None
         
         # Si on est en mode modification, suppression, stockage ou réordonnancement, revenir au menu de base
-        if self.nb_icons_menu == 5:
+        if self.nb_icons_menu == 4:
             button_mumber = 3
-        elif self.nb_icons_menu == 6:
+        elif self.nb_icons_menu == 5:
             button_mumber = 2
-        elif self.nb_icons_menu == 7:
+        elif self.nb_icons_menu == 6:
             button_mumber = 1
         if self.app_instance and (self.app_instance.update_mode or self.app_instance.delete_mode or self.app_instance.store_mode or self.app_instance.reorder_mode):
             self.app_instance.update_mode = False
