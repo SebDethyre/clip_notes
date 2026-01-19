@@ -77,6 +77,7 @@ class RadialMenu(QWidget):
         self.button_colors = []  # Liste des couleurs pour chaque bouton
         self.button_actions = []  # Liste des actions pour chaque bouton
         self.button_labels = []  # Liste des labels pour chaque bouton
+        self.button_is_group = []  # Liste indiquant si chaque bouton est un groupe
         self.hovered_action = None  # Action survolée (None, "copy", "term", ou "exec")
         self.hovered_button_index = None  # Index du bouton survolé
         self.central_icon = None  # Pixmap de l'icône centrale à afficher
@@ -92,9 +93,15 @@ class RadialMenu(QWidget):
         self.dragged_button_index = None  # Index du bouton en cours de drag
         self.drop_indicator_angle = None  # Angle où afficher l'indicateur de drop (en degrés)
         self.drop_target_info = None  # Info sur où insérer: (target_index, insert_before)
+        self.drop_on_clip_index = None  # Index du clip sur lequel on drop (pour fusion/groupe)
         self.drag_pending = False  # True si on a cliqué mais pas encore bougé
         self.drag_start_pos = None  # Position de départ du clic
         self.drag_threshold = 10  # Distance minimale en pixels pour déclencher un drag
+        
+        # Variables pour le drag d'un enfant hors d'un groupe
+        self.dragging_child_from_group = False  # True si on drag un enfant de groupe
+        self.dragging_child_group_alias = None  # Alias du groupe source
+        self.dragging_child_data = None  # Données du clip enfant
         
         # Activer le tracking de la souris pour détecter le hover
         self.setMouseTracking(True)
@@ -204,6 +211,9 @@ class RadialMenu(QWidget):
                 self.button_colors.append(color)
                 self.button_actions.append(action)
                 self.button_labels.append(label)
+                # Détecter si c'est un groupe (tooltip commence par "📁")
+                is_group = tooltip.startswith("📁") if tooltip else False
+                self.button_is_group.append(is_group)
                     
                 angle = math.radians(i * angle_step)
                 # Le centre du menu radial est maintenant au centre du widget agrandi
@@ -359,6 +369,7 @@ class RadialMenu(QWidget):
         self.button_colors.clear()
         self.button_actions.clear()
         self.button_labels.clear()
+        self.button_is_group.clear()
         self.action_badges = {}
         self.storage_button_index = None  # Réinitialiser l'index du bouton ➖
         self.plus_button_index = None  # Réinitialiser l'index du bouton ➕
@@ -378,6 +389,7 @@ class RadialMenu(QWidget):
         self.dragged_button_index = None
         self.drop_indicator_angle = None
         self.drop_target_info = None
+        self.drop_on_clip_index = None
         self.current_grabed_clip_label = None
         # Note: on ne réinitialise PAS reorder_mode ici car il est géré par app_instance
         
@@ -508,6 +520,10 @@ class RadialMenu(QWidget):
                 # Cas spécial : hover sur le bouton ➖ -> ouvrir le sous-menu
                 if button_index == self.storage_button_index:
                     self.show_storage_submenu(watched)
+                
+                # Cas spécial : hover sur un groupe -> ouvrir le sous-menu du groupe
+                if button_index < len(self.button_is_group) and self.button_is_group[button_index]:
+                    self.show_group_hover_submenu(watched, button_index)
                 
                 # Créer l'icône centrale pour ce bouton (sauf pendant le drag)
                 if not self.drag_active and button_index < len(self.button_labels):
@@ -861,6 +877,122 @@ class RadialMenu(QWidget):
         if self.app_instance:
             self.app_instance.store_clip_mode(x, y)
     
+    def show_group_hover_submenu(self, group_button, button_index):
+        """Affiche le sous-menu d'un groupe au hover"""
+        from utils import paperclip_copy, execute_terminal, execute_command
+        
+        # Ne pas recréer si déjà ouvert
+        if self.hover_submenu is not None:
+            try:
+                if self.hover_submenu.isVisible():
+                    return
+            except RuntimeError:
+                self.hover_submenu = None
+        
+        # Récupérer le label du groupe (son alias)
+        if button_index >= len(self.button_labels):
+            return
+        group_alias = self.button_labels[button_index]
+        
+        # Récupérer les données du groupe depuis app_instance
+        if not self.app_instance or group_alias not in self.app_instance.actions_map_sub:
+            return
+        
+        func_data = self.app_instance.actions_map_sub[group_alias][0]
+        if not isinstance(func_data, tuple) or len(func_data) != 3:
+            return
+        
+        _, children, kwargs = func_data
+        if not kwargs.get('is_group'):
+            return
+        
+        # Calculer le centre du bouton en coordonnées globales
+        btn_rect = group_button.geometry()
+        btn_center_local = btn_rect.center()
+        btn_center_global = self.mapToGlobal(btn_center_local)
+        
+        # Créer les boutons du sous-menu pour chaque enfant
+        submenu_buttons = []
+        for child in children:
+            child_alias = child.get('alias', '')
+            child_string = child.get('string', '')
+            child_action = child.get('action', 'copy')
+            
+            # Créer le handler pour ce clip enfant (passer group_alias pour les modes update/delete/store)
+            handler = self.make_group_child_click_handler(child_alias, child_string, child_action, group_alias)
+            
+            tooltip = child_string.replace(r'\n', '\n')
+            submenu_buttons.append((child_alias, handler, tooltip))
+        
+        # Créer le sous-menu
+        self.hover_submenu = HoverSubMenu(
+            btn_center_global.x(),
+            btn_center_global.y(),
+            submenu_buttons,
+            parent_menu=self,
+            app_instance=self.app_instance
+        )
+        self.hover_submenu.group_alias = group_alias
+        self.hover_submenu.is_group_submenu = True
+        self.hover_submenu.children_data = list(children)  # Données pour le drag des enfants
+        self.hover_submenu.show()
+        self.hover_submenu.animate_open()
+    
+    def make_group_child_click_handler(self, alias, string, action, group_alias):
+        """Crée un handler pour un clip enfant d'un groupe (appelé depuis le sous-menu)"""
+        from utils import paperclip_copy, execute_terminal, execute_command
+        
+        def handler():
+            # Fermer le sous-menu d'abord
+            if self.hover_submenu is not None:
+                try:
+                    submenu = self.hover_submenu
+                    self.hover_submenu = None
+                    submenu.closing = True
+                    submenu.close()
+                except RuntimeError:
+                    self.hover_submenu = None
+            
+            # Vérifier les modes spéciaux
+            if self.app_instance:
+                # Mode UPDATE : ouvrir l'éditeur du clip
+                if self.app_instance.get_update_mode():
+                    self.app_instance.edit_group_child_clip(group_alias, alias, string, action, self.x, self.y)
+                    return
+                
+                # Mode DELETE : ouvrir la confirmation de suppression
+                if self.app_instance.get_delete_mode():
+                    self.app_instance.delete_group_child_clip(group_alias, alias, string, self.x, self.y)
+                    return
+                
+                # Mode STORE : stocker le clip
+                if self.app_instance.get_store_mode():
+                    self.app_instance.store_group_child_clip(group_alias, alias, string, action, self.x, self.y)
+                    return
+            
+            # Mode NORMAL : exécuter l'action du clip
+            if action == "copy":
+                paperclip_copy(string)
+                message = f'"{string}" copié'
+            elif action == "term":
+                execute_terminal(string)
+                message = f'"{string}" exécuté dans un terminal'
+            elif action == "exec":
+                execute_command(string)
+                message = f'"{string}" lancé'
+            else:
+                message = None
+            
+            # Afficher le message
+            if message:
+                self.tooltip_window.show_message(message, 1000)
+                self.update_tooltip_position()
+            
+            # Fermer le menu principal après un délai
+            QTimer.singleShot(300, self.close_with_animation)
+        
+        return handler
+    
     def check_hover_submenu_close(self):
         """Vérifie si le sous-menu doit être fermé"""
         if not self.hover_submenu:
@@ -998,7 +1130,79 @@ class RadialMenu(QWidget):
             # Libérer la capture de la souris
             self.releaseMouse()
             
-            # Fin du drag
+            # === CAS 0: Drop d'un enfant de groupe (sortie du groupe) ===
+            if self.dragging_child_from_group and self.dragging_child_data is not None:
+                if self.drop_target_info is not None:
+                    from utils import extract_clip_from_group_to_position
+                    
+                    # drop_target_info contient (target_index, insert_before, target_action)
+                    target_index, insert_before, target_action = self.drop_target_info
+                    
+                    child_alias = self.dragging_child_data.get('alias', '')
+                    group_alias = self.dragging_child_group_alias
+                    target_alias = self.button_labels[target_index] if target_index < len(self.button_labels) else None
+                    
+                    if child_alias and group_alias and target_alias and self.app_instance:
+                        # Extraire le clip du groupe et le placer à la position cible en une seule opération
+                        success = extract_clip_from_group_to_position(
+                            self.app_instance.clip_notes_file_json,
+                            group_alias,
+                            child_alias,
+                            target_alias,
+                            insert_before,
+                            new_action=target_action
+                        )
+                        
+                        if success:
+                            self._reset_drag_state()
+                            self.tooltip_window.show_message("✓ Clip sorti du groupe", 1000)
+                            self.update_tooltip_position()
+                            self.app_instance.refresh_menu()
+                            return
+                
+                # Pas de position de drop valide, annuler
+                self._reset_drag_state()
+                self.update()
+                return
+            
+            # === CAS 1: Drop SUR un clip -> Création de groupe ===
+            if self.drop_on_clip_index is not None and self.dragged_button_index is not None:
+                source_alias = self.button_labels[self.dragged_button_index] if self.dragged_button_index < len(self.button_labels) else None
+                target_alias = self.button_labels[self.drop_on_clip_index] if self.drop_on_clip_index < len(self.button_labels) else None
+                
+                if source_alias and target_alias and source_alias != target_alias:
+                    if self.app_instance:
+                        from utils import create_group_in_json, is_group, add_clip_to_group
+                        
+                        # Vérifier si la cible est déjà un groupe
+                        if is_group(self.app_instance.clip_notes_file_json, target_alias):
+                            # Ajouter le clip au groupe existant
+                            success = add_clip_to_group(
+                                self.app_instance.clip_notes_file_json,
+                                target_alias,
+                                source_alias
+                            )
+                            message = "✓ Clip ajouté au groupe"
+                        else:
+                            # Créer un nouveau groupe
+                            success = create_group_in_json(
+                                self.app_instance.clip_notes_file_json,
+                                target_alias,  # Le clip cible devient le premier du groupe
+                                source_alias   # Le clip dragué devient le second
+                            )
+                            message = "✓ Groupe créé"
+                        
+                        if success:
+                            self._reset_drag_state()
+                            self.tooltip_window.show_message(message, 1000)
+                            self.update_tooltip_position()
+                            if self.reorder_mode:
+                                self.app_instance.reorder_clip_mode(self.x, self.y)
+                            else:
+                                self.app_instance.refresh_menu()
+                            return
+            
+            # === CAS 2: Drop à côté -> Déplacement normal ===
             if self.drop_target_info is not None and self.dragged_button_index is not None:
                 # drop_target_info contient (target_index, insert_before, target_action)
                 target_index, insert_before, target_action = self.drop_target_info
@@ -1019,24 +1223,9 @@ class RadialMenu(QWidget):
                             new_action=target_action  # Passer la nouvelle action
                         )
                         if success:
-                            # Réinitialiser l'état du drag AVANT de rafraîchir
-                            self.drag_active = False
-                            self.drag_pending = False
-                            self.drag_start_pos = None
-                            self.dragged_button_index = None
-                            self.drop_indicator_angle = None
-                            self.drop_target_info = None
-                            self.hovered_action = None
-                            self.current_grabed_clip_label = None
-                            self.setCursor(Qt.CursorShape.ArrowCursor)
-                            # Masquer les badges
-                            for badge in self.action_badges.values():
-                                badge.setVisible(False)
-                            
-                            # Afficher un message de confirmation
+                            self._reset_drag_state()
                             self.tooltip_window.show_message("✓ Clip déplacé", 1000)
                             self.update_tooltip_position()
-                            # Rafraîchir le menu selon le mode
                             if self.reorder_mode:
                                 self.app_instance.reorder_clip_mode(self.x, self.y)
                             else:
@@ -1044,19 +1233,28 @@ class RadialMenu(QWidget):
                             return
             
             # Réinitialiser l'état du drag
-            self.drag_active = False
-            self.drag_pending = False
-            self.drag_start_pos = None
-            self.dragged_button_index = None
-            self.drop_indicator_angle = None
-            self.drop_target_info = None
-            self.hovered_action = None
-            self.current_grabed_clip_label = None
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-            # Masquer les badges
-            for badge in self.action_badges.values():
-                badge.setVisible(False)
+            self._reset_drag_state()
             self.update()
+    
+    def _reset_drag_state(self):
+        """Réinitialise toutes les variables liées au drag"""
+        self.drag_active = False
+        self.drag_pending = False
+        self.drag_start_pos = None
+        self.dragged_button_index = None
+        self.drop_indicator_angle = None
+        self.drop_target_info = None
+        self.drop_on_clip_index = None
+        self.hovered_action = None
+        self.current_grabed_clip_label = None
+        # Variables pour le drag d'enfant de groupe
+        self.dragging_child_from_group = False
+        self.dragging_child_group_alias = None
+        self.dragging_child_data = None
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+        # Masquer les badges
+        for badge in self.action_badges.values():
+            badge.setVisible(False)
     
     def leaveEvent(self, event):
         """Efface l'icône centrale quand la souris quitte le widget"""
@@ -1074,18 +1272,7 @@ class RadialMenu(QWidget):
         if self.drag_active or self.drag_pending:
             if self.drag_active:
                 self.releaseMouse()
-            self.drag_active = False
-            self.drag_pending = False
-            self.drag_start_pos = None
-            self.dragged_button_index = None
-            self.drop_indicator_angle = None
-            self.drop_target_info = None
-            self.current_grabed_clip_label = None
-            self.hovered_action = None
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-            # Masquer les badges
-            for badge in self.action_badges.values():
-                badge.setVisible(False)
+            self._reset_drag_state()
             self.update()
 
         
@@ -1225,7 +1412,14 @@ class RadialMenu(QWidget):
             visible_indices: Liste des indices des boutons visibles
             num_visible: Nombre de boutons visibles
         """
-        if not self.drag_active or self.dragged_button_index is None:
+        # Vérifier si un drag est actif (soit un bouton normal, soit un enfant de groupe)
+        if not self.drag_active:
+            return
+        
+        # Si on drag un enfant de groupe, on n'a pas de dragged_button_index mais c'est OK
+        is_child_drag = self.dragging_child_from_group and self.dragging_child_data is not None
+        
+        if self.dragged_button_index is None and not is_child_drag:
             return
         
         # Boutons spéciaux à ignorer
@@ -1299,9 +1493,12 @@ class RadialMenu(QWidget):
         # === 3. Calculer toutes les positions de drop possibles ===
         drop_positions = []
         
-        # Filtrer les clips sans celui qu'on drag
-        clips_without_dragged = [(btn_index, pos, action) for btn_index, pos, action in all_clips 
-                                  if btn_index != self.dragged_button_index]
+        # Filtrer les clips sans celui qu'on drag (sauf pour le drag d'enfant où on garde tout)
+        if is_child_drag:
+            clips_without_dragged = all_clips  # Tous les clips sont des cibles possibles
+        else:
+            clips_without_dragged = [(btn_index, pos, action) for btn_index, pos, action in all_clips 
+                                      if btn_index != self.dragged_button_index]
         
         if not clips_without_dragged:
             self.drop_indicator_angle = None
@@ -1371,7 +1568,44 @@ class RadialMenu(QWidget):
             indicator_after_last = (last_angle + angle_step * 0.4) % 360
             drop_positions.append((indicator_after_last, last_btn_index, False, last_action))
         
-        # === 5. Trouver la position de drop la plus proche de la souris ===
+        # === 5. Vérifier si on est directement SUR un clip (pour créer un groupe) ===
+        # Seuil pour la fusion : si on est très proche du centre d'un clip
+        fusion_threshold = angle_step * 0.2
+        drop_on_clip = None
+        
+        # Vérifier si le dragged est un groupe (on ne peut pas fusionner un groupe avec un clip)
+        dragged_is_group = False
+        if self.dragged_button_index is not None and self.dragged_button_index < len(self.button_is_group):
+            dragged_is_group = self.button_is_group[self.dragged_button_index]
+        
+        # Seulement permettre le drop ON clip si :
+        # - le dragged n'est pas un groupe
+        # - on ne drag PAS un enfant de groupe (il sort du groupe, pas fusion)
+        if not dragged_is_group and not is_child_drag:
+            for btn_index, pos, action in clips_without_dragged:
+                # Vérifier si la cible est un groupe (on peut dragger UN CLIP sur un groupe pour l'ajouter)
+                target_is_group = False
+                if btn_index < len(self.button_is_group):
+                    target_is_group = self.button_is_group[btn_index]
+                
+                clip_angle = pos * angle_step
+                dist = abs(clip_angle - mouse_angle_deg)
+                if dist > 180:
+                    dist = 360 - dist
+                
+                if dist < fusion_threshold:
+                    drop_on_clip = btn_index
+                    break
+        
+        self.drop_on_clip_index = drop_on_clip
+        
+        # Si on est sur un clip, ne pas afficher l'indicateur de position
+        if drop_on_clip is not None:
+            self.drop_indicator_angle = None
+            self.drop_target_info = None
+            return
+        
+        # === 6. Trouver la position de drop la plus proche de la souris ===
         best_indicator_angle = None
         best_target_info = None
         min_distance = float('inf')
@@ -1819,6 +2053,43 @@ class RadialMenu(QWidget):
                         label
                     )
 
+        # === INDICATEUR DE FUSION (drop sur un clip pour créer un groupe) ===
+        if self.drag_active and self.drop_on_clip_index is not None:
+            # Trouver la position du clip cible
+            visible_indices = [i for i, btn in enumerate(self.buttons) if btn.isVisible()]
+            if self.drop_on_clip_index in visible_indices:
+                pos_in_visible = visible_indices.index(self.drop_on_clip_index)
+                angle_step = 360 / len(visible_indices)
+                target_angle = math.radians(pos_in_visible * angle_step)
+                
+                # Position du clip cible
+                target_x = center.x() + (self.radius * math.cos(target_angle)) * self.scale_factor
+                target_y = center.y() + (self.radius * math.sin(target_angle)) * self.scale_factor
+                
+                # Rayon du cercle de fusion (plus grand que le bouton)
+                fusion_radius = int((self.btn_size // 2 + 12) * self.scale_factor)
+                
+                # Dessiner un glow orange/doré
+                glow_pen = QPen(QColor(255, 180, 0, 100))
+                glow_pen.setWidth(8)
+                painter.setPen(glow_pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawEllipse(QPointF(target_x, target_y), fusion_radius, fusion_radius)
+                
+                # Dessiner le cercle principal orange
+                fusion_pen = QPen(QColor(255, 180, 0, 220))
+                fusion_pen.setWidth(4)
+                painter.setPen(fusion_pen)
+                painter.drawEllipse(QPointF(target_x, target_y), fusion_radius - 4, fusion_radius - 4)
+                
+                # Dessiner l'icône "+" au-dessus du clip
+                painter.setPen(QColor(255, 180, 0, 255))
+                font = QFont("Arial", int(16 * self.scale_factor), QFont.Weight.Bold)
+                painter.setFont(font)
+                plus_x = target_x + fusion_radius * 0.6
+                plus_y = target_y - fusion_radius * 0.6
+                painter.drawText(int(plus_x - 8), int(plus_y + 8), "+")
+
 
         if self.neon_enabled:
             scaled_neon_radius = self.neon_radius * self.scale_factor
@@ -1849,6 +2120,40 @@ class RadialMenu(QWidget):
             font = QFont("Arial", int(24 * self.scale_factor))
             painter.setFont(font)
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.central_text)
+        
+        # === INDICATEURS DE GROUPE (petit badge sur les boutons qui sont des groupes) ===
+        visible_indices = [i for i, btn in enumerate(self.buttons) if btn.isVisible()]
+        if visible_indices and len(self.button_is_group) > 0:
+            angle_step = 360 / len(visible_indices)
+            center_offset = self.widget_size // 2
+            
+            for pos_in_visible, btn_index in enumerate(visible_indices):
+                if btn_index < len(self.button_is_group) and self.button_is_group[btn_index]:
+                    # Ce bouton est un groupe - dessiner un petit badge
+                    angle = math.radians(pos_in_visible * angle_step)
+                    
+                    # Position du centre du bouton
+                    btn_center_x = center_offset + (self.radius * math.cos(angle)) * self.scale_factor
+                    btn_center_y = center_offset + (self.radius * math.sin(angle)) * self.scale_factor
+                    
+                    # Position du badge (en bas à droite du bouton)
+                    badge_offset = int(self.btn_size * 0.35 * self.scale_factor)
+                    badge_x = btn_center_x + badge_offset
+                    badge_y = btn_center_y + badge_offset
+                    badge_radius = int(10 * self.scale_factor)
+                    
+                    # Dessiner le fond du badge (cercle orange)
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(QColor(255, 180, 0, 220))
+                    painter.drawEllipse(QPointF(badge_x, badge_y), badge_radius, badge_radius)
+                    
+                    # Dessiner le "+" dans le badge
+                    painter.setPen(QColor(0, 0, 0))
+                    font = QFont("Arial", int(10 * self.scale_factor), QFont.Weight.Bold)
+                    painter.setFont(font)
+                    text_rect = QRectF(badge_x - badge_radius, badge_y - badge_radius, 
+                                       badge_radius * 2, badge_radius * 2)
+                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, "⊕")
         
         # Dessiner le cercle de focus (seulement si le clavier a été utilisé)
         if self.focused_index >= 0 and self.focused_index < len(self.buttons):

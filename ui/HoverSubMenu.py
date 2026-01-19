@@ -27,6 +27,19 @@ class HoverSubMenu(QWidget):
         self.closing = False
         self.central_icon_label = ""  # Icône centrale (vide = pas d'icône)
         
+        # Variables pour le drag du groupe depuis le centre
+        self.is_group_submenu = False  # Sera mis à True si c'est un sous-menu de groupe
+        self.group_alias = None  # Alias du groupe (sera défini après création)
+        self.children_data = []  # Données complètes des clips enfants (pour le drag)
+        self.drag_pending = False
+        self.drag_start_pos = None
+        self.drag_threshold = 10  # Pixels minimum pour déclencher un drag
+        self.center_radius = 25  # Rayon de la zone centrale pour le drag
+        
+        # Variables pour le drag d'un clip enfant (sortir du groupe)
+        self.dragged_child_index = None  # Index du bouton enfant en cours de drag
+        self.dragged_child_button = None  # Référence au bouton en cours de drag
+        
         # Connecter le signal destroyed pour nettoyer la référence dans le parent
         self.destroyed.connect(self.on_destroyed)
         
@@ -87,25 +100,44 @@ class HoverSubMenu(QWidget):
             btn = QPushButton("", self)
             btn.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
             
-            # Icône
-            if is_emoji(label):
+            # Icône - gérer images, emojis et texte (même logique que RadialMenu)
+            if "/" in label:
+                # C'est un chemin d'image
+                btn.setIcon(QIcon(image_pixmap(label, 38)))
+                btn.setIconSize(QSize(38, 38))
+            elif is_emoji(label):
                 btn.setIcon(QIcon(emoji_pixmap(label, 28)))
                 btn.setIconSize(QSize(28, 28))
             else:
                 btn.setIcon(QIcon(text_pixmap(label, 28)))
                 btn.setIconSize(QSize(28, 28))
             
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: rgba(80, 80, 80, 50);
-                    border-radius: {self.btn_size // 2}px;
-                    border: 2px solid rgba(255, 255, 255, 0);
-                }}
-                QPushButton:hover {{
-                    background-color: rgba(120, 120, 120, 250);
-                    border: 2px solid rgba(255, 255, 255, 0);
-                }}
-            """)
+            # Style différent pour les images
+            if "/" in label:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: transparent;
+                        border-radius: {self.btn_size // 2}px;
+                        border: 2px solid rgba(255, 255, 255, 0);
+                    }}
+                    QPushButton:hover {{
+                        background-color: rgba(120, 120, 120, 200);
+                        border: 2px solid rgba(255, 255, 255, 0);
+                    }}
+                """)
+            else:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: rgba(80, 80, 80, 50);
+                        border-radius: {self.btn_size // 2}px;
+                        border: 2px solid rgba(255, 255, 255, 0);
+                    }}
+                    QPushButton:hover {{
+                        background-color: rgba(120, 120, 120, 250);
+                        border: 2px solid rgba(255, 255, 255, 0);
+                    }}
+                """)
+            
             btn.setFixedSize(self.btn_size, self.btn_size)
             btn.move(int(bx), int(by))
             btn.clicked.connect(self.make_click_handler(callback))
@@ -125,7 +157,7 @@ class HoverSubMenu(QWidget):
         return handler
     
     def eventFilter(self, watched, event):
-        """Gère les événements de hover sur les boutons du sous-menu"""
+        """Gère les événements de hover et drag sur les boutons du sous-menu"""
         if event.type() == QEvent.Type.Enter:
             # Annuler la fermeture si on entre sur un bouton
             if self.close_timer.isActive():
@@ -166,6 +198,35 @@ class HoverSubMenu(QWidget):
                 self.parent_menu.central_icon = None
                 self.parent_menu.update()
         
+        # === Drag d'un clip enfant (pour le sortir du groupe) ===
+        elif event.type() == QEvent.Type.MouseButtonPress:
+            if self.is_group_submenu and watched in self.buttons:
+                if event.button() == Qt.MouseButton.LeftButton:
+                    button_index = self.buttons.index(watched)
+                    self.dragged_child_index = button_index
+                    self.dragged_child_button = watched
+                    self.drag_start_pos = event.pos()
+                    self.drag_pending = True
+        
+        elif event.type() == QEvent.Type.MouseMove:
+            if self.drag_pending and self.dragged_child_button is not None:
+                if self.drag_start_pos is not None:
+                    delta = event.pos() - self.drag_start_pos
+                    distance = math.sqrt(delta.x() ** 2 + delta.y() ** 2)
+                    
+                    if distance > self.drag_threshold:
+                        # Seuil atteint - transférer le drag au RadialMenu parent
+                        self.start_child_drag()
+                        return True
+        
+        elif event.type() == QEvent.Type.MouseButtonRelease:
+            # Reset du drag si on relâche sans avoir atteint le seuil
+            if self.dragged_child_button is not None:
+                self.dragged_child_index = None
+                self.dragged_child_button = None
+                self.drag_start_pos = None
+                self.drag_pending = False
+        
         return super().eventFilter(watched, event)
     
     def enterEvent(self, event):
@@ -183,15 +244,116 @@ class HoverSubMenu(QWidget):
         super().leaveEvent(event)
     
     def mousePressEvent(self, event):
-        """Gère les clics dans le sous-menu - ignore les clics au centre (hors boutons)"""
+        """Gère les clics dans le sous-menu"""
         # Vérifier si le clic est sur un bouton
         for btn in self.buttons:
             if btn.geometry().contains(event.pos()):
                 # Laisser le bouton gérer le clic
                 return super().mousePressEvent(event)
         
-        # Clic en dehors des boutons - ne rien faire (ignorer)
+        # Si c'est un groupe submenu, vérifier si le clic est au centre
+        if self.is_group_submenu and self.group_alias and event.button() == Qt.MouseButton.LeftButton:
+            # Calculer la distance au centre
+            center = self.rect().center()
+            dx = event.pos().x() - center.x()
+            dy = event.pos().y() - center.y()
+            distance = math.sqrt(dx * dx + dy * dy)
+            
+            if distance < self.center_radius:
+                if self.app_instance and self.app_instance.get_update_mode():
+                    print(self.group_alias)
+                    self.app_instance.show_group_edit_dialog(self.group_alias, dx, dy)
+                    event.accept()
+                    return
+                # Clic au centre - préparer le drag du groupe
+                self.drag_pending = True
+                self.drag_start_pos = event.pos()
+                self.setCursor(Qt.CursorShape.ClosedHandCursor)
+                event.accept()
+                return
+        
+        # Clic en dehors des boutons et du centre - ignorer
         event.accept()
+    
+    def mouseMoveEvent(self, event):
+        """Gère le mouvement de la souris pour le drag du groupe"""
+        if self.drag_pending and self.drag_start_pos is not None:
+            # Calculer la distance parcourue
+            delta = event.pos() - self.drag_start_pos
+            distance = math.sqrt(delta.x() ** 2 + delta.y() ** 2)
+            
+            if distance > self.drag_threshold:
+                # Seuil atteint - transférer le drag au RadialMenu parent
+                self.start_group_drag()
+                return
+        
+        super().mouseMoveEvent(event)
+    
+    def mouseReleaseEvent(self, event):
+        """Gère le relâchement de la souris"""
+        if self.drag_pending:
+            self.drag_pending = False
+            self.drag_start_pos = None
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+        super().mouseReleaseEvent(event)
+    
+    def start_group_drag(self):
+        """Transfère le drag du groupe au RadialMenu parent"""
+        if not self.parent_menu or not self.group_alias:
+            return
+        
+        # Trouver l'index du groupe dans le RadialMenu parent
+        group_index = None
+        for i, label in enumerate(self.parent_menu.button_labels):
+            if label == self.group_alias:
+                group_index = i
+                break
+        
+        if group_index is None:
+            return
+        
+        # Fermer ce sous-menu
+        self.closing = True
+        self.parent_menu.hover_submenu = None
+        
+        # Activer le drag sur le parent
+        self.parent_menu.drag_active = True
+        self.parent_menu.dragged_button_index = group_index
+        self.parent_menu.current_grabed_clip_label = self.group_alias
+        self.parent_menu.setCursor(Qt.CursorShape.ClosedHandCursor)
+        self.parent_menu.grabMouse()
+        
+        # Fermer ce widget
+        self.close()
+    
+    def start_child_drag(self):
+        """Transfère le drag d'un clip enfant au RadialMenu parent (pour le sortir du groupe)"""
+        if not self.parent_menu or not self.group_alias or self.dragged_child_index is None:
+            return
+        
+        # Récupérer les données du clip enfant
+        if self.dragged_child_index >= len(self.children_data):
+            return
+        
+        child_data = self.children_data[self.dragged_child_index]
+        child_alias = child_data.get('alias', '')
+        
+        # Fermer ce sous-menu
+        self.closing = True
+        self.parent_menu.hover_submenu = None
+        
+        # Stocker les infos du clip enfant en cours de drag sur le parent
+        self.parent_menu.drag_active = True
+        self.parent_menu.dragged_button_index = None  # Pas un bouton du menu principal
+        self.parent_menu.current_grabed_clip_label = child_alias
+        self.parent_menu.dragging_child_from_group = True  # Nouveau flag
+        self.parent_menu.dragging_child_group_alias = self.group_alias  # Groupe source
+        self.parent_menu.dragging_child_data = child_data  # Données du clip
+        self.parent_menu.setCursor(Qt.CursorShape.ClosedHandCursor)
+        self.parent_menu.grabMouse()
+        
+        # Fermer ce widget
+        self.close()
     
     def check_and_close(self):
         """Vérifie si la souris est sur le bouton parent ou le sous-menu, sinon ferme"""
@@ -204,8 +366,8 @@ class HoverSubMenu(QWidget):
         if self.rect().contains(local_pos):
             return  # Souris encore sur le sous-menu
         
-        # Vérifier si la souris est sur le bouton ➖ du menu parent
-        if self.parent_menu and hasattr(self.parent_menu, 'storage_button_index'):
+        # Vérifier si la souris est sur le bouton ➖ du menu parent (pour le sous-menu storage)
+        if self.parent_menu and hasattr(self.parent_menu, 'storage_button_index') and not self.is_group_submenu:
             storage_idx = self.parent_menu.storage_button_index
             if storage_idx is not None and storage_idx < len(self.parent_menu.buttons):
                 storage_btn = self.parent_menu.buttons[storage_idx]
@@ -213,6 +375,18 @@ class HoverSubMenu(QWidget):
                 btn_rect_global = QRect(btn_global_pos, storage_btn.size())
                 if btn_rect_global.contains(cursor_pos):
                     return  # Souris sur le bouton ➖
+        
+        # Vérifier si la souris est sur le bouton du groupe parent (pour les sous-menus de groupe)
+        if self.is_group_submenu and self.group_alias and self.parent_menu:
+            # Trouver le bouton du groupe
+            for i, label in enumerate(self.parent_menu.button_labels):
+                if label == self.group_alias and i < len(self.parent_menu.buttons):
+                    group_btn = self.parent_menu.buttons[i]
+                    btn_global_pos = group_btn.mapToGlobal(group_btn.rect().topLeft())
+                    btn_rect_global = QRect(btn_global_pos, group_btn.size())
+                    if btn_rect_global.contains(cursor_pos):
+                        return  # Souris sur le bouton du groupe
+                    break
         
         # Sinon fermer le sous-menu
         self.closing = True
@@ -255,8 +429,32 @@ class HoverSubMenu(QWidget):
         painter.setPen(QPen(QColor(255, 255, 255, 0), 2))
         painter.drawEllipse(circle_rect)
         
-        # Icône centrale (seulement si définie)
-        if self.central_icon_label and self.scale_factor > 0.5:
+        # === Pour les groupes : afficher l'icône au centre avec indicateur de drag ===
+        if self.is_group_submenu and self.group_alias and self.scale_factor > 0.5:
+            # Dessiner un cercle central pour indiquer la zone de drag
+            drag_zone_radius = int(self.center_radius * self.scale_factor)
+            painter.setBrush(QColor(100, 100, 100, 100))
+            painter.setPen(QPen(QColor(255, 255, 255, 80), 2))
+            painter.drawEllipse(center, drag_zone_radius, drag_zone_radius)
+            
+            # Dessiner l'icône du groupe au centre
+            icon_size = int(28 * self.scale_factor)
+            label = self.group_alias
+            
+            if "/" in label:
+                icon_pixmap = image_pixmap(label, icon_size)
+            elif is_emoji(label):
+                icon_pixmap = emoji_pixmap(label, icon_size)
+            else:
+                icon_pixmap = text_pixmap(label, icon_size)
+            
+            painter.drawPixmap(
+                center.x() - icon_size // 2,
+                center.y() - icon_size // 2,
+                icon_pixmap
+            )
+        # Icône centrale standard (seulement si définie et pas un groupe)
+        elif self.central_icon_label and self.scale_factor > 0.5:
             icon_size = int(24 * self.scale_factor)
             if is_emoji(self.central_icon_label):
                 icon_pixmap = emoji_pixmap(self.central_icon_label, icon_size)

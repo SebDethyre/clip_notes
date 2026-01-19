@@ -115,7 +115,16 @@ class ClipNotesWindow(QMainWindow):
         os.makedirs(self.thumbnails_dir, exist_ok=True)
         # Charger la configuration au démarrage
         self.load_config()
-
+    
+    def get_update_mode(self):
+        return self.update_mode
+    
+    def get_delete_mode(self):
+        return self.delete_mode
+    
+    def get_store_mode(self):
+        return self.store_mode
+    
     def load_config(self):
         """Charge la configuration depuis le fichier JSON"""
         
@@ -458,7 +467,13 @@ class ClipNotesWindow(QMainWindow):
             if self.tracker:
                 self.tracker.update_pos()
                 x, y = self.tracker.last_x, self.tracker.last_y
-            self.edit_clip(name, value, x, y, slider_value, html_string=html_string)
+            
+            from utils import is_group
+            # Vérifier si c'est un groupe
+            if is_group(self.clip_notes_file_json, name):
+                self.show_group_edit_dialog(name, x, y)
+            else:
+                self.edit_clip(name, value, x, y, slider_value, html_string=html_string)
         return handler
 
     def delete_clip(self, x, y):
@@ -630,12 +645,21 @@ class ClipNotesWindow(QMainWindow):
         """)
         
         def confirm_delete():
+            from utils import is_group, delete_group_from_json
+            
+            # Vérifier si c'est un groupe
+            if is_group(self.clip_notes_file_json, name):
+                # Supprimer le groupe et tous ses clips
+                delete_group_from_json(self.clip_notes_file_json, name)
+            else:
+                # Supprimer un clip normal
+                delete_from_json(self.clip_notes_file_json, name)
+                # Supprimer l'ancien thumbnail s'il existe
+                if os.path.exists(name):
+                    if "/usr" not in name and "/share" not in name:
+                        os.remove(name)
+            
             self.actions_map_sub.pop(name, None)
-            delete_from_json(self.clip_notes_file_json, name)
-            # Supprimer l'ancien thumbnail s'il existe
-            if os.path.exists(name):
-                if "/usr" not in name and "/share" not in name:
-                    os.remove(name)
             dialog.accept()
             # Rester en mode suppression au lieu de revenir au menu principal
             self.delete_clip(x, y)
@@ -660,8 +684,18 @@ class ClipNotesWindow(QMainWindow):
         def handler_sub():
             if name in self.actions_map_sub:
                 func_data = self.actions_map_sub[name][0]
+                
+                # Vérifier si c'est un groupe
                 if isinstance(func_data, tuple) and len(func_data) == 3:
                     func, args, kwargs = func_data
+                    
+                    # Si c'est un groupe, ouvrir le sous-menu du groupe
+                    if kwargs.get('is_group'):
+                        children = args  # args contient la liste des enfants
+                        self.show_group_submenu(name, children, x, y)
+                        return
+                    
+                    # Sinon, exécuter la fonction normalement
                     func(*args, **kwargs)
                     special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
                     if name not in special_buttons:
@@ -688,6 +722,549 @@ class ClipNotesWindow(QMainWindow):
                 else:
                     print(f"Aucune fonction associée à '{name}'")
         return handler_sub
+    
+    def show_group_submenu(self, group_alias, children, x, y):
+        """Affiche un sous-menu pour un groupe de clips"""
+        from ui import HoverSubMenu
+        from utils import paperclip_copy, execute_terminal, execute_command
+        
+        if self.tracker:
+            self.tracker.update_pos()
+            x, y = self.tracker.last_x, self.tracker.last_y
+        
+        # Construire les boutons pour chaque enfant du groupe
+        # Format attendu par HoverSubMenu: (label, callback, tooltip)
+        submenu_buttons = []
+        for child in children:
+            child_alias = child.get('alias', '')
+            child_string = child.get('string', '')
+            child_action = child.get('action', 'copy')
+            
+            # Créer le handler pour ce clip enfant
+            handler = self.make_group_child_handler(child_alias, child_string, child_action, group_alias)
+            
+            tooltip = child_string.replace(r'\n', '\n')
+            # Format: (label, callback, tooltip)
+            submenu_buttons.append((child_alias, handler, tooltip))
+        
+        # Fermer l'ancien sous-menu s'il existe
+        if self.current_popup and self.current_popup.hover_submenu:
+            try:
+                self.current_popup.hover_submenu.close()
+            except RuntimeError:
+                pass
+        
+        # Créer le sous-menu avec les bons paramètres
+        # Signature: __init__(self, center_x, center_y, buttons, parent_menu=None, app_instance=None)
+        submenu = HoverSubMenu(
+            x, y,
+            submenu_buttons,
+            parent_menu=self.current_popup,
+            app_instance=self
+        )
+        
+        # Stocker la référence au groupe
+        submenu.group_alias = group_alias
+        submenu.is_group_submenu = True
+        
+        if self.current_popup:
+            self.current_popup.hover_submenu = submenu
+        
+        submenu.show()
+    
+    def make_group_child_handler(self, alias, string, action, group_alias):
+        """Crée un handler pour un clip enfant d'un groupe"""
+        def handler():
+            from utils import paperclip_copy, execute_terminal, execute_command
+            
+            # Exécuter l'action du clip
+            if action == "copy":
+                paperclip_copy(string)
+                message = f'"{string}" copié'
+            elif action == "term":
+                execute_terminal(string)
+                message = f'"{string}" exécuté dans un terminal'
+            elif action == "exec":
+                execute_command(string)
+                message = f'"{string}" lancé'
+            else:
+                message = None
+            
+            # Afficher le message et fermer
+            if message and self.current_popup:
+                self.current_popup.tooltip_window.show_message(message, 1000)
+                self.current_popup.update_tooltip_position()
+                QTimer.singleShot(300, self.close_popup)
+            else:
+                self.close_popup()
+        
+        return handler
+    
+    def show_group_edit_dialog(self, group_alias, x, y):
+        """Affiche une fenêtre d'édition pour un groupe"""
+        from utils import get_group_children, update_group_alias, remove_clip_from_group, add_clip_to_group
+        from ui import AutoScrollListWidget
+        
+        # Récupérer les enfants du groupe
+        children = get_group_children(self.clip_notes_file_json, group_alias)
+        if children is None:
+            return
+        
+        dialog = QDialog(self.tracker)
+        dialog.setWindowTitle("📁 Modifier le groupe")
+        dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        # Appliquer une palette sombre
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Base, QColor(35, 35, 35))
+        palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
+        dialog.setPalette(palette)
+        
+        dialog.setFixedSize(500, 450)
+        if self.tracker:
+            self.tracker.update_pos()
+            x, y = self.tracker.last_x, self.tracker.last_y
+        if x is None or y is None:
+            screen = QApplication.primaryScreen().geometry()
+            x = screen.center().x() - dialog.width() // 2
+            y = screen.center().y() - dialog.height() // 2
+        dialog.move(x - dialog.width() // 2, y - dialog.height() // 2)
+        
+        content = QWidget()
+        content.setStyleSheet(self.dialog_style)
+        
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # === Champ pour l'icône du groupe ===
+        icon_layout = QHBoxLayout()
+        icon_label = QLabel("Icône du groupe:")
+        icon_label.setStyleSheet("color: white;")
+        icon_input = QLineEdit(group_alias)
+        icon_input.setMaxLength(10)
+        icon_input.setFixedWidth(80)
+        icon_input.setStyleSheet("""
+            QLineEdit {
+                background-color: rgba(255, 255, 255, 20);
+                border: 1px solid rgba(255, 255, 255, 40);
+                border-radius: 6px;
+                padding: 6px;
+                color: white;
+                font-size: 18px;
+            }
+        """)
+        icon_layout.addWidget(icon_label)
+        icon_layout.addWidget(icon_input)
+        icon_layout.addStretch()
+        layout.addLayout(icon_layout)
+        
+        # === Deux listes côte à côte ===
+        lists_layout = QHBoxLayout()
+        
+        # Liste des clips dans le groupe
+        group_layout = QVBoxLayout()
+        group_label = QLabel("Clips dans le groupe:")
+        group_label.setStyleSheet("color: white; font-weight: bold;")
+        group_list = AutoScrollListWidget()
+        group_list.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
+        group_list.setDefaultDropAction(Qt.DropAction.MoveAction)
+        group_list.setStyleSheet("""
+            QListWidget {
+                background-color: rgba(255, 255, 255, 10);
+                border: 1px solid rgba(255, 255, 255, 30);
+                border-radius: 6px;
+                color: white;
+            }
+            QListWidget::item {
+                padding: 8px;
+                border-bottom: 1px solid rgba(255, 255, 255, 20);
+            }
+            QListWidget::item:selected {
+                background-color: rgba(100, 150, 255, 100);
+            }
+        """)
+        
+        # Remplir la liste du groupe
+        for child in children:
+            item = QListWidgetItem(f"{child.get('alias', '')} - {child.get('string', '')[:30]}...")
+            item.setData(Qt.ItemDataRole.UserRole, child.get('alias'))
+            group_list.addItem(item)
+        
+        group_layout.addWidget(group_label)
+        group_layout.addWidget(group_list)
+        lists_layout.addLayout(group_layout)
+        
+        # Boutons de transfert
+        transfer_layout = QVBoxLayout()
+        transfer_layout.addStretch()
+        
+        btn_to_available = QPushButton("→")
+        btn_to_available.setFixedSize(40, 40)
+        btn_to_available.setToolTip("Retirer du groupe")
+        
+        btn_to_group = QPushButton("←")
+        btn_to_group.setFixedSize(40, 40)
+        btn_to_group.setToolTip("Ajouter au groupe")
+        
+        transfer_layout.addWidget(btn_to_available)
+        transfer_layout.addWidget(btn_to_group)
+        transfer_layout.addStretch()
+        lists_layout.addLayout(transfer_layout)
+        
+        # Liste des clips disponibles (hors du groupe)
+        available_layout = QVBoxLayout()
+        available_label = QLabel("Clips disponibles:")
+        available_label.setStyleSheet("color: white; font-weight: bold;")
+        available_list = AutoScrollListWidget()
+        available_list.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
+        available_list.setDefaultDropAction(Qt.DropAction.MoveAction)
+        available_list.setStyleSheet(group_list.styleSheet())
+        
+        # Remplir la liste des clips disponibles
+        special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
+        children_aliases = [c.get('alias') for c in children]
+        
+        for name, (action_data, value, action) in self.actions_map_sub.items():
+            if name not in special_buttons and name != group_alias:
+                # Vérifier si c'est un groupe ou un clip dans un groupe
+                func_data = action_data
+                if isinstance(func_data, tuple) and len(func_data) == 3:
+                    _, _, kwargs = func_data
+                    if kwargs.get('is_group'):
+                        continue  # Ne pas lister les autres groupes
+                
+                if name not in children_aliases:
+                    display_text = value[:40] + "..." if len(value) > 40 else value
+                    item = QListWidgetItem(f"{name} - {display_text}")
+                    item.setData(Qt.ItemDataRole.UserRole, name)
+                    available_list.addItem(item)
+        
+        available_layout.addWidget(available_label)
+        available_layout.addWidget(available_list)
+        lists_layout.addLayout(available_layout)
+        
+        layout.addLayout(lists_layout)
+        
+        # === Fonctions de transfert ===
+        def transfer_to_available():
+            """Retire le clip sélectionné du groupe"""
+            current_item = group_list.currentItem()
+            if current_item:
+                clip_alias = current_item.data(Qt.ItemDataRole.UserRole)
+                # Vérifier qu'il reste au moins 2 clips
+                if group_list.count() <= 2:
+                    # Avertir que le groupe sera dissous
+                    pass
+                group_list.takeItem(group_list.row(current_item))
+                available_list.addItem(current_item)
+        
+        def transfer_to_group():
+            """Ajoute le clip sélectionné au groupe"""
+            current_item = available_list.currentItem()
+            if current_item:
+                available_list.takeItem(available_list.row(current_item))
+                group_list.addItem(current_item)
+        
+        btn_to_available.clicked.connect(transfer_to_available)
+        btn_to_group.clicked.connect(transfer_to_group)
+        
+        # === Boutons de validation ===
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(10)
+        
+        cancel_button = QPushButton("Annuler")
+        cancel_button.setFixedHeight(32)
+        cancel_button.clicked.connect(dialog.reject)
+        
+        save_button = QPushButton("Enregistrer")
+        save_button.setFixedHeight(32)
+        save_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(100, 200, 100, 150);
+                border: 1px solid rgba(150, 255, 150, 200);
+                border-radius: 6px;
+                padding: 6px;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: rgba(120, 220, 120, 200);
+            }
+        """)
+        
+        def save_changes():
+            from utils import update_group_alias, remove_clip_from_group, add_clip_to_group, get_group_children, is_group
+            
+            new_alias = icon_input.text().strip()
+            current_alias = group_alias
+            
+            # Mettre à jour l'alias si changé
+            if new_alias and new_alias != group_alias:
+                update_group_alias(self.clip_notes_file_json, group_alias, new_alias)
+                current_alias = new_alias
+            
+            # Récupérer les clips actuels dans le groupe (depuis le JSON)
+            current_children = get_group_children(self.clip_notes_file_json, current_alias)
+            current_aliases = [c.get('alias') for c in current_children] if current_children else []
+            
+            # Récupérer les clips de la liste UI
+            new_aliases = []
+            for i in range(group_list.count()):
+                item = group_list.item(i)
+                new_aliases.append(item.data(Qt.ItemDataRole.UserRole))
+            
+            # Trouver les clips à retirer
+            to_remove = [a for a in current_aliases if a not in new_aliases]
+            # Trouver les clips à ajouter
+            to_add = [a for a in new_aliases if a not in current_aliases]
+            
+            # Retirer les clips (vérifier si le groupe existe encore après chaque retrait)
+            for alias in to_remove:
+                # Vérifier si le groupe existe encore (il peut avoir été dissous)
+                if not is_group(self.clip_notes_file_json, current_alias):
+                    break  # Le groupe a été dissous, arrêter les retraits
+                remove_clip_from_group(self.clip_notes_file_json, current_alias, alias)
+            
+            # Ajouter les clips (seulement si le groupe existe encore)
+            for alias in to_add:
+                if is_group(self.clip_notes_file_json, current_alias):
+                    add_clip_to_group(self.clip_notes_file_json, current_alias, alias)
+            
+            dialog.accept()
+            
+            # Recharger actions_map_sub depuis le JSON
+            special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
+            self.actions_map_sub = self.buttons_actions_by_number[self.nb_icons_menu].copy()
+            populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
+            
+            # Rafraîchir le menu en restant en mode update
+            self.update_clip(x, y, context="keep_mode")
+        
+        save_button.clicked.connect(save_changes)
+        
+        buttons_layout.addWidget(cancel_button)
+        buttons_layout.addWidget(save_button)
+        layout.addLayout(buttons_layout)
+        
+        dialog_layout = QVBoxLayout(dialog)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        dialog_layout.addWidget(content)
+        
+        dialog.exec()
+        
+        # Réactiver le mouse tracking
+        if self.current_popup:
+            self.current_popup.setMouseTracking(True)
+    
+    def edit_group_child_clip(self, group_alias, child_alias, child_string, child_action, x, y):
+        """Édite un clip qui appartient à un groupe"""
+        from utils import get_group_children, update_group_child
+        
+        if self.tracker:
+            self.tracker.update_pos()
+            x, y = self.tracker.last_x, self.tracker.last_y
+        
+        # Récupérer les données complètes du clip enfant
+        children = get_group_children(self.clip_notes_file_json, group_alias)
+        child_data = None
+        for c in children or []:
+            if c.get('alias') == child_alias:
+                child_data = c
+                break
+        
+        if child_data is None:
+            return
+        
+        # Récupérer le HTML si présent
+        child_html = child_data.get('html', None)
+        
+        # Mapper l'action vers la valeur du slider
+        action_to_slider = {"copy": 0, "term": 1, "exec": 2}
+        slider_value = action_to_slider.get(child_action, 0)
+        
+        def handle_submit(dialog, name_input, value_input, slider):
+            new_name = name_input.text().strip()
+            new_value = value_input.toPlainText().strip().replace('\n', '\\n')
+            
+            # Capturer le HTML et vérifier s'il contient du formatting riche
+            new_html = value_input.toHtml()
+            new_html_to_save = new_html if has_rich_formatting(new_html) else None
+            
+            if new_name and new_value:
+                new_slider_value = slider.value()
+                action_map = {0: "copy", 1: "term", 2: "exec"}
+                new_action = action_map.get(new_slider_value, "copy")
+                
+                # Si une nouvelle image a été sélectionnée, créer le thumbnail
+                if self.dialog_temp_image_path:
+                    thumbnail_path = create_thumbnail(self.dialog_temp_image_path, self.thumbnails_dir)
+                    if thumbnail_path:
+                        new_name = thumbnail_path
+                    else:
+                        return
+                
+                # Mettre à jour le clip dans le groupe
+                update_group_child(
+                    self.clip_notes_file_json,
+                    group_alias,
+                    child_alias,
+                    new_alias=new_name,
+                    new_string=new_value,
+                    new_action=new_action,
+                    new_html=new_html_to_save
+                )
+                
+                dialog.accept()
+                
+                # Recharger les données et rester en mode update
+                special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
+                self.actions_map_sub = self.buttons_actions_by_number[self.nb_icons_menu].copy()
+                populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
+                self.update_clip(x, y, context="keep_mode")
+        
+        self.create_clip_dialog(
+            title="🔧 Modifier le clip",
+            button_text="Modifier",
+            x=x, y=y,
+            initial_name=child_alias,
+            initial_value=child_string.replace('\\n', '\n'),
+            initial_slider_value=slider_value,
+            initial_html=child_html,
+            on_submit_callback=handle_submit
+        )
+    
+    def delete_group_child_clip(self, group_alias, child_alias, child_string, x, y):
+        """Supprime un clip qui appartient à un groupe"""
+        from utils import remove_clip_from_group
+        
+        if self.tracker:
+            self.tracker.update_pos()
+            x, y = self.tracker.last_x, self.tracker.last_y
+        
+        dialog = QDialog(self.tracker)
+        dialog.setWindowTitle("➖ Supprimer")
+        dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Base, QColor(35, 35, 35))
+        palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
+        dialog.setPalette(palette)
+        
+        dialog.setFixedSize(350, 180)
+        dialog.move(x - dialog.width() // 2, y - dialog.height() // 2)
+        
+        content = QWidget()
+        content.setStyleSheet(self.dialog_style)
+        
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        message_label = QLabel(f"Supprimer ce clip du groupe ?\n\n{child_alias}")
+        message_label.setWordWrap(True)
+        message_label.setStyleSheet("color: white; font-size: 14px;")
+        message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(message_label)
+        
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(10)
+        
+        cancel_button = QPushButton("Annuler")
+        cancel_button.setFixedHeight(32)
+        cancel_button.clicked.connect(dialog.reject)
+        
+        delete_button = QPushButton("Supprimer")
+        delete_button.setFixedHeight(32)
+        delete_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 70, 70, 150);
+                border: 1px solid rgba(255, 100, 100, 200);
+                border-radius: 6px;
+                padding: 6px;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 100, 100, 200);
+            }
+        """)
+        
+        def confirm_delete():
+            # Retirer le clip du groupe (la fonction gère la dissolution si nécessaire)
+            remove_clip_from_group(self.clip_notes_file_json, group_alias, child_alias, "delete_mode")
+            
+            # Supprimer le thumbnail s'il existe
+            if "/" in child_alias and os.path.exists(child_alias):
+                if "/usr" not in child_alias and "/share" not in child_alias:
+                    try:
+                        os.remove(child_alias)
+                    except:
+                        pass
+            
+            dialog.accept()
+            
+            # Recharger les données et rester en mode delete
+            special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
+            self.actions_map_sub = self.buttons_actions_by_number[self.nb_icons_menu].copy()
+            populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
+            self.delete_clip(x, y)
+        
+        delete_button.clicked.connect(confirm_delete)
+        
+        buttons_layout.addWidget(cancel_button)
+        buttons_layout.addWidget(delete_button)
+        layout.addLayout(buttons_layout)
+        
+        dialog_layout = QVBoxLayout(dialog)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        dialog_layout.addWidget(content)
+        
+        dialog.exec()
+        
+        if self.current_popup:
+            self.current_popup.setMouseTracking(True)
+    
+    def store_group_child_clip(self, group_alias, child_alias, child_string, child_action, x, y):
+        """Stocke un clip qui appartient à un groupe"""
+        from utils import remove_clip_from_group, get_group_children
+        
+        if self.tracker:
+            self.tracker.update_pos()
+            x, y = self.tracker.last_x, self.tracker.last_y
+        
+        # Récupérer les données complètes du clip enfant (incluant HTML)
+        children = get_group_children(self.clip_notes_file_json, group_alias)
+        child_html = None
+        for c in children or []:
+            if c.get('alias') == child_alias:
+                child_html = c.get('html', None)
+                break
+        
+        # Ajouter le clip au stockage
+        self.add_stored_clip(child_alias, child_action, child_string, child_html)
+        
+        # Retirer le clip du groupe
+        remove_clip_from_group(self.clip_notes_file_json, group_alias, child_alias , "storage_mode")
+        
+        # Recharger les données et rester en mode store
+        special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
+        self.actions_map_sub = self.buttons_actions_by_number[self.nb_icons_menu].copy()
+        populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
+        
+        # Afficher un message
+        if self.current_popup:
+            self.current_popup.tooltip_window.show_message(f"✓ {child_alias} stocké", 1000)
+        
+        self.store_clip_mode(x, y)
     
     def close_popup(self):
         """Méthode helper pour fermer le popup"""
@@ -1491,26 +2068,49 @@ class ClipNotesWindow(QMainWindow):
             self.current_popup.timer.start(50)
     
     def make_handler_store(self, name, value, action, x, y):
-        """Crée un handler pour stocker un clip"""
+        """Crée un handler pour stocker un clip ou un groupe"""
         def handler():
             if self.tracker:
                 self.tracker.update_pos()
                 x, y = self.tracker.last_x, self.tracker.last_y
             
-            # Récupérer le HTML depuis le fichier JSON avant de stocker
-            _, html_string = self.get_clip_data_from_json(name)
+            from utils import is_group, get_group_children, delete_group_from_json
             
-            # Stocker le clip avec le HTML s'il existe
-            self.add_stored_clip(name, action if action else "copy", value, html_string)
-            
-            # Supprimer le clip du menu radial
-            self.actions_map_sub.pop(name, None)
-            delete_from_json(self.clip_notes_file_json, name)
-            
-            # Afficher une confirmation brève
-            if self.current_popup:
-                self.current_popup.set_central_text("✓")
-                QTimer.singleShot(500, lambda: self.current_popup.set_central_text("💾"))
+            # Vérifier si c'est un groupe
+            if is_group(self.clip_notes_file_json, name):
+                # Stocker tous les clips du groupe
+                children = get_group_children(self.clip_notes_file_json, name)
+                if children:
+                    for child in children:
+                        child_alias = child.get('alias', '')
+                        child_action = child.get('action', 'copy')
+                        child_string = child.get('string', '')
+                        child_html = child.get('html')
+                        self.add_stored_clip(child_alias, child_action, child_string, child_html)
+                
+                # Supprimer le groupe
+                delete_group_from_json(self.clip_notes_file_json, name)
+                self.actions_map_sub.pop(name, None)
+                
+                # Afficher une confirmation
+                if self.current_popup:
+                    self.current_popup.set_central_text("✓")
+                    QTimer.singleShot(500, lambda: self.current_popup.set_central_text("💾"))
+            else:
+                # Récupérer le HTML depuis le fichier JSON avant de stocker
+                _, html_string = self.get_clip_data_from_json(name)
+                
+                # Stocker le clip avec le HTML s'il existe
+                self.add_stored_clip(name, action if action else "copy", value, html_string)
+                
+                # Supprimer le clip du menu radial
+                self.actions_map_sub.pop(name, None)
+                delete_from_json(self.clip_notes_file_json, name)
+                
+                # Afficher une confirmation brève
+                if self.current_popup:
+                    self.current_popup.set_central_text("✓")
+                    QTimer.singleShot(500, lambda: self.current_popup.set_central_text("💾"))
             
             # Rester en mode stockage et rafraîchir
             self.store_clip_mode(x, y)
@@ -1900,7 +2500,8 @@ class ClipNotesWindow(QMainWindow):
         def confirm_delete():
             # Supprimer le thumbnail s'il existe
             if os.path.exists(alias):
-                os.remove(alias)
+                if "/usr" not in alias and "/share" not in alias:
+                    os.remove(alias)
             
             self.remove_stored_clip(alias)
             confirm_dialog.accept()

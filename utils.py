@@ -207,17 +207,20 @@ def sort_actions_map(actions_map, json_order=None):
     
     # Convertir le dictionnaire en liste d'items
     items = list(actions_map.items())
-    
     # Fonction de tri personnalisée
     def sort_key(item):
         alias, (action_data, value, action) = item
         # Première clé : priorité de l'action
         action_priority = action_order.get(action, 999)
         # Deuxième clé : ordre du JSON si disponible, sinon alphabétique
+        # IMPORTANT: Utiliser un tuple (has_order, order_value) pour éviter
+        # la comparaison entre int et string
         if json_order and alias in json_order:
-            order_key = json_order[alias]
+            # (0, index, "") - les clips avec ordre JSON viennent en premier
+            order_key = (0, json_order[alias], "")
         else:
-            order_key = alias.lower()
+            # (1, 0, alias) - les clips sans ordre JSON viennent après, triés alphabétiquement
+            order_key = (1, 0, alias.lower())
         return (action_priority, order_key)
     
     # Trier
@@ -285,12 +288,12 @@ def reorder_json_clips(file_path, action, new_order):
 
 def move_clip_in_json(file_path, source_alias, target_position_alias, insert_before=True, new_action=None):
     """
-    Déplace un clip vers une nouvelle position dans le fichier JSON.
-    Peut aussi changer l'action du clip si new_action est spécifié.
+    Déplace un clip ou un groupe vers une nouvelle position dans le fichier JSON.
+    Peut aussi changer l'action du clip/groupe si new_action est spécifié.
     
     Args:
         file_path: Chemin du fichier JSON
-        source_alias: L'alias du clip à déplacer
+        source_alias: L'alias du clip/groupe à déplacer
         target_position_alias: L'alias du clip de référence pour la position
         insert_before: Si True, insère avant target_position_alias, sinon après
         new_action: Nouvelle action pour le clip (optionnel, "copy", "term", "exec")
@@ -332,6 +335,10 @@ def move_clip_in_json(file_path, source_alias, target_position_alias, insert_bef
     # Changer l'action du clip si demandé
     if new_action is not None:
         source_clip['action'] = new_action
+        # Si c'est un groupe, mettre à jour tous les enfants aussi
+        if source_clip.get('type') == 'group':
+            for child in source_clip.get('children', []):
+                child['action'] = new_action
     
     # Retirer le clip source de sa position actuelle
     data.pop(source_index)
@@ -377,10 +384,27 @@ def populate_actions_map_from_file(file_path, actions_map_sub, callback):
             
         for item in json_data:
             alias = item.get('alias')
+            item_type = item.get('type')
+            
+            if not alias:
+                continue
+            
+            # === GESTION DES GROUPES (MINI-MENUS) ===
+            if item_type == 'group':
+                children = item.get('children', [])
+                action = item.get('action', 'copy')
+                # Pour un groupe, on stocke un marqueur spécial
+                # Format: [(None, children, {'is_group': True}), tooltip, action]
+                # Le tooltip affiche le nombre d'éléments
+                tooltip = f"📁 {len(children)} clips"
+                actions_map_sub[alias] = [(None, children, {'is_group': True}), tooltip, action]
+                continue
+            
+            # === GESTION DES CLIPS NORMAUX ===
             string = item.get('string')
             action = item.get('action', 'copy')
             
-            if not alias or not string:
+            if not string:
                 continue
             
             # Déterminer quelle fonction utiliser selon l'action
@@ -710,3 +734,560 @@ def create_color_icon(rgb_tuple, size=16):
     pixmap = QPixmap(size, size)
     pixmap.fill(QColor(*rgb_tuple))
     return QIcon(pixmap)
+
+
+# === GESTION DES GROUPES (MINI-MENUS) ===
+
+def create_group_in_json(file_path, clip1_alias, clip2_alias, group_alias="📁"):
+    """
+    Crée un groupe à partir de deux clips existants.
+    Les deux clips sont retirés du niveau principal et placés dans le groupe.
+    
+    Args:
+        file_path: Chemin du fichier JSON
+        clip1_alias: Alias du premier clip
+        clip2_alias: Alias du second clip
+        group_alias: Alias/icône du groupe (défaut: 📁)
+    
+    Returns:
+        True si succès, False sinon
+    """
+    if not os.path.exists(file_path):
+        return False
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        return False
+    
+    # Trouver les deux clips
+    clip1_data = None
+    clip2_data = None
+    clip1_index = None
+    clip2_index = None
+    
+    for i, item in enumerate(data):
+        if item.get('alias') == clip1_alias and item.get('type') != 'group':
+            clip1_data = item.copy()
+            clip1_index = i
+        elif item.get('alias') == clip2_alias and item.get('type') != 'group':
+            clip2_data = item.copy()
+            clip2_index = i
+    
+    if clip1_data is None or clip2_data is None:
+        print(f"[Erreur] Clips non trouvés: {clip1_alias}, {clip2_alias}")
+        return False
+    
+    # Générer un alias unique si nécessaire
+    existing_aliases = [item.get('alias') for item in data]
+    final_alias = group_alias
+    counter = 1
+    while final_alias in existing_aliases:
+        final_alias = f"{group_alias}{counter}"
+        counter += 1
+    
+    # Déterminer l'action commune (celle du premier clip)
+    common_action = clip1_data.get('action', 'copy')
+    
+    # Créer le groupe
+    group = {
+        'alias': final_alias,
+        'type': 'group',
+        'action': common_action,
+        'children': [clip1_data, clip2_data]
+    }
+    
+    # Retirer les clips originaux (en commençant par le plus grand index)
+    indices_to_remove = sorted([clip1_index, clip2_index], reverse=True)
+    for idx in indices_to_remove:
+        del data[idx]
+    
+    # Insérer le groupe à la position du premier clip
+    insert_pos = min(clip1_index, clip2_index)
+    data.insert(insert_pos, group)
+    
+    # Sauvegarder
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+    
+    print(f"[Info] Groupe '{final_alias}' créé avec {clip1_alias} et {clip2_alias}")
+    return True
+
+
+def add_clip_to_group(file_path, group_alias, clip_alias):
+    """
+    Ajoute un clip existant à un groupe.
+    
+    Args:
+        file_path: Chemin du fichier JSON
+        group_alias: Alias du groupe
+        clip_alias: Alias du clip à ajouter
+    
+    Returns:
+        True si succès, False sinon
+    """
+    if not os.path.exists(file_path):
+        return False
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        return False
+    
+    # Trouver le groupe et le clip
+    group_data = None
+    clip_data = None
+    clip_index = None
+    
+    for i, item in enumerate(data):
+        if item.get('alias') == group_alias and item.get('type') == 'group':
+            group_data = item
+        elif item.get('alias') == clip_alias and item.get('type') != 'group':
+            clip_data = item.copy()
+            clip_index = i
+    
+    if group_data is None or clip_data is None:
+        print(f"[Erreur] Groupe ou clip non trouvé: {group_alias}, {clip_alias}")
+        return False
+    
+    # Ajouter le clip au groupe
+    group_data['children'].append(clip_data)
+    
+    # Retirer le clip du niveau principal
+    del data[clip_index]
+    
+    # Sauvegarder
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+    
+    print(f"[Info] Clip '{clip_alias}' ajouté au groupe '{group_alias}'")
+    return True
+
+
+def remove_clip_from_group(file_path, group_alias, clip_alias, context = "normal_mode"):
+    """
+    Retire un clip d'un groupe et le remet au niveau principal.
+    Si le groupe n'a plus qu'un seul élément, le groupe est dissous.
+    
+    Args:
+        file_path: Chemin du fichier JSON
+        group_alias: Alias du groupe
+        clip_alias: Alias du clip à retirer
+    
+    Returns:
+        True si succès, False sinon
+    """
+    if not os.path.exists(file_path):
+        return False
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        return False
+    
+    # Trouver le groupe
+    group_index = None
+    group_data = None
+    
+    for i, item in enumerate(data):
+        if item.get('alias') == group_alias and item.get('type') == 'group':
+            group_data = item
+            group_index = i
+            break
+    
+    if group_data is None:
+        print(f"[Erreur] Groupe non trouvé: {group_alias}")
+        return False
+    
+    # Trouver le clip dans le groupe
+    clip_data = None
+    clip_index_in_group = None
+    
+    for i, child in enumerate(group_data.get('children', [])):
+        if child.get('alias') == clip_alias:
+            clip_data = child.copy()
+            clip_index_in_group = i
+            break
+    
+    if clip_data is None:
+        print(f"[Erreur] Clip '{clip_alias}' non trouvé dans le groupe '{group_alias}'")
+        return False
+    
+    # Retirer le clip du groupe
+    del group_data['children'][clip_index_in_group]
+    
+    # Vérifier si le groupe doit être dissous
+    remaining_children = group_data.get('children', [])
+    
+    if len(remaining_children) <= 1:
+        # Dissoudre le groupe
+        if len(remaining_children) == 1:
+            # Remettre le dernier clip au niveau principal
+            last_clip = remaining_children[0]
+            data[group_index] = last_clip
+            print(f"[Info] Groupe '{group_alias}' dissous, clip '{last_clip.get('alias')}' restauré")
+        else:
+            # Groupe vide, le supprimer
+            del data[group_index]
+            print(f"[Info] Groupe '{group_alias}' supprimé (vide)")
+        if context != "storage_mode" and context != "delete_mode":
+            # Ajouter le clip retiré après la position du groupe
+            data.insert(group_index + 1, clip_data)
+    else:
+        if context != "storage_mode" and context != "delete_mode":
+        # Ajouter le clip retiré après le groupe
+            data.insert(group_index + 1, clip_data)
+    
+    # Sauvegarder
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+    
+    print(f"[Info] Clip '{clip_alias}' retiré du groupe '{group_alias}'")
+    return True
+
+
+def extract_clip_from_group_to_position(file_path, group_alias, clip_alias, target_alias, insert_before=True, new_action=None):
+    """
+    Extrait un clip d'un groupe et le place à une position spécifique en une seule opération.
+    Évite les problèmes de décalage d'indices liés à deux opérations séparées.
+    
+    Args:
+        file_path: Chemin du fichier JSON
+        group_alias: Alias du groupe source
+        clip_alias: Alias du clip à extraire
+        target_alias: Alias du clip cible (où positionner)
+        insert_before: True pour insérer avant la cible, False pour après
+        new_action: Nouvelle action pour le clip (ou None pour garder l'action actuelle)
+    
+    Returns:
+        True si succès, False sinon
+    """
+    if not os.path.exists(file_path):
+        return False
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        return False
+    
+    # === 1. Trouver le groupe et extraire le clip ===
+    group_index = None
+    group_data = None
+    
+    for i, item in enumerate(data):
+        if item.get('alias') == group_alias and item.get('type') == 'group':
+            group_data = item
+            group_index = i
+            break
+    
+    if group_data is None:
+        print(f"[Erreur] Groupe non trouvé: {group_alias}")
+        return False
+    
+    # Trouver le clip dans le groupe
+    clip_data = None
+    clip_index_in_group = None
+    
+    for i, child in enumerate(group_data.get('children', [])):
+        if child.get('alias') == clip_alias:
+            clip_data = child.copy()
+            clip_index_in_group = i
+            break
+    
+    if clip_data is None:
+        print(f"[Erreur] Clip '{clip_alias}' non trouvé dans le groupe '{group_alias}'")
+        return False
+    
+    # Appliquer la nouvelle action si spécifiée
+    if new_action:
+        clip_data['action'] = new_action
+    
+    # Retirer le clip du groupe
+    del group_data['children'][clip_index_in_group]
+    
+    # === 2. Gérer la dissolution du groupe si nécessaire ===
+    remaining_children = group_data.get('children', [])
+    group_was_dissolved = False
+    
+    if len(remaining_children) <= 1:
+        group_was_dissolved = True
+        if len(remaining_children) == 1:
+            # Remettre le dernier clip au niveau principal (remplace le groupe)
+            last_clip = remaining_children[0]
+            data[group_index] = last_clip
+            print(f"[Info] Groupe '{group_alias}' dissous, clip '{last_clip.get('alias')}' restauré")
+        else:
+            # Groupe vide, le supprimer
+            del data[group_index]
+            print(f"[Info] Groupe '{group_alias}' supprimé (vide)")
+    
+    # === 3. Trouver la position cible ===
+    target_index = None
+    for i, item in enumerate(data):
+        if item.get('alias') == target_alias:
+            target_index = i
+            break
+    
+    if target_index is None:
+        # Si la cible n'est pas trouvée (peut-être était-ce le groupe lui-même qui a été dissous)
+        # Insérer à la fin
+        print(f"[Warning] Cible '{target_alias}' non trouvée, insertion à la fin")
+        data.append(clip_data)
+    else:
+        # Insérer à la position cible
+        if insert_before:
+            data.insert(target_index, clip_data)
+        else:
+            data.insert(target_index + 1, clip_data)
+    
+    # === 4. Sauvegarder ===
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+    
+    print(f"[Info] Clip '{clip_alias}' extrait du groupe et placé {'avant' if insert_before else 'après'} '{target_alias}'")
+    return True
+
+
+def delete_group_from_json(file_path, group_alias):
+    """
+    Supprime un groupe et tous ses clips enfants.
+    
+    Args:
+        file_path: Chemin du fichier JSON
+        group_alias: Alias du groupe à supprimer
+    
+    Returns:
+        True si succès, False sinon
+    """
+    if not os.path.exists(file_path):
+        return False
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        return False
+    
+    # Filtrer pour retirer le groupe
+    new_data = [item for item in data if not (item.get('alias') == group_alias and item.get('type') == 'group')]
+    
+    if len(new_data) == len(data):
+        print(f"[Info] Groupe '{group_alias}' non trouvé")
+        return False
+    
+    # Sauvegarder
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(new_data, f, indent=4, ensure_ascii=False)
+    
+    print(f"[Info] Groupe '{group_alias}' et ses clips supprimés")
+    return True
+
+
+def get_group_children(file_path, group_alias):
+    """
+    Retourne la liste des clips enfants d'un groupe.
+    
+    Args:
+        file_path: Chemin du fichier JSON
+        group_alias: Alias du groupe
+    
+    Returns:
+        Liste des clips enfants ou None si groupe non trouvé
+    """
+    if not os.path.exists(file_path):
+        return None
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        return None
+    
+    for item in data:
+        if item.get('alias') == group_alias and item.get('type') == 'group':
+            return item.get('children', [])
+    
+    return None
+
+
+def update_group_action(file_path, group_alias, new_action):
+    """
+    Met à jour l'action d'un groupe et de tous ses clips enfants.
+    
+    Args:
+        file_path: Chemin du fichier JSON
+        group_alias: Alias du groupe
+        new_action: Nouvelle action ('copy', 'term', 'exec')
+    
+    Returns:
+        True si succès, False sinon
+    """
+    if not os.path.exists(file_path):
+        return False
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        return False
+    
+    # Trouver le groupe
+    found = False
+    for item in data:
+        if item.get('alias') == group_alias and item.get('type') == 'group':
+            item['action'] = new_action
+            # Mettre à jour tous les enfants
+            for child in item.get('children', []):
+                child['action'] = new_action
+            found = True
+            break
+    
+    if not found:
+        return False
+    
+    # Sauvegarder
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+    
+    print(f"[Info] Action du groupe '{group_alias}' mise à jour: {new_action}")
+    return True
+
+
+def is_group(file_path, alias):
+    """
+    Vérifie si un alias correspond à un groupe.
+    
+    Args:
+        file_path: Chemin du fichier JSON
+        alias: Alias à vérifier
+    
+    Returns:
+        True si c'est un groupe, False sinon
+    """
+    if not os.path.exists(file_path):
+        return False
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        return False
+    
+    for item in data:
+        if item.get('alias') == alias:
+            return item.get('type') == 'group'
+    
+    return False
+
+
+def update_group_alias(file_path, old_alias, new_alias):
+    """
+    Met à jour l'alias (icône) d'un groupe.
+    
+    Args:
+        file_path: Chemin du fichier JSON
+        old_alias: Ancien alias du groupe
+        new_alias: Nouvel alias
+    
+    Returns:
+        True si succès, False sinon
+    """
+    if not os.path.exists(file_path):
+        return False
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        return False
+    
+    # Trouver le groupe
+    found = False
+    for item in data:
+        if item.get('alias') == old_alias and item.get('type') == 'group':
+            item['alias'] = new_alias
+            found = True
+            break
+    
+    if not found:
+        return False
+    
+    # Sauvegarder
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+    
+    print(f"[Info] Alias du groupe mis à jour: {old_alias} -> {new_alias}")
+    return True
+
+
+def update_group_child(file_path, group_alias, child_alias, new_alias=None, new_string=None, new_action=None, new_html=None):
+    """
+    Met à jour un clip enfant d'un groupe.
+    
+    Args:
+        file_path: Chemin du fichier JSON
+        group_alias: Alias du groupe parent
+        child_alias: Alias actuel du clip enfant
+        new_alias: Nouvel alias (ou None pour garder l'actuel)
+        new_string: Nouvelle string (ou None pour garder l'actuelle)
+        new_action: Nouvelle action (ou None pour garder l'actuelle)
+        new_html: Nouveau HTML (ou None pour ne pas changer, "" pour supprimer)
+    
+    Returns:
+        True si succès, False sinon
+    """
+    if not os.path.exists(file_path):
+        return False
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        return False
+    
+    # Trouver le groupe
+    group_data = None
+    for item in data:
+        if item.get('alias') == group_alias and item.get('type') == 'group':
+            group_data = item
+            break
+    
+    if group_data is None:
+        print(f"[Erreur] Groupe non trouvé: {group_alias}")
+        return False
+    
+    # Trouver le clip enfant
+    child_data = None
+    for child in group_data.get('children', []):
+        if child.get('alias') == child_alias:
+            child_data = child
+            break
+    
+    if child_data is None:
+        print(f"[Erreur] Clip enfant non trouvé: {child_alias}")
+        return False
+    
+    # Mettre à jour les champs
+    if new_alias is not None:
+        child_data['alias'] = new_alias
+    if new_string is not None:
+        child_data['string'] = new_string
+    if new_action is not None:
+        child_data['action'] = new_action
+    if new_html is not None:
+        if new_html == "":
+            # Supprimer le HTML
+            child_data.pop('html', None)
+        else:
+            child_data['html'] = new_html
+    
+    # Sauvegarder
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+    
+    print(f"[Info] Clip enfant '{child_alias}' mis à jour dans le groupe '{group_alias}'")
+    return True
