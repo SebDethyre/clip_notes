@@ -740,8 +740,15 @@ class ClipNotesWindow(QMainWindow):
             child_string = child.get('string', '')
             child_action = child.get('action', 'copy')
             
-            # Créer le handler pour ce clip enfant
-            handler = self.make_group_child_handler(child_alias, child_string, child_action, group_alias)
+            # Créer le handler selon le mode actif
+            if self.update_mode:
+                handler = self.make_group_child_edit_handler(group_alias, child_alias, child_string, child_action, x, y)
+            elif self.delete_mode:
+                handler = self.make_group_child_delete_handler(group_alias, child_alias, child_string, x, y)
+            elif self.store_mode:
+                handler = self.make_group_child_store_handler(group_alias, child_alias, child_string, child_action, x, y)
+            else:
+                handler = self.make_group_child_handler(child_alias, child_string, child_action, group_alias)
             
             tooltip = child_string.replace(r'\n', '\n')
             # Format: (label, callback, tooltip)
@@ -771,6 +778,39 @@ class ClipNotesWindow(QMainWindow):
             self.current_popup.hover_submenu = submenu
         
         submenu.show()
+    
+    def make_group_child_edit_handler(self, group_alias, child_alias, child_string, child_action, x, y):
+        """Handler pour éditer un clip enfant de groupe"""
+        def handler():
+            if self.tracker:
+                self.tracker.update_pos()
+                x_pos, y_pos = self.tracker.last_x, self.tracker.last_y
+            else:
+                x_pos, y_pos = x, y
+            self.edit_group_child_clip(group_alias, child_alias, child_string, child_action, x_pos, y_pos)
+        return handler
+    
+    def make_group_child_delete_handler(self, group_alias, child_alias, child_string, x, y):
+        """Handler pour supprimer un clip enfant de groupe"""
+        def handler():
+            if self.tracker:
+                self.tracker.update_pos()
+                x_pos, y_pos = self.tracker.last_x, self.tracker.last_y
+            else:
+                x_pos, y_pos = x, y
+            self.delete_group_child_clip(group_alias, child_alias, child_string, x_pos, y_pos)
+        return handler
+    
+    def make_group_child_store_handler(self, group_alias, child_alias, child_string, child_action, x, y):
+        """Handler pour stocker un clip enfant de groupe"""
+        def handler():
+            if self.tracker:
+                self.tracker.update_pos()
+                x_pos, y_pos = self.tracker.last_x, self.tracker.last_y
+            else:
+                x_pos, y_pos = x, y
+            self.store_group_child_clip(group_alias, child_alias, child_string, child_action, x_pos, y_pos)
+        return handler
     
     def make_group_child_handler(self, alias, string, action, group_alias):
         """Crée un handler pour un clip enfant d'un groupe"""
@@ -802,13 +842,16 @@ class ClipNotesWindow(QMainWindow):
     
     def show_group_edit_dialog(self, group_alias, x, y):
         """Affiche une fenêtre d'édition pour un groupe"""
-        from utils import get_group_children, update_group_alias, remove_clip_from_group, add_clip_to_group
-        from ui import AutoScrollListWidget
+        from utils import get_group_children, update_group_alias, remove_clip_from_group, add_clip_to_group, is_emoji, image_pixmap, emoji_pixmap
+        from ui import AutoScrollListWidget, EmojiSelector
         
         # Récupérer les enfants du groupe
         children = get_group_children(self.clip_notes_file_json, group_alias)
         if children is None:
             return
+        
+        # Variable pour stocker le chemin d'image temporaire
+        dialog_temp_image_path = None
         
         dialog = QDialog(self.tracker)
         dialog.setWindowTitle("📁 Modifier le groupe")
@@ -825,7 +868,7 @@ class ClipNotesWindow(QMainWindow):
         palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
         dialog.setPalette(palette)
         
-        dialog.setFixedSize(500, 450)
+        dialog.setFixedSize(550, 550)
         if self.tracker:
             self.tracker.update_pos()
             x, y = self.tracker.last_x, self.tracker.last_y
@@ -840,13 +883,51 @@ class ClipNotesWindow(QMainWindow):
         
         layout = QVBoxLayout(content)
         layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
+        layout.setSpacing(10)
         
-        # === Champ pour l'icône du groupe ===
-        icon_layout = QHBoxLayout()
+        # === Section icône du groupe ===
+        icon_section = QVBoxLayout()
+        icon_section.setSpacing(8)
+        
+        icon_header = QHBoxLayout()
         icon_label = QLabel("Icône du groupe:")
-        icon_label.setStyleSheet("color: white;")
-        icon_input = QLineEdit(group_alias)
+        icon_label.setStyleSheet("color: white; font-weight: bold;")
+        icon_header.addWidget(icon_label)
+        icon_header.addStretch()
+        icon_section.addLayout(icon_header)
+        
+        # Layout pour l'icône et les boutons
+        icon_row = QHBoxLayout()
+        icon_row.setSpacing(10)
+        
+        # Aperçu de l'icône actuelle
+        icon_preview = QLabel()
+        icon_preview.setFixedSize(60, 60)
+        icon_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_preview.setStyleSheet("""
+            QLabel {
+                border: 2px solid rgba(255, 255, 255, 30);
+                border-radius: 30px;
+                background-color: rgba(0, 0, 0, 50);
+            }
+        """)
+        
+        def update_icon_preview(alias):
+            """Met à jour l'aperçu de l'icône"""
+            if "/" in alias:
+                pixmap = image_pixmap(alias, 50)
+            elif is_emoji(alias):
+                pixmap = emoji_pixmap(alias, 40)
+            else:
+                from utils import text_pixmap
+                pixmap = text_pixmap(alias, 30)
+            icon_preview.setPixmap(pixmap)
+        
+        update_icon_preview(group_alias)
+        icon_row.addWidget(icon_preview)
+        
+        # Input pour l'icône (texte/emoji)
+        icon_input = QLineEdit(group_alias if "/" not in group_alias else "")
         icon_input.setMaxLength(10)
         icon_input.setFixedWidth(80)
         icon_input.setStyleSheet("""
@@ -859,13 +940,133 @@ class ClipNotesWindow(QMainWindow):
                 font-size: 18px;
             }
         """)
-        icon_layout.addWidget(icon_label)
-        icon_layout.addWidget(icon_input)
-        icon_layout.addStretch()
-        layout.addLayout(icon_layout)
+        icon_input.setPlaceholderText("📁")
+        
+        # Connecter pour mettre à jour l'aperçu
+        def on_icon_text_changed(text):
+            nonlocal dialog_temp_image_path
+            if text and "/" not in text:
+                dialog_temp_image_path = None  # Reset image si on tape du texte
+                update_icon_preview(text)
+        icon_input.textChanged.connect(on_icon_text_changed)
+        
+        icon_row.addWidget(icon_input)
+        
+        # Bouton Emoji
+        emoji_button = QPushButton("😀")
+        emoji_button.setFixedSize(40, 40)
+        emoji_button.setToolTip("Choisir un emoji")
+        
+        def open_emoji_selector():
+            selector = EmojiSelector(dialog)
+            if selector.exec() == QDialog.DialogCode.Accepted and selector.selected_emoji:
+                icon_input.setText(selector.selected_emoji)
+        
+        emoji_button.clicked.connect(open_emoji_selector)
+        icon_row.addWidget(emoji_button)
+        
+        # Bouton Image
+        image_button = QPushButton("🖼️")
+        image_button.setFixedSize(40, 40)
+        image_button.setToolTip("Choisir une image")
+        
+        def open_image_selector():
+            nonlocal dialog_temp_image_path
+            file_path, _ = QFileDialog.getOpenFileName(
+                dialog, "Sélectionner une image", "",
+                "Images (*.png *.jpg *.jpeg *.bmp *.gif)"
+            )
+            if file_path:
+                dialog_temp_image_path = file_path
+                icon_input.setText("")  # Vider le champ texte
+                # Afficher l'aperçu
+                pixmap = QPixmap(file_path).scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                icon_preview.setPixmap(pixmap)
+        
+        image_button.clicked.connect(open_image_selector)
+        icon_row.addWidget(image_button)
+        
+        # Checkbox auto-icône et input de recherche
+        auto_icon_layout = QVBoxLayout()
+        auto_icon_layout.setSpacing(4)
+        
+        auto_checkbox = QCheckBox("Auto")
+        auto_checkbox.setChecked(self.auto_apply_icon)
+        auto_checkbox.setStyleSheet("color: white; font-size: 11px;")
+        auto_checkbox.setToolTip("Recherche automatique d'icône")
+        
+        search_input = QLineEdit()
+        search_input.setPlaceholderText("Rechercher icône...")
+        search_input.setFixedWidth(120)
+        search_input.setStyleSheet("""
+            QLineEdit {
+                background-color: rgba(255, 255, 255, 20);
+                border: 1px solid rgba(255, 255, 255, 40);
+                border-radius: 4px;
+                padding: 4px;
+                color: white;
+                font-size: 11px;
+            }
+        """)
+        
+        def search_icon():
+            nonlocal dialog_temp_image_path
+            search_term = search_input.text().strip()
+            if search_term:
+                icon_path = find_icon_for_command(search_term)
+                if icon_path:
+                    dialog_temp_image_path = icon_path
+                    icon_input.setText("")
+                    pixmap = QPixmap(icon_path).scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                    icon_preview.setPixmap(pixmap)
+                    image_button.setStyleSheet("background-color: rgba(100, 200, 100, 150);")
+                else:
+                    image_button.setStyleSheet("")
+        
+        search_input.returnPressed.connect(search_icon)
+        
+        auto_icon_layout.addWidget(auto_checkbox)
+        auto_icon_layout.addWidget(search_input)
+        icon_row.addLayout(auto_icon_layout)
+        
+        icon_row.addStretch()
+        icon_section.addLayout(icon_row)
+        layout.addLayout(icon_section)
+        
+        # === Tooltip label ===
+        tooltip_label = QLabel("")
+        tooltip_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tooltip_label.setStyleSheet("color: #aaa; font-size: 12px; padding: 4px; min-height: 40px;")
+        tooltip_label.setWordWrap(True)
+        layout.addWidget(tooltip_label)
         
         # === Deux listes côte à côte ===
         lists_layout = QHBoxLayout()
+        
+        # Fonction helper pour créer un item avec icône
+        def create_list_item(alias, string):
+            """Crée un QListWidgetItem avec icône appropriée"""
+            # Afficher alias ou icône
+            if "/" in alias:
+                display_text = f"[IMG] - {string[:25]}..."
+            else:
+                display_text = f"{alias} - {string[:25]}..."
+            
+            item = QListWidgetItem(display_text)
+            item.setData(Qt.ItemDataRole.UserRole, alias)
+            item.setData(Qt.ItemDataRole.UserRole + 1, string)  # Stocker la string pour le tooltip
+            
+            # Ajouter une icône
+            if "/" in alias:
+                icon = QIcon(image_pixmap(alias, 24))
+            elif is_emoji(alias):
+                icon = QIcon(emoji_pixmap(alias, 20))
+            else:
+                from utils import text_pixmap
+                icon = QIcon(text_pixmap(alias, 16))
+            item.setIcon(icon)
+            
+            return item
         
         # Liste des clips dans le groupe
         group_layout = QVBoxLayout()
@@ -874,6 +1075,7 @@ class ClipNotesWindow(QMainWindow):
         group_list = AutoScrollListWidget()
         group_list.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
         group_list.setDefaultDropAction(Qt.DropAction.MoveAction)
+        group_list.setIconSize(QSize(24, 24))
         group_list.setStyleSheet("""
             QListWidget {
                 background-color: rgba(255, 255, 255, 10);
@@ -882,19 +1084,32 @@ class ClipNotesWindow(QMainWindow):
                 color: white;
             }
             QListWidget::item {
-                padding: 8px;
+                padding: 6px;
                 border-bottom: 1px solid rgba(255, 255, 255, 20);
             }
             QListWidget::item:selected {
                 background-color: rgba(100, 150, 255, 100);
             }
+            QListWidget::item:hover {
+                background-color: rgba(255, 255, 255, 20);
+            }
         """)
         
         # Remplir la liste du groupe
         for child in children:
-            item = QListWidgetItem(f"{child.get('alias', '')} - {child.get('string', '')[:30]}...")
-            item.setData(Qt.ItemDataRole.UserRole, child.get('alias'))
+            item = create_list_item(child.get('alias', ''), child.get('string', ''))
             group_list.addItem(item)
+        
+        # Connecter le survol pour le tooltip
+        def on_group_item_hover(item):
+            if item:
+                string = item.data(Qt.ItemDataRole.UserRole + 1)
+                tooltip_label.setText(string.replace('\\n', '\n') if string else "")
+            else:
+                tooltip_label.setText("")
+        
+        group_list.itemEntered.connect(on_group_item_hover)
+        group_list.setMouseTracking(True)
         
         group_layout.addWidget(group_label)
         group_layout.addWidget(group_list)
@@ -924,7 +1139,19 @@ class ClipNotesWindow(QMainWindow):
         available_list = AutoScrollListWidget()
         available_list.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
         available_list.setDefaultDropAction(Qt.DropAction.MoveAction)
+        available_list.setIconSize(QSize(24, 24))
         available_list.setStyleSheet(group_list.styleSheet())
+        available_list.setMouseTracking(True)
+        
+        # Connecter le survol pour le tooltip
+        def on_available_item_hover(item):
+            if item:
+                string = item.data(Qt.ItemDataRole.UserRole + 1)
+                tooltip_label.setText(string.replace('\\n', '\n') if string else "")
+            else:
+                tooltip_label.setText("")
+        
+        available_list.itemEntered.connect(on_available_item_hover)
         
         # Remplir la liste des clips disponibles
         special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
@@ -940,9 +1167,7 @@ class ClipNotesWindow(QMainWindow):
                         continue  # Ne pas lister les autres groupes
                 
                 if name not in children_aliases:
-                    display_text = value[:40] + "..." if len(value) > 40 else value
-                    item = QListWidgetItem(f"{name} - {display_text}")
-                    item.setData(Qt.ItemDataRole.UserRole, name)
+                    item = create_list_item(name, value)
                     available_list.addItem(item)
         
         available_layout.addWidget(available_label)
@@ -956,11 +1181,6 @@ class ClipNotesWindow(QMainWindow):
             """Retire le clip sélectionné du groupe"""
             current_item = group_list.currentItem()
             if current_item:
-                clip_alias = current_item.data(Qt.ItemDataRole.UserRole)
-                # Vérifier qu'il reste au moins 2 clips
-                if group_list.count() <= 2:
-                    # Avertir que le groupe sera dissous
-                    pass
                 group_list.takeItem(group_list.row(current_item))
                 available_list.addItem(current_item)
         
@@ -998,9 +1218,18 @@ class ClipNotesWindow(QMainWindow):
         """)
         
         def save_changes():
+            nonlocal dialog_temp_image_path
             from utils import update_group_alias, remove_clip_from_group, add_clip_to_group, get_group_children, is_group
             
-            new_alias = icon_input.text().strip()
+            # Déterminer le nouvel alias
+            if dialog_temp_image_path:
+                # Créer un thumbnail pour l'image
+                new_alias = create_thumbnail(dialog_temp_image_path, self.thumbnails_dir)
+                if not new_alias:
+                    new_alias = group_alias  # Fallback
+            else:
+                new_alias = icon_input.text().strip() or group_alias
+            
             current_alias = group_alias
             
             # Mettre à jour l'alias si changé
@@ -1233,39 +1462,82 @@ class ClipNotesWindow(QMainWindow):
         if self.current_popup:
             self.current_popup.setMouseTracking(True)
     
+    # def store_group_child_clip(self, group_alias, child_alias, child_string, child_action, x, y):
+    #     """Stocke un clip qui appartient à un groupe"""
+    #     from utils import remove_clip_from_group, get_group_children
+        
+    #     if self.tracker:
+    #         self.tracker.update_pos()
+    #         x, y = self.tracker.last_x, self.tracker.last_y
+        
+    #     # Récupérer les données complètes du clip enfant (incluant HTML)
+    #     children = get_group_children(self.clip_notes_file_json, group_alias)
+    #     child_html = None
+    #     for c in children or []:
+    #         if c.get('alias') == child_alias:
+    #             child_html = c.get('html', None)
+    #             break
+        
+    #     # Ajouter le clip au stockage
+    #     self.add_stored_clip(child_alias, child_action, child_string, child_html)
+        
+    #     # Retirer le clip du groupe
+    #     remove_clip_from_group(self.clip_notes_file_json, group_alias, child_alias , "storage_mode")
+        
+    #     # Recharger les données et rester en mode store
+    #     special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
+    #     self.actions_map_sub = self.buttons_actions_by_number[self.nb_icons_menu].copy()
+    #     populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
+        
+    #     # Afficher un message
+    #     if self.current_popup:
+    #         self.current_popup.tooltip_window.show_message(f"✓ {child_alias} stocké", 1000)
+        
+        # self.store_clip_mode(x, y)
+        
     def store_group_child_clip(self, group_alias, child_alias, child_string, child_action, x, y):
         """Stocke un clip qui appartient à un groupe"""
-        from utils import remove_clip_from_group, get_group_children
-        
+        # from utils import store_clip_from_group
+
         if self.tracker:
             self.tracker.update_pos()
             x, y = self.tracker.last_x, self.tracker.last_y
-        
-        # Récupérer les données complètes du clip enfant (incluant HTML)
-        children = get_group_children(self.clip_notes_file_json, group_alias)
-        child_html = None
-        for c in children or []:
-            if c.get('alias') == child_alias:
-                child_html = c.get('html', None)
-                break
-        
-        # Ajouter le clip au stockage
-        self.add_stored_clip(child_alias, child_action, child_string, child_html)
-        
-        # Retirer le clip du groupe
-        remove_clip_from_group(self.clip_notes_file_json, group_alias, child_alias , "storage_mode")
-        
+
+        # Extraire ET retirer le clip du groupe (logique atomique)
+        clip = store_clip_from_group(
+            self.clip_notes_file_json,
+            group_alias,
+            child_alias
+        )
+
+        if not clip:
+            return
+
+        # Ajouter le clip au stockage (HTML inclus)
+        self.add_stored_clip(
+            clip.get('alias'),
+            child_action,
+            child_string,
+            clip.get('html')
+        )
+
         # Recharger les données et rester en mode store
         special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
         self.actions_map_sub = self.buttons_actions_by_number[self.nb_icons_menu].copy()
-        populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
-        
+        populate_actions_map_from_file(
+            self.clip_notes_file_json,
+            self.actions_map_sub,
+            execute_command
+        )
+        if self.current_popup:
+            self.current_popup.update_buttons(self.buttons_sub)
+        self.store_clip_mode(x, y)
         # Afficher un message
         if self.current_popup:
-            self.current_popup.tooltip_window.show_message(f"✓ {child_alias} stocké", 1000)
-        
-        self.store_clip_mode(x, y)
-    
+            self.current_popup.tooltip_window.show_message(
+                f"✓ {child_alias} stocké", 1000
+            )
+
     def close_popup(self):
         """Méthode helper pour fermer le popup"""
         if self.tracker:

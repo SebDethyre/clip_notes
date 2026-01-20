@@ -988,6 +988,16 @@ class RadialMenu(QWidget):
                 self.tooltip_window.show_message(message, 1000)
                 self.update_tooltip_position()
             
+            # Fermer le sous-menu
+            if self.hover_submenu is not None:
+                try:
+                    submenu = self.hover_submenu
+                    self.hover_submenu = None
+                    submenu.closing = True
+                    submenu.close()
+                except RuntimeError:
+                    self.hover_submenu = None
+            
             # Fermer le menu principal après un délai
             QTimer.singleShot(300, self.close_with_animation)
         

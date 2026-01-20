@@ -933,6 +933,8 @@ def remove_clip_from_group(file_path, group_alias, clip_alias, context = "normal
             # Groupe vide, le supprimer
             del data[group_index]
             print(f"[Info] Groupe '{group_alias}' supprimé (vide)")
+        
+        # Ajouter le clip retiré après la position du groupe
         if context != "storage_mode" and context != "delete_mode":
             # Ajouter le clip retiré après la position du groupe
             data.insert(group_index + 1, clip_data)
@@ -948,6 +950,64 @@ def remove_clip_from_group(file_path, group_alias, clip_alias, context = "normal
     print(f"[Info] Clip '{clip_alias}' retiré du groupe '{group_alias}'")
     return True
 
+def store_clip_from_group(file_path, group_alias, clip_alias):
+    """
+    Retire un clip d'un groupe pour stockage.
+    Le clip n'est pas réinséré dans la timeline.
+    Retourne les données complètes du clip retiré.
+    """
+    if not os.path.exists(file_path):
+        return None
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        return None
+
+    # Trouver le groupe
+    group_index = None
+    group_data = None
+
+    for i, item in enumerate(data):
+        if item.get('alias') == group_alias and item.get('type') == 'group':
+            group_data = item
+            group_index = i
+            break
+
+    if group_data is None:
+        return None
+
+    # Trouver le clip dans le groupe
+    clip_data = None
+    clip_index = None
+
+    for i, child in enumerate(group_data.get('children', [])):
+        if child.get('alias') == clip_alias:
+            clip_data = child.copy()  # DONNÉES COMPLÈTES
+            clip_index = i
+            break
+
+    if clip_data is None:
+        return None
+
+    # Retirer le clip du groupe
+    del group_data['children'][clip_index]
+
+    remaining_children = group_data.get('children', [])
+
+    # Dissolution du groupe si nécessaire
+    if len(remaining_children) <= 1:
+        if len(remaining_children) == 1:
+            data[group_index] = remaining_children[0]
+        else:
+            del data[group_index]
+
+    # Sauvegarde
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
+    return clip_data
 
 def extract_clip_from_group_to_position(file_path, group_alias, clip_alias, target_alias, insert_before=True, new_action=None):
     """
