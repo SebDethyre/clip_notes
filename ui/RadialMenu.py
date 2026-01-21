@@ -8,7 +8,7 @@ from utils import *
 from ui import HoverSubMenu, RadialKeyboardListener, TooltipWindow
 
 class RadialMenu(QWidget):
-    def __init__(self, x, y, buttons, parent=None, sub=False, tracker=None, app_instance=None, neon_color=None, action_zone_colors=None, nb_icons_menu=None, show_central_icon=None, menu_background_color=None, zone_basic_opacity=None, zone_hover_opacity=None):
+    def __init__(self, x, y, buttons, parent=None, sub=False, tracker=None, app_instance=None, neon_color=None, action_zone_colors=None, nb_icons_menu=None, show_central_icon=None, menu_background_color=None, zone_basic_opacity=None, zone_hover_opacity=None, clips_by_link =[]):
         super().__init__(parent)  # Ne jamais utiliser tracker comme parent
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.ToolTip)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -16,7 +16,7 @@ class RadialMenu(QWidget):
         self.sub = sub
         self.tracker = tracker
         self.app_instance = app_instance  # Référence à l'instance de App
-        
+        # print(buttons)
         # Ajustement dynamique du rayon en fonction du nombre de boutons
         num_buttons = len(buttons)
         self.btn_size = 55
@@ -29,6 +29,7 @@ class RadialMenu(QWidget):
             self.radius = int(80 * (num_buttons / 7))
         
         self.buttons = []
+        self.clips_by_link = clips_by_link
 
         self.diameter = 2 * (self.radius + self.btn_size)
         # Ajouter de l'espace pour les badges (50 pixels de chaque côté)
@@ -182,6 +183,8 @@ class RadialMenu(QWidget):
             }
         if buttons:
             angle_step = 360 / len(buttons)
+            # print(dir(buttons))
+            # print(buttons.count())
             for i, button in enumerate(buttons):
                 if len(button) == 2:
                     label, callback = button
@@ -1133,7 +1136,26 @@ class RadialMenu(QWidget):
             # Masquer la fenêtre tooltip
             self.tooltip_window.hide()
             self.handle_click_outside()
-    
+
+    def update_clips_by_link(self):
+        """
+        Met à jour la liste clips_by_link pour le radial menu.
+        1 pour un bouton simple, N pour un bouton groupe.
+        """
+        self.clips_by_link = []
+
+        # ⚠️ On utilise app_instance.actions_map_sub
+        for key, value in self.app_instance.actions_map_sub.items():
+            func, children, meta = value[0]  # value[0] = (fonction, enfants, meta)
+            
+            if isinstance(meta, dict) and meta.get("is_group"):
+                self.clips_by_link.append(len(children))
+            else:
+                self.clips_by_link.append(1)
+
+        # Mettre à jour la liste des boutons qui sont des groupes (utile pour paintEvent)
+        self.button_is_group = [len_ > 1 for len_ in self.clips_by_link]
+
     def mouseReleaseEvent(self, event):
         """Gère la fin du drag en mode réordonnancement"""
         if self.drag_active and event.button() == Qt.MouseButton.LeftButton:
@@ -1168,6 +1190,7 @@ class RadialMenu(QWidget):
                             self.tooltip_window.show_message("✓ Clip sorti du groupe", 1000)
                             self.update_tooltip_position()
                             self.app_instance.refresh_menu()
+                            self.update_clips_by_link() 
                             return
                 
                 # Pas de position de drop valide, annuler
@@ -1204,12 +1227,15 @@ class RadialMenu(QWidget):
                         
                         if success:
                             self._reset_drag_state()
+                            self.update_clips_by_link()
                             self.tooltip_window.show_message(message, 1000)
                             self.update_tooltip_position()
                             if self.reorder_mode:
                                 self.app_instance.reorder_clip_mode(self.x, self.y)
+                                self.update_clips_by_link()
                             else:
                                 self.app_instance.refresh_menu()
+                                self.update_clips_by_link()
                             return
             
             # === CAS 2: Drop à côté -> Déplacement normal ===
@@ -1234,12 +1260,15 @@ class RadialMenu(QWidget):
                         )
                         if success:
                             self._reset_drag_state()
+                            self.update_clips_by_link()
                             self.tooltip_window.show_message("✓ Clip déplacé", 1000)
                             self.update_tooltip_position()
                             if self.reorder_mode:
                                 self.app_instance.reorder_clip_mode(self.x, self.y)
+                                self.update_clips_by_link()
                             else:
                                 self.app_instance.refresh_menu()
+                                self.update_clips_by_link()
                             return
             
             # Réinitialiser l'état du drag
@@ -2141,7 +2170,6 @@ class RadialMenu(QWidget):
                 if btn_index < len(self.button_is_group) and self.button_is_group[btn_index]:
                     # Ce bouton est un groupe - dessiner un petit badge
                     angle = math.radians(pos_in_visible * angle_step)
-                    
                     # Position du centre du bouton
                     btn_center_x = center_offset + (self.radius * math.cos(angle)) * self.scale_factor
                     btn_center_y = center_offset + (self.radius * math.sin(angle)) * self.scale_factor
@@ -2163,7 +2191,7 @@ class RadialMenu(QWidget):
                     painter.setFont(font)
                     text_rect = QRectF(badge_x - badge_radius, badge_y - badge_radius, 
                                        badge_radius * 2, badge_radius * 2)
-                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, "⊕")
+                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, str(self.clips_by_link[btn_index]))
         
         # Dessiner le cercle de focus (seulement si le clavier a été utilisé)
         if self.focused_index >= 0 and self.focused_index < len(self.buttons):

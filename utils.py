@@ -1351,3 +1351,33 @@ def update_group_child(file_path, group_alias, child_alias, new_alias=None, new_
     
     print(f"[Info] Clip enfant '{child_alias}' mis à jour dans le groupe '{group_alias}'")
     return True
+
+def get_pictures_directory():
+            """
+            Retourne le répertoire Images/Pictures de l'utilisateur de manière robuste.
+            """
+            home = os.path.expanduser("~")
+            # 1 via xdg-user-dir
+            try:
+                result = subprocess.run(
+                    ["xdg-user-dir", "PICTURES"],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                path = result.stdout.strip()
+                if path and os.path.isdir(path):
+                    return path
+            except Exception:
+                pass
+            # 2 Fallbacks classiques
+            candidates = [
+                os.path.join(home, "Pictures"),
+                os.path.join(home, "Images"),
+            ]
+
+            for path in candidates:
+                if os.path.isdir(path):
+                    return path
+            # 3 Dernier recours : HOME
+            return home

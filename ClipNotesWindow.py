@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QMainWindow, QVB
 from PyQt6.QtWidgets import QTextEdit, QTextBrowser, QLabel, QFileDialog, QCheckBox, QColorDialog, QScrollArea, QListWidgetItem, QAbstractItemView
 
 from utils import *
-from ui import EmojiSelector, AutoScrollListWidget, WhiteDropIndicatorStyle, CursorTracker, TooltipWindow, RadialMenu, CalibrationWindow
+from ui import EmojiSelector, AutoScrollListWidget, WhiteDropIndicatorStyle, HoverSubMenu, CursorTracker, TooltipWindow, RadialMenu, CalibrationWindow
 
 class ClipNotesWindow(QMainWindow):
     def __init__(self):
@@ -454,6 +454,13 @@ class ClipNotesWindow(QMainWindow):
                     clip_html  # 5ème élément : HTML pour le tooltip
                 )
             )
+        clips_by_link = []
+        for key, value in self.actions_map_sub.items():
+            func, children, meta = value[0]
+            if isinstance(meta, dict) and meta.get("is_group"):
+                clips_by_link.append(len(children))
+            else:
+                clips_by_link.append(1)
         
         if self.current_popup:
             self.current_popup.update_buttons(self.buttons_sub)
@@ -725,8 +732,6 @@ class ClipNotesWindow(QMainWindow):
     
     def show_group_submenu(self, group_alias, children, x, y):
         """Affiche un sous-menu pour un groupe de clips"""
-        from ui import HoverSubMenu
-        from utils import paperclip_copy, execute_terminal, execute_command
         
         if self.tracker:
             self.tracker.update_pos()
@@ -994,10 +999,31 @@ class ClipNotesWindow(QMainWindow):
         
         def open_image_selector():
             nonlocal dialog_temp_image_path
+            start_dir = get_pictures_directory()
             file_path, _ = QFileDialog.getOpenFileName(
-                dialog, "Sélectionner une image", "",
-                "Images (*.png *.jpg *.jpeg *.bmp *.gif)"
+                dialog,
+                "Choisir une image",
+                start_dir,
+                "Images (*.png *.jpg *.jpeg *.gif *.bmp *.webp);;Tous les fichiers (*)"
             )
+            
+            if file_path:
+                # L'utilisateur a choisi manuellement, désactiver la détection auto
+                # auto_icon_applied[0] = False
+                # last_auto_icon_path[0] = None
+                # manual_override[0] = True  # Protéger le choix manuel
+                
+                # Stocker le chemin temporairement (ne pas créer le thumbnail maintenant)
+                self.dialog_temp_image_path = file_path
+                
+                # Mettre seulement le nom de fichier (sans chemin) dans name_input
+                file_name = os.path.basename(file_path)
+                name_without_ext = os.path.splitext(file_name)[0]
+                icon_input.setText(name_without_ext)
+                
+                # Afficher l'aperçu de l'image
+                # if self.dialog_image_preview:
+                #     pixmap = QPixmap(file_path)
             if file_path:
                 dialog_temp_image_path = file_path
                 icon_input.setText("")  # Vider le champ texte
@@ -1033,15 +1059,16 @@ class ClipNotesWindow(QMainWindow):
         """)
         
         # Répartition : Emoji et Image prennent chacun 2 parts, Auto prend 1 part
-        buttons_row.addWidget(emoji_button, 2)
-        buttons_row.addWidget(image_button, 2)
-        buttons_row.addWidget(auto_apply_checkbox, 1, Qt.AlignmentFlag.AlignCenter)
+        icon_row.addWidget(emoji_button, 2)
+        icon_row.addWidget(image_button, 2)
+        icon_row.addWidget(auto_apply_checkbox, 1, Qt.AlignmentFlag.AlignCenter)
         
-        search_input = QLineEdit()
-        value_input = QTextEdit()
-        value_input.setMinimumHeight(80)
-        value_input.setProperty("help_text", "Valeur")
-        value_input.installEventFilter(self)
+        # search_input = QLineEdit()
+        # icon_row.addWidget(image_button, 2)
+        # value_input = QTextEdit()
+        # value_input.setMinimumHeight(80)
+        # value_input.setProperty("help_text", "Valeur")
+        # value_input.installEventFilter(self)
 
         # auto_icon_layout.addWidget(auto_checkbox)
         # auto_icon_layout.addWidget(search_input)
@@ -1896,36 +1923,6 @@ class ClipNotesWindow(QMainWindow):
         layout.addWidget(value_input)
         layout.addWidget(submit_button)
         layout.addWidget(help_label)
-
-        def get_pictures_directory():
-            """
-            Retourne le répertoire Images/Pictures de l'utilisateur de manière robuste.
-            """
-            home = os.path.expanduser("~")
-            # 1 via xdg-user-dir
-            try:
-                result = subprocess.run(
-                    ["xdg-user-dir", "PICTURES"],
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
-                path = result.stdout.strip()
-                if path and os.path.isdir(path):
-                    return path
-            except Exception:
-                pass
-            # 2 Fallbacks classiques
-            candidates = [
-                os.path.join(home, "Pictures"),
-                os.path.join(home, "Images"),
-            ]
-
-            for path in candidates:
-                if os.path.isdir(path):
-                    return path
-            # 3 Dernier recours : HOME
-            return home
         
         def apply_icon_to_dialog(icon_path):
             """Applique l'icône trouvée au dialogue (preview + chemin)"""
@@ -3752,8 +3749,23 @@ class ClipNotesWindow(QMainWindow):
             # Récupérer le HTML du clip pour le tooltip
             _, clip_html = self.get_clip_data_from_json(name)
             self.buttons_sub.append((name, self.make_handler_sub(name, value, x, y), tooltip, action, clip_html))
-        
-        self.current_popup = RadialMenu(x, y, self.buttons_sub, sub=True, tracker=self.tracker, app_instance=self, neon_color=self.neon_color, action_zone_colors=self.action_zone_colors, nb_icons_menu=self.nb_icons_menu, show_central_icon=self.show_central_icon, menu_background_color=self.menu_background_color, zone_basic_opacity=self.zone_basic_opacity, zone_hover_opacity=self.zone_hover_opacity)
+        # print(self.actions_map_sub)
+        menu_dict=self.actions_map_sub
+        clips_by_link = []
+
+        for key, value in menu_dict.items():
+            # value[0] = (fonction, enfants, meta)
+            func, children, meta = value[0]
+
+            if isinstance(meta, dict) and meta.get("is_group"):
+                clips_by_link.append(len(children))
+            else:
+                clips_by_link.append(1)
+
+        # print(clips_by_link)
+
+        # print(array)
+        self.current_popup = RadialMenu(x, y, self.buttons_sub, sub=True, tracker=self.tracker, app_instance=self, neon_color=self.neon_color, action_zone_colors=self.action_zone_colors, nb_icons_menu=self.nb_icons_menu, show_central_icon=self.show_central_icon, menu_background_color=self.menu_background_color, zone_basic_opacity=self.zone_basic_opacity, zone_hover_opacity=self.zone_hover_opacity, clips_by_link=clips_by_link)
         self.current_popup.show()
         self.current_popup.animate_open()
         
