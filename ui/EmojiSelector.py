@@ -8,6 +8,7 @@ class EmojiSelector(QDialog):
     def __init__(self, emoji_list, rows=10, cols=10, parent=None):
         super().__init__(parent)
         self.emoji_list = emoji_list
+        self.selected_emoji = None
         self.rows = rows
         self.cols = cols
         self.per_page = rows * cols
@@ -117,3 +118,5 @@ class EmojiSelector(QDialog):
 
     def emoji_selected(self, emoji):
         print(f"Emoji sélectionné : {emoji}")
+        self.selected_emoji = emoji
+        self.accept()
