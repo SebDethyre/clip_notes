@@ -951,16 +951,37 @@ class ClipNotesWindow(QMainWindow):
         icon_input.textChanged.connect(on_icon_text_changed)
         
         icon_row.addWidget(icon_input)
-        
+        # Layout horizontal pour les boutons emoji et image
+        buttons_row = QHBoxLayout()
+        buttons_row.setSpacing(8)
+                
         # Bouton Emoji
         emoji_button = QPushButton("😀")
         emoji_button.setFixedSize(40, 40)
-        emoji_button.setToolTip("Choisir un emoji")
+        emoji_button.setProperty("help_text", "Attribuer un emoji")
+        emoji_button.installEventFilter(self)
         
         def open_emoji_selector():
-            selector = EmojiSelector(dialog)
-            if selector.exec() == QDialog.DialogCode.Accepted and selector.selected_emoji:
-                icon_input.setText(selector.selected_emoji)
+            path = self.emojis_file
+            if not os.path.exists(path):
+                print(f"Fichier introuvable : {path}")
+                return
+            with open(path, "r", encoding="utf-8") as f:
+                emojis = [line.strip() for line in f if line.strip()]
+            selector = EmojiSelector(emojis, parent=dialog)
+
+            def on_emoji_selected(emoji):
+                # Remplacer tout le texte par l'emoji sélectionné
+                icon_input.setFocus()
+                icon_input.setText(emoji)
+                icon_input.setCursorPosition(len(emoji))
+                # update_icon_preview(emoji)
+                selector.accept()
+
+            selector.emoji_selected = on_emoji_selected
+            # if selector.exec() == QDialog.DialogCode.Accepted and selector.selected_emoji:
+            #     icon_input.setText(selector.selected_emoji)
+            selector.exec()
         
         emoji_button.clicked.connect(open_emoji_selector)
         icon_row.addWidget(emoji_button)
@@ -968,7 +989,8 @@ class ClipNotesWindow(QMainWindow):
         # Bouton Image
         image_button = QPushButton("🖼️")
         image_button.setFixedSize(40, 40)
-        image_button.setToolTip("Choisir une image")
+        image_button.setProperty("help_text", "Attribuer une image ( 🟩 : icône trouvée )")
+        image_button.installEventFilter(self)
         
         def open_image_selector():
             nonlocal dialog_temp_image_path
@@ -984,52 +1006,49 @@ class ClipNotesWindow(QMainWindow):
                 icon_preview.setPixmap(pixmap)
         
         image_button.clicked.connect(open_image_selector)
-        icon_row.addWidget(image_button)
-        
-        # Checkbox auto-icône et input de recherche
-        auto_icon_layout = QVBoxLayout()
-        auto_icon_layout.setSpacing(4)
-        
-        auto_checkbox = QCheckBox("Auto")
-        auto_checkbox.setChecked(self.auto_apply_icon)
-        auto_checkbox.setStyleSheet("color: white; font-size: 11px;")
-        auto_checkbox.setToolTip("Recherche automatique d'icône")
-        
-        search_input = QLineEdit()
-        search_input.setPlaceholderText("Rechercher icône...")
-        search_input.setFixedWidth(120)
-        search_input.setStyleSheet("""
-            QLineEdit {
-                background-color: rgba(255, 255, 255, 20);
-                border: 1px solid rgba(255, 255, 255, 40);
-                border-radius: 4px;
-                padding: 4px;
+        # Checkbox pour auto-appliquer l'icône détectée
+        auto_apply_checkbox = QCheckBox("Icône auto")
+        auto_apply_checkbox.setChecked(self.auto_apply_icon)
+        auto_apply_checkbox.setProperty("help_text", "Appliquer automatiquement l'icône détectée")
+        auto_apply_checkbox.installEventFilter(self)
+        auto_apply_checkbox.setStyleSheet("""
+            QCheckBox {
                 color: white;
                 font-size: 11px;
             }
+            QCheckBox::indicator {
+                width: 14px;
+                height: 14px;
+            }
+            QCheckBox::indicator:unchecked {
+                background-color: rgba(255, 255, 255, 30);
+                border: 1px solid rgba(255, 255, 255, 60);
+                border-radius: 3px;
+            }
+            QCheckBox::indicator:checked {
+                background-color: rgba(100, 200, 100, 150);
+                border: 1px solid rgba(100, 255, 100, 200);
+                border-radius: 3px;
+            }
         """)
         
-        def search_icon():
-            nonlocal dialog_temp_image_path
-            search_term = search_input.text().strip()
-            if search_term:
-                icon_path = find_icon_for_command(search_term)
-                if icon_path:
-                    dialog_temp_image_path = icon_path
-                    icon_input.setText("")
-                    pixmap = QPixmap(icon_path).scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                    icon_preview.setPixmap(pixmap)
-                    image_button.setStyleSheet("background-color: rgba(100, 200, 100, 150);")
-                else:
-                    image_button.setStyleSheet("")
+        # Répartition : Emoji et Image prennent chacun 2 parts, Auto prend 1 part
+        buttons_row.addWidget(emoji_button, 2)
+        buttons_row.addWidget(image_button, 2)
+        buttons_row.addWidget(auto_apply_checkbox, 1, Qt.AlignmentFlag.AlignCenter)
         
-        search_input.returnPressed.connect(search_icon)
-        
-        auto_icon_layout.addWidget(auto_checkbox)
-        auto_icon_layout.addWidget(search_input)
-        icon_row.addLayout(auto_icon_layout)
+        search_input = QLineEdit()
+        value_input = QTextEdit()
+        value_input.setMinimumHeight(80)
+        value_input.setProperty("help_text", "Valeur")
+        value_input.installEventFilter(self)
+
+        # auto_icon_layout.addWidget(auto_checkbox)
+        # auto_icon_layout.addWidget(search_input)
+        # icon_row.addLayout(auto_icon_layout)
         
         icon_row.addStretch()
+        icon_section.addLayout(buttons_row)
         icon_section.addLayout(icon_row)
         layout.addLayout(icon_section)
         
@@ -1727,6 +1746,9 @@ class ClipNotesWindow(QMainWindow):
         slider_h_layout.setContentsMargins(8, 0, 8, 0)
         slider_h_layout.addWidget(slider)
         slider_layout.addLayout(slider_h_layout)
+
+
+
 
         value_input = QTextEdit()
         value_input.setMinimumHeight(80)
