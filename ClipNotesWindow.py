@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import QTextEdit, QTextBrowser, QLabel, QFileDialog, QCheck
 
 from utils import *
 from ui import EmojiSelector, AutoScrollListWidget, WhiteDropIndicatorStyle, HoverSubMenu, CursorTracker, TooltipWindow, RadialMenu, CalibrationWindow
+from ui import KeyboardShortcutsManager
 
 class ClipNotesWindow(QMainWindow):
     def __init__(self):
@@ -74,9 +75,9 @@ class ClipNotesWindow(QMainWindow):
             }
         """
         self.special_buttons_by_number = {
-            4 : ["➖", "⚙️", "🔧", "➕"],
-            5 : ["➖", "📦", "⚙️", "🔧", "➕"],
-            6 : ["➖", "📋", "💾", "⚙️", "🔧", "➕"]
+            4 : ["➖", "⌨️", "⚙️", "🔧", "➕"],
+            5 : ["➖", "📦", "⌨️", "⚙️", "🔧", "➕"],
+            6 : ["➖", "📋", "⌨️", "⚙️", "🔧", "➕"]
         }
         # Attribution des fonctions aux boutons de menus "fixes"
         self.buttons_actions_by_number = {
@@ -84,12 +85,14 @@ class ClipNotesWindow(QMainWindow):
                     "➕": [(self.new_clip,    [x,y], {}), "Ajouter", None],
                     "🔧": [(self.update_clip, [x,y], {}), "Modifier", None],
                     "⚙️": [(self.show_config_dialog, [x,y], {}), "Configurer", None],
+                    "⌨️": [(self.show_shortcuts_dialog, [x,y], {}), "Raccourcis", None],
                     "➖": [(self.show_storage_menu, [x,y], {}), "Supprimer", None],
                 },
             5 : {
                     "➕": [(self.new_clip,    [x,y], {}), "Ajouter", None],
                     "🔧": [(self.update_clip, [x,y], {}), "Modifier", None],
                     "⚙️": [(self.show_config_dialog, [x,y], {}), "Configurer", None],
+                    "⌨️": [(self.show_shortcuts_dialog, [x,y], {}), "Raccourcis", None],
                     "📦": [(self.show_storage_menu, [x,y], {}), "Stocker", None],
                     "➖": [(self.delete_clip, [x,y], {}), "Supprimer", None],
                 },
@@ -97,7 +100,7 @@ class ClipNotesWindow(QMainWindow):
                     "➕": [(self.new_clip,    [x,y], {}), "Ajouter", None],
                     "🔧": [(self.update_clip, [x,y], {}), "Modifier", None],
                     "⚙️": [(self.show_config_dialog, [x,y], {}), "Configurer", None],
-                    "💾": [(self.store_clip_mode, [x,y], {}), "Stocker", None],
+                    "⌨️": [(self.show_shortcuts_dialog, [x,y], {}), "Raccourcis", None],
                     "📋": [(self.show_stored_clips_dialog, [x,y], {}), "Stock", None],
                     "➖": [(self.delete_clip, [x,y], {}), "Supprimer", None],
                 }
@@ -3554,6 +3557,27 @@ class ClipNotesWindow(QMainWindow):
         # Si le dialogue a été accepté (sauvegarde), rafraîchir le menu
         if dialog.result() == QDialog.DialogCode.Accepted:
             self.refresh_menu()
+
+    def show_shortcuts_dialog(self, x, y):
+        """Affiche la fenêtre de configuration des raccourcis clavier"""
+        if self.tracker:
+            self.tracker.update_pos()
+            x, y = self.tracker.last_x, self.tracker.last_y
+        
+        # Créer et afficher la fenêtre des raccourcis
+        shortcuts_window = KeyboardShortcutsManager(self, self.current_popup)
+        
+        # Centrer la fenêtre sur l'écran
+        screen = QApplication.primaryScreen()
+        if screen:
+            screen_geometry = screen.availableGeometry()
+            window_x = (screen_geometry.width() - shortcuts_window.width()) // 2
+            window_y = (screen_geometry.height() - shortcuts_window.height()) // 2
+            shortcuts_window.move(window_x, window_y)
+        else:
+            shortcuts_window.move(x - shortcuts_window.width() // 2, y - shortcuts_window.height() // 2)
+        
+        shortcuts_window.exec()
 
     def new_clip(self, x, y):
         if self.tracker:

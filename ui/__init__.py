@@ -7,3 +7,4 @@ from .CursorTracker import CursorTracker
 from .CalibrationWindow import CalibrationWindow
 from .TooltipWindow import TooltipWindow
 from .RadialMenu import RadialMenu
+from .KeyboardShortcutsManager import KeyboardShortcutsManager

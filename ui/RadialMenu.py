@@ -122,9 +122,9 @@ class RadialMenu(QWidget):
         # self.hover_close_timer.setSingleShot(True)
         # self.hover_close_timer.timeout.connect(self.check_hover_submenu_close)
         self.special_buttons_by_numbers = {
-            4 : ["➖", "⚙️", "🔧", "➕"],
-            5 : ["➖", "📦", "⚙️", "🔧", "➕"],
-            6 : ["➖", "📋", "💾", "⚙️", "🔧", "➕"]
+            4 : ["➖", "⌨️", "⚙️", "🔧", "➕"],
+            5 : ["➖", "📦", "⌨️", "⚙️", "🔧", "➕"],
+            6 : ["➖", "📋", "⌨️", "⚙️", "🔧", "➕"]
         }
         # === ANIMATION BOUTONS SPÉCIAUX (hover sur ➕) ===
         self.special_buttons_revealed = False  # Les boutons spéciaux sont-ils complètement révélés ?
@@ -162,6 +162,7 @@ class RadialMenu(QWidget):
                 "➕": "Ajouter",
                 "🔧": "Modifier",
                 "⚙️": "Configurer",
+                "⌨️": "Raccourcis (1-9)",
                 "➖": "Supprimer"
             }
         elif self.nb_icons_menu == 5:
@@ -169,6 +170,7 @@ class RadialMenu(QWidget):
                 "➕": "Ajouter",
                 "🔧": "Modifier",
                 "⚙️": "Configurer",
+                "⌨️": "Raccourcis (1-9)",
                 "➖": "Supprimer",
                 "📦": "Stocker"
             }
@@ -177,7 +179,7 @@ class RadialMenu(QWidget):
                 "➕": "Ajouter",
                 "🔧": "Modifier",
                 "⚙️": "Configurer",
-                "💾": "Stocker",
+                "⌨️": "Raccourcis (1-9)",
                 "📋": "Stock",
                 "➖": "Supprimer",
             }
@@ -1156,7 +1158,7 @@ class RadialMenu(QWidget):
                 self.clips_by_link.append(len(children))
             else:
                 self.clips_by_link.append(1)
-        print(self.clips_by_link)
+        # print(self.clips_by_link)
 
         # Mettre à jour la liste des boutons qui sont des groupes (utile pour paintEvent)
         # self.button_is_group = [len_ > 1 for len_ in self.clips_by_link]
@@ -2178,8 +2180,8 @@ class RadialMenu(QWidget):
             # print(visible_indices)
             for pos_in_visible, btn_index in enumerate(visible_indices):
                 if btn_index < len(self.button_is_group) and self.button_is_group[btn_index]:
-                    print(self.button_is_group)
-                    print(btn_index)
+                    # print(self.button_is_group)
+                    # print(btn_index)
                     # Ce bouton est un groupe - dessiner un petit badge
                     angle = math.radians(pos_in_visible * angle_step)
                     # Position du centre du bouton
