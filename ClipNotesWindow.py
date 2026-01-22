@@ -75,20 +75,20 @@ class ClipNotesWindow(QMainWindow):
             }
         """
         self.special_buttons_by_number = {
-            4 : ["➖", "⌨️", "⚙️", "🔧", "➕"],
-            5 : ["➖", "📦", "⌨️", "⚙️", "🔧", "➕"],
-            6 : ["➖", "📋", "⌨️", "⚙️", "🔧", "➕"]
+            5 : ["➖", "⌨️", "⚙️", "🔧", "➕"],
+            6 : ["➖", "📦", "⌨️", "⚙️", "🔧", "➕"],
+            7 : ["➖", "📋", "💾", "⌨️", "⚙️", "🔧", "➕"]
         }
         # Attribution des fonctions aux boutons de menus "fixes"
         self.buttons_actions_by_number = {
-            4 : {
+            5 : {
                     "➕": [(self.new_clip,    [x,y], {}), "Ajouter", None],
                     "🔧": [(self.update_clip, [x,y], {}), "Modifier", None],
                     "⚙️": [(self.show_config_dialog, [x,y], {}), "Configurer", None],
                     "⌨️": [(self.show_shortcuts_dialog, [x,y], {}), "Raccourcis", None],
                     "➖": [(self.show_storage_menu, [x,y], {}), "Supprimer", None],
                 },
-            5 : {
+            6 : {
                     "➕": [(self.new_clip,    [x,y], {}), "Ajouter", None],
                     "🔧": [(self.update_clip, [x,y], {}), "Modifier", None],
                     "⚙️": [(self.show_config_dialog, [x,y], {}), "Configurer", None],
@@ -96,11 +96,12 @@ class ClipNotesWindow(QMainWindow):
                     "📦": [(self.show_storage_menu, [x,y], {}), "Stocker", None],
                     "➖": [(self.delete_clip, [x,y], {}), "Supprimer", None],
                 },
-            6 : {
+            7 : {
                     "➕": [(self.new_clip,    [x,y], {}), "Ajouter", None],
                     "🔧": [(self.update_clip, [x,y], {}), "Modifier", None],
                     "⚙️": [(self.show_config_dialog, [x,y], {}), "Configurer", None],
                     "⌨️": [(self.show_shortcuts_dialog, [x,y], {}), "Raccourcis", None],
+                    "💾": [(self.store_clip_mode, [x,y], {}), "Stocker", None],
                     "📋": [(self.show_stored_clips_dialog, [x,y], {}), "Stock", None],
                     "➖": [(self.delete_clip, [x,y], {}), "Supprimer", None],
                 }
@@ -2432,14 +2433,7 @@ class ClipNotesWindow(QMainWindow):
             self.tracker.update_pos()
             x, y = self.tracker.last_x, self.tracker.last_y
         # Menu à 4 icones
-        if self.nb_icons_menu == 4:
-            self.buttons_sub = [
-                ("📋", lambda: self.show_stored_clips_dialog(x, y), "Clips stockés", None),
-                ("🗑️", lambda: self.delete_clip(x, y), "Supprimer", None),
-                ("💾", lambda: self.store_clip_mode(x, y), "Stocker", None)
-            ]
-            central_icon = "➖"
-        elif self.nb_icons_menu == 5:
+        if self.nb_icons_menu == 5:
             self.buttons_sub = [
                 ("📋", lambda: self.show_stored_clips_dialog(x, y), "Clips stockés", None),
                 ("🗑️", lambda: self.delete_clip(x, y), "Supprimer", None),
@@ -2447,6 +2441,13 @@ class ClipNotesWindow(QMainWindow):
             ]
             central_icon = "➖"
         elif self.nb_icons_menu == 6:
+            self.buttons_sub = [
+                ("📋", lambda: self.show_stored_clips_dialog(x, y), "Clips stockés", None),
+                ("🗑️", lambda: self.delete_clip(x, y), "Supprimer", None),
+                ("💾", lambda: self.store_clip_mode(x, y), "Stocker", None)
+            ]
+            central_icon = "➖"
+        elif self.nb_icons_menu == 7:
             self.buttons_sub = []
             central_icon = ""
         # Remplacer temporairement les boutons par les 2 options
@@ -3300,8 +3301,12 @@ class ClipNotesWindow(QMainWindow):
         emoji_labels_layout = QHBoxLayout()
         emoji_labels_layout.setContentsMargins(8, 0, 8, 0)
         emoji_labels_layout.setSpacing(0)
-        emoji_labels = ["4", "5", "6"]
-        emoji_tooltips = ["4", "5", "6"]
+        
+        min_buttons_number = 5
+        max_buttons_number = 7
+
+        emoji_labels = [str(i) for i in range(min_buttons_number, max_buttons_number + 1)]
+        emoji_tooltips = [str(i) for i in range(min_buttons_number, max_buttons_number + 1)]
         
         # Stocker les labels pour l'event filter
         self.nb_icons_config_labels = []
@@ -3333,8 +3338,8 @@ class ClipNotesWindow(QMainWindow):
         slider_layout.addLayout(emoji_labels_layout)
 
         slider = QSlider(Qt.Orientation.Horizontal)
-        slider.setMinimum(4)
-        slider.setMaximum(6)
+        slider.setMinimum(min_buttons_number)
+        slider.setMaximum(max_buttons_number)
         slider.setValue(self.nb_icons_menu)  # INITIALISER avec la bonne valeur
         slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         slider.setTickInterval(1)
