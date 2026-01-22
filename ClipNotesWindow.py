@@ -17,7 +17,7 @@ class ClipNotesWindow(QMainWindow):
         self.update_mode = False
         self.delete_mode = False
         self.store_mode = False
-        self.reorder_mode = False  # Mode réordonnancement sur le cercle
+        # self.reorder_mode = False  # Mode réordonnancement sur le cercle
         
         # Créer une fenêtre tooltip pour l'application (utilisée dans les dialogues)
         self.tooltip_window = TooltipWindow()

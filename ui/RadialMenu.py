@@ -1268,12 +1268,12 @@ class RadialMenu(QWidget):
                             self.update_clips_by_link()
                             self.tooltip_window.show_message("✓ Clip déplacé", 1000)
                             self.update_tooltip_position()
-                            if self.reorder_mode:
-                                self.app_instance.reorder_clip_mode(self.x, self.y)
-                                self.update_clips_by_link()
-                            else:
-                                self.app_instance.refresh_menu()
-                                self.update_clips_by_link()
+                            # if self.reorder_mode:
+                            #     self.app_instance.reorder_clip_mode(self.x, self.y)
+                            #     self.update_clips_by_link()
+                            # else:
+                            self.app_instance.refresh_menu()
+                            self.update_clips_by_link()
                             return
             
             # Réinitialiser l'état du drag
@@ -2262,13 +2262,14 @@ class RadialMenu(QWidget):
             button_mumber = 2
         elif self.nb_icons_menu == 6:
             button_mumber = 1
-        if self.app_instance and (self.app_instance.update_mode or self.app_instance.delete_mode or self.app_instance.store_mode or self.app_instance.reorder_mode):
+        # if self.app_instance and (self.app_instance.update_mode or self.app_instance.delete_mode or self.app_instance.store_mode or self.app_instance.reorder_mode):
+        if self.app_instance and (self.app_instance.update_mode or self.app_instance.delete_mode or self.app_instance.store_mode):
             self.app_instance.update_mode = False
             self.app_instance.delete_mode = False
             self.app_instance.store_mode = False
-            self.app_instance.reorder_mode = False
+            # self.app_instance.reorder_mode = False
             # Réinitialiser aussi l'état de drag du RadialMenu
-            self.reorder_mode = False
+            # self.reorder_mode = False
             self.drag_active = False
             self.dragged_button_index = None
             self.drop_indicator_angle = None

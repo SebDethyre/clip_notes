@@ -574,7 +574,7 @@ class HoverSubMenu(QWidget):
                 btn.setStyleSheet(f"""
                     QPushButton {{
                         background-color: rgba(120, 120, 120, 250);
-                        border-radius: {max(1, scaled_size // 2)}px;
+                        border-radius: {self.btn_size // 2}px;
                         border: 3px solid rgba(255, 255, 255, 255);
                     }}
                 """)
@@ -583,7 +583,7 @@ class HoverSubMenu(QWidget):
                 btn.setStyleSheet(f"""
                     QPushButton {{
                         background-color: rgba(80, 80, 80, 220);
-                        border-radius: {max(1, scaled_size // 2)}px;
+                        border-radius: {self.btn_size // 2}px;
                         border: 2px solid rgba(255, 255, 255, 0);
                     }}
                     QPushButton:hover {{
