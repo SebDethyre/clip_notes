@@ -217,8 +217,44 @@ class RadialKeyboardListener(QObject):
         """Filtre les événements clavier"""
         if event.type() == QEvent.Type.KeyPress:
             key = event.key()
-            
+                       # Vérifier si un sous-menu hover est ouvert (et s'il existe encore)
+            submenu = None
+            if hasattr(self.radial_menu, 'hover_submenu') and self.radial_menu.hover_submenu is not None:
+                try:
+                    if self.radial_menu.hover_submenu.isVisible():
+                        submenu = self.radial_menu.hover_submenu
+                except RuntimeError:
+                    # L'objet a été détruit
+                    self.radial_menu.hover_submenu = None
             # Touches de navigation (prioritaires, non modifiables)
+            if submenu is not None:
+                # Rediriger les événements vers le sous-menu
+                if key == Qt.Key.Key_Right:
+                    submenu.handle_key_right()
+                    return True
+                elif key == Qt.Key.Key_Left:
+                    submenu.handle_key_left()
+                    return True
+                elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter or key == Qt.Key.Key_Down:
+                    submenu.handle_key_enter()
+                    return True
+                elif key == Qt.Key.Key_Escape or key == Qt.Key.Key_Up:
+                    submenu.handle_key_escape()
+                    return True
+            else:
+                # Comportement normal pour le menu principal
+                if key == Qt.Key.Key_Right:
+                    self.radial_menu.handle_key_right()
+                    return True
+                elif key == Qt.Key.Key_Left:
+                    self.radial_menu.handle_key_left()
+                    return True
+                elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter or key == Qt.Key.Key_Down:
+                    self.radial_menu.handle_key_enter()
+                    return True
+                elif key == Qt.Key.Key_Escape or key == Qt.Key.Key_Up:
+                    self.radial_menu.handle_key_escape()
+                    return True
             if key == Qt.Key.Key_Left:
                 if self.radial_menu.hover_submenu is not None:
                     try:
@@ -229,7 +265,8 @@ class RadialKeyboardListener(QObject):
                         self.radial_menu.hover_submenu = None
                 self.radial_menu.handle_key_left()
                 return True
-            
+
+            # return False
             elif key == Qt.Key.Key_Right:
                 if self.radial_menu.hover_submenu is not None:
                     try:
