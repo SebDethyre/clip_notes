@@ -199,7 +199,7 @@ class HoverSubMenu(QWidget):
                 self.parent_menu.update()
         
         # === Drag d'un clip enfant (pour le sortir du groupe) ===
-        elif event.type() == QEvent.Type.MouseButtonPress:
+        elif event.type() == QEvent.Type.MouseButtonPress and not (self.parent_menu.app_instance.get_update_mode() or self.parent_menu.app_instance.get_delete_mode() or self.parent_menu.app_instance.get_store_mode()):
             if self.is_group_submenu and watched in self.buttons:
                 if event.button() == Qt.MouseButton.LeftButton:
                     button_index = self.buttons.index(watched)
@@ -265,12 +265,13 @@ class HoverSubMenu(QWidget):
                     self.app_instance.show_group_edit_dialog(self.group_alias, dx, dy)
                     event.accept()
                     return
+                if not (self.parent_menu.app_instance.get_update_mode() or self.parent_menu.app_instance.get_delete_mode() or self.parent_menu.app_instance.get_store_mode()):
                 # Clic au centre - préparer le drag du groupe
-                self.drag_pending = True
-                self.drag_start_pos = event.pos()
-                self.setCursor(Qt.CursorShape.ClosedHandCursor)
-                event.accept()
-                return
+                    self.drag_pending = True
+                    self.drag_start_pos = event.pos()
+                    self.setCursor(Qt.CursorShape.ClosedHandCursor)
+                    event.accept()
+                    return
         
         # Clic en dehors des boutons et du centre - ignorer
         event.accept()

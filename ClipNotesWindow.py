@@ -461,10 +461,10 @@ class ClipNotesWindow(QMainWindow):
                 clips_by_link.append(len(children))
             else:
                 clips_by_link.append(1)
-        
         if self.current_popup:
             self.current_popup.update_buttons(self.buttons_sub)
             self.current_popup.set_central_text("🔧")
+            self.current_popup.update_clips_by_link(clips_by_link)
             self.current_popup.set_neon_color("jaune")
             self.current_popup.toggle_neon(True)
             self.current_popup.timer.start(50)
@@ -514,10 +514,17 @@ class ClipNotesWindow(QMainWindow):
                     clip_html  # 5ème élément : HTML pour le tooltip
                 )
             )
-        
+        clips_by_link = []
+        for key, value in self.actions_map_sub.items():
+            func, children, meta = value[0]
+            if isinstance(meta, dict) and meta.get("is_group"):
+                clips_by_link.append(len(children))
+            else:
+                clips_by_link.append(1)
         if self.current_popup:
             self.current_popup.update_buttons(self.buttons_sub)
             self.current_popup.set_central_text("➖")
+            self.current_popup.update_clips_by_link(clips_by_link)
             self.current_popup.set_neon_color("rouge")
             self.current_popup.toggle_neon(True)
             self.current_popup.timer.start(50)
@@ -2350,10 +2357,17 @@ class ClipNotesWindow(QMainWindow):
                     clip_html  # 5ème élément : HTML pour le tooltip
                 )
             )
-        
+        clips_by_link = []
+        for key, value in self.actions_map_sub.items():
+            func, children, meta = value[0]
+            if isinstance(meta, dict) and meta.get("is_group"):
+                clips_by_link.append(len(children))
+            else:
+                clips_by_link.append(1)
         if self.current_popup:
             self.current_popup.update_buttons(self.buttons_sub)
             self.current_popup.set_central_text("💾")
+            self.current_popup.update_clips_by_link(clips_by_link)
             self.current_popup.set_neon_color("vert")
             self.current_popup.toggle_neon(True)
             self.current_popup.timer.start(50)
