@@ -7,6 +7,7 @@ import os
 import json
 from PyQt6.QtCore import QObject, QEvent, Qt
 from PyQt6.QtGui import QKeySequence
+from PyQt6.QtWidgets import QApplication
 
 
 class RadialKeyboardListener(QObject):
@@ -215,6 +216,9 @@ class RadialKeyboardListener(QObject):
     
     def eventFilter(self, watched, event):
         """Filtre les événements clavier"""
+        app = QApplication.instance()
+        if app.activeModalWidget() or app.activePopupWidget():
+            return False
         if event.type() == QEvent.Type.KeyPress:
             key = event.key()
                        # Vérifier si un sous-menu hover est ouvert (et s'il existe encore)
