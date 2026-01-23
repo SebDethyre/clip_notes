@@ -302,8 +302,8 @@ class KeyboardShortcutsManager(QDialog):
             Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setMinimumSize(700, 500)
-        self.resize(750, 600)
+        self.setMinimumSize(850, 500)
+        self.resize(850, 600)
         
         self.setup_ui()
     
@@ -424,7 +424,7 @@ class KeyboardShortcutsManager(QDialog):
         header_layout = QHBoxLayout()
         header_layout.setSpacing(8)
         
-        headers = [("Icône", 80), ("Description", 200), ("Raccourci", 150), ("Action", 100)]
+        headers = [("Icône", 80), ("Action", 180), ("Valeur", 200), ("Raccourci", 150), ("Action", 100)]
         for text, width in headers:
             header = QLabel(text)
             header.setFixedWidth(width)
@@ -499,24 +499,24 @@ class KeyboardShortcutsManager(QDialog):
         """)
         layout.addWidget(section_label)
         
-        # Descriptions des boutons fixes
         button_descriptions = {
             "➕": "Ajouter un clip",
             "🔧": "Modifier un clip",
             "⚙️": "Configuration",
-            "➖": "Supprimer un clip",
-            "📦": "Stocker un clip",
+            "📦": "Stocker un clip, Stock",
             "💾": "Stocker",
-            "📋": "Voir le stock",
-            "⌨️": "Raccourcis clavier"
+            "📋": "Stock",
+            "⌨️": "Raccourcis clavier",
+            "➖": "Supprimer, Stocker un clip, Accès au Stock",
         }
         
-        for i, btn_label in enumerate(special_buttons):
-            desc = button_descriptions.get(btn_label, btn_label)
+        # Afficher dans l'ordre de button_descriptions
+        for btn_label, action in button_descriptions.items():
+            if btn_label not in special_buttons:
+                continue
             shortcut_key = f"fixed_{btn_label}"
             current_shortcut = self.shortcuts.get(shortcut_key, "")
-            
-            row = self.create_row(btn_label, desc, current_shortcut, shortcut_key, is_image=False)
+            row = self.create_row(btn_label, action, "", current_shortcut, shortcut_key, is_image=False)
             layout.addLayout(row)
         
         # Séparateur
@@ -543,25 +543,37 @@ class KeyboardShortcutsManager(QDialog):
         # Charger les clips depuis le JSON
         clips = self.load_clips()
         
-        for i, clip in enumerate(clips):
+        # Trier les clips comme le menu radial : copy, term, exec
+        action_order = {"copy": 0, "term": 1, "exec": 2}
+        sorted_clips = sorted(clips, key=lambda c: action_order.get(c.get('action', 'copy'), 3))
+        
+        action_description = {
+            "copy" : "copie",
+            "term" : "exécute (terminal)",
+            "exec" : "exécute",
+        }
+        for i, clip in enumerate(sorted_clips):
             alias = clip.get('alias', '')
             string = clip.get('string', '')
-            action = clip.get('action', 'copy')
+            action = action_description.get(clip.get('action', 'copy'), clip.get('action', 'copy'))
             
             # Description courte
-            desc = string[:50] + "..." if len(string) > 50 else string
-            desc = desc.replace('\n', ' ')
+            value = string[:50] + "..." if len(string) > 50 else string
+            value = value.replace('\n', ' ')
+            if not string:
+                action = "sous-menu"
+                value = "Groupe de clips"
             
-            # Raccourci par défaut : 1-9 pour les 9 premiers clips
+            # Raccourci par défaut : 1-9 pour les 9 premiers clips (dans l'ordre trié)
             default_shortcut = str(i + 1) if i < 9 else ""
             shortcut_key = f"clip_{alias}"
             current_shortcut = self.shortcuts.get(shortcut_key, default_shortcut)
             
             is_image = "/" in alias
-            row = self.create_row(alias, desc, current_shortcut, shortcut_key, is_image=is_image)
+            row = self.create_row(alias, action, value, current_shortcut, shortcut_key, is_image=is_image)
             layout.addLayout(row)
     
-    def create_row(self, icon_label, description, current_shortcut, shortcut_key, is_image=False):
+    def create_row(self, icon_label, action, value, current_shortcut, shortcut_key, is_image=False):
         """Crée une ligne du tableau"""
         row_layout = QHBoxLayout()
         row_layout.setSpacing(8)
@@ -594,10 +606,10 @@ class KeyboardShortcutsManager(QDialog):
         
         row_layout.addWidget(icon_widget)
         
-        # Colonne 2 : Description
-        desc_label = QLabel(description)
-        desc_label.setFixedWidth(200)
-        desc_label.setStyleSheet("""
+        # Colonne 2 : action
+        action_label = QLabel(action)
+        action_label.setFixedWidth(180)
+        action_label.setStyleSheet("""
             QLabel {
                 color: white;
                 font-size: 13px;
@@ -606,10 +618,25 @@ class KeyboardShortcutsManager(QDialog):
                 padding: 8px;
             }
         """)
-        desc_label.setWordWrap(True)
-        row_layout.addWidget(desc_label)
+        action_label.setWordWrap(True)
+        row_layout.addWidget(action_label)
         
-        # Colonne 3 : Raccourci actuel
+        # Colonne 3 : Valeur de string
+        value_label = QLabel(value)
+        value_label.setFixedWidth(200)
+        value_label.setStyleSheet("""
+            QLabel {
+                color: white;
+                font-size: 13px;
+                background: transparent;
+                border: none;
+                padding: 8px;
+            }
+        """)
+        value_label.setWordWrap(True)
+        row_layout.addWidget(value_label)
+        
+        # Colonne 4 : Raccourci actuel
         shortcut_label = QLabel(current_shortcut if current_shortcut else "Non défini")
         shortcut_label.setFixedWidth(150)
         shortcut_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -627,7 +654,7 @@ class KeyboardShortcutsManager(QDialog):
         shortcut_label.setProperty("shortcut_key", shortcut_key)
         row_layout.addWidget(shortcut_label)
         
-        # Colonne 4 : Bouton pour définir
+        # Colonne 5 : Bouton pour définir
         set_btn = QPushButton("Définir")
         set_btn.setFixedWidth(100)
         set_btn.setStyleSheet("""
