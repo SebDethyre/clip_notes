@@ -83,7 +83,7 @@ class TooltipWindow(QWidget):
             doc = self.text_browser.document()
             doc.setTextWidth(560)  # Largeur fixe pour le calcul
             content_height = min(int(doc.size().height()) + 20, 400)
-            content_width = min(int(doc.idealWidth()) + 40, 600)
+            content_width = min(int(doc.idealWidth()), 600)
             # S'assurer d'une largeur minimale raisonnable
             content_width = max(content_width, 200)
             self.text_browser.setFixedSize(content_width, content_height)
@@ -101,7 +101,7 @@ class TooltipWindow(QWidget):
                 Qt.TextFlag.TextWordWrap,
                 text
             )
-            content_width = text_rect.width() + 48
+            content_width = text_rect.width() + 40
             content_height = text_rect.height() + 24
             content_width = min(max(content_width, 60), 600)
             content_height = min(content_height, 400)

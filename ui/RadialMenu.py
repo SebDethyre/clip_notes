@@ -522,6 +522,7 @@ class RadialMenu(QWidget):
                     # Ne pas interrompre l'animation de révélation en cours
                     if self.mouse_in_special_zone and not (self.special_animating and self.special_reveal_queue):
                         self.mouse_in_special_zone = False
+                        # print("sortie mouse_in_special_zone 3")
                         self.on_leave_special_zone()
                 
                 # Cas spécial : hover sur le bouton ➖ -> ouvrir le sous-menu
@@ -1114,25 +1115,6 @@ class RadialMenu(QWidget):
             self.handle_click_outside()
             return
         
-        # # === MODE RÉORDONNANCEMENT : Début du drag ===
-        # if self.reorder_mode and event.button() == Qt.MouseButton.LeftButton:
-        #     # Vérifier si on clique sur un bouton (clip)
-        #     for i, btn in enumerate(self.buttons):
-        #         if btn.geometry().contains(event.pos()) and btn.isVisible():
-        #             # Vérifier que c'est un clip et pas un bouton spécial
-        #             label = self.button_labels[i] if i < len(self.button_labels) else ""
-        #             special_buttons = self.special_buttons_by_numbers[self.nb_icons_menu]
-        #             if label not in special_buttons:
-        #                 # Démarrer le drag
-        #                 self.drag_active = True
-        #                 self.dragged_button_index = i
-        #                 self.drop_indicator_angle = None
-        #                 self.drop_target_info = None
-        #                 # Changer le curseur
-        #                 self.setCursor(Qt.CursorShape.ClosedHandCursor)
-        #                 self.update()
-        #                 return
-        
         if not any(btn.geometry().contains(event.pos()) for btn in self.buttons):
             # Masquer tous les badges
             for badge in self.action_badges.values():
@@ -1271,10 +1253,6 @@ class RadialMenu(QWidget):
                             self.update_clips_by_link()
                             self.tooltip_window.show_message("✓ Clip déplacé", 1000)
                             self.update_tooltip_position()
-                            # if self.reorder_mode:
-                            #     self.app_instance.reorder_clip_mode(self.x, self.y)
-                            #     self.update_clips_by_link()
-                            # else:
                             self.app_instance.refresh_menu()
                             self.update_clips_by_link()
                             return
@@ -1375,7 +1353,8 @@ class RadialMenu(QWidget):
         angle_deg = math.degrees(angle_rad)
         
         # Si on est trop près du centre ou au-delà de la zone externe, pas de hover
-        if distance < 30 or distance > self.radius + self.btn_size + 10:
+        # if distance < 58 or distance > self.radius + self.btn_size + 10:
+        if distance < 40 or distance > self.radius + self.btn_size + 10:
             if self.hovered_action is not None or self.central_icon is not None:
                 self.hovered_action = None
                 self.hovered_button_index = None
@@ -1386,6 +1365,7 @@ class RadialMenu(QWidget):
                 self.update()
             # Sortie de zone spéciale si on était dedans
             if self.mouse_in_special_zone:
+                # print("sortie mouse_in_special_zone 1")
                 self.mouse_in_special_zone = False
                 self.on_leave_special_zone()
             return
@@ -1393,13 +1373,15 @@ class RadialMenu(QWidget):
         # === GESTION DE LA ZONE SPÉCIALE (expand/collapse) ===
         in_special_zone = self.is_angle_in_special_zone(angle_deg)
         
-        if in_special_zone and not self.mouse_in_special_zone:
+        if in_special_zone and self.mouse_in_special_zone and not self.special_animating:
             # On entre dans la zone spéciale
+            # print("entrée mouse_in_special_zone")
             self.mouse_in_special_zone = True
             self.on_enter_special_zone()
-        elif not in_special_zone and self.mouse_in_special_zone:
+        elif not in_special_zone and self.mouse_in_special_zone and not self.special_animating:
             # On sort de la zone spéciale
-            self.mouse_in_special_zone = False
+            # self.mouse_in_special_zone = False
+            print("sortie mouse_in_special_zone 2")
             self.on_leave_special_zone()
         
         # === GESTION DES HOVERS D'ACTIONS (basé sur boutons VISIBLES) ===
