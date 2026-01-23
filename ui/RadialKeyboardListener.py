@@ -29,7 +29,12 @@ class RadialKeyboardListener(QObject):
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
         self.shortcuts_file = os.path.join(self.script_dir, "shortcuts.json")
         self.load_shortcuts()
-    
+
+    def show_tooltip(self, string):
+        if hasattr(self.radial_menu, 'tooltip_window') and self.radial_menu.tooltip_window:
+                self.radial_menu.tooltip_window.show_message(string, 1500)
+                self.radial_menu.update_tooltip_position()
+
     def load_shortcuts(self):
         """Charge les raccourcis depuis shortcuts.json"""
         try:
@@ -175,9 +180,7 @@ class RadialKeyboardListener(QObject):
             btn.click()
             return True
         else:
-            if hasattr(self.radial_menu, 'tooltip_window') and self.radial_menu.tooltip_window:
-                self.radial_menu.tooltip_window.show_message(f"Pas de clip n°{index + 1}", 1500)
-                self.radial_menu.update_tooltip_position()
+            self.show_tooltip(f"Pas de clip n°{index + 1}")
             return False
     
     def trigger_clip_by_alias(self, alias):
@@ -205,13 +208,18 @@ class RadialKeyboardListener(QObject):
         for i, btn in enumerate(self.radial_menu.buttons):
             if i < len(self.radial_menu.button_labels):
                 if self.radial_menu.button_labels[i] == button_label:
+                    if not btn.isVisible():
+                        btn.show()
                     if btn.isVisible():
                         self.radial_menu.focused_index = i
                         self.radial_menu.keyboard_used = True
                         self.radial_menu.show_focused_button_info()
                         self.radial_menu.update()
+                        tooltip = btn.property("tooltip_text")
                         btn.click()
+                        self.show_tooltip(tooltip)
                         return True
+                                        # 🔹 Récupérer le tooltip
         return False
     
     def eventFilter(self, watched, event):
