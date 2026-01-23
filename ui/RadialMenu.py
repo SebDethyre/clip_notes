@@ -314,6 +314,7 @@ class RadialMenu(QWidget):
                 btn.installEventFilter(self)
                 if tooltip:
                     self.tooltips[btn] = (tooltip, tooltip_html)
+                    btn.setProperty("tooltip_text", tooltip)
                 self.buttons.append(btn)
             
         # Créer les 3 badges globaux (un par action) - seront positionnés dynamiquement
