@@ -155,31 +155,30 @@ class RadialMenu(QWidget):
             action: QColor(*rgb, 25)
             for action, rgb in self.action_zone_colors.items()
         }
-        
         # Tooltips pour les boutons spéciaux
         if self.nb_icons_menu == 5:
             special_tooltips = {
                 "➕": "Ajouter",
                 "🔧": "Modifier",
                 "⚙️": "Configurer",
-                "⌨️": "Raccourcis (1-9)",
-                "➖": "Supprimer"
+                "⌨️": "Raccourcis",
+                "➖": "Supprimer, Stocker, Stock"
             }
         elif self.nb_icons_menu == 6:
             special_tooltips = {
                 "➕": "Ajouter",
                 "🔧": "Modifier",
                 "⚙️": "Configurer",
-                "⌨️": "Raccourcis (1-9)",
+                "⌨️": "Raccourcis",
                 "➖": "Supprimer",
-                "📦": "Stocker"
+                "📦": "Stocker, Stock"
             }
         elif self.nb_icons_menu == 7:
             special_tooltips = {
                 "➕": "Ajouter",
                 "🔧": "Modifier",
                 "⚙️": "Configurer",
-                "⌨️": "Raccourcis (1-9)",
+                "⌨️": "Raccourcis",
                 "💾": "Stocker",
                 "📋": "Stock",
                 "➖": "Supprimer",

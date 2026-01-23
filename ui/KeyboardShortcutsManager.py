@@ -25,12 +25,13 @@ class ShortcutCaptureDialog(QDialog):
     Accepte les lettres simples et les chiffres.
     """
     
-    def __init__(self, parent=None, current_shortcut=""):
+    def __init__(self, parent=None, current_shortcut="", nb_icons_menu=None):
         super().__init__(parent)
         self.captured_shortcut = None
         self.current_modifiers = set()
         self.current_key = None
         self.waiting_for_key = True
+        self.nb_icons_menu = nb_icons_menu
         
         self.setWindowTitle("Définir le raccourci")
         self.setWindowFlags(
@@ -287,8 +288,9 @@ class KeyboardShortcutsManager(QDialog):
     Permet de configurer les raccourcis pour chaque bouton/clip.
     """
     
-    def __init__(self, app_instance, parent=None):
+    def __init__(self, app_instance, parent=None, nb_icons_menu=None):
         super().__init__(parent)
+        self.nb_icons_menu = nb_icons_menu
         self.app_instance = app_instance
         self.shortcuts_file = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), 
@@ -498,16 +500,16 @@ class KeyboardShortcutsManager(QDialog):
             }
         """)
         layout.addWidget(section_label)
-        
+        supprimer_text = "Supprimer, Stocker, Stock" if self.nb_icons_menu == 5 else "Supprimer"
         button_descriptions = {
             "➕": "Ajouter un clip",
-            "🔧": "Modifier un clip",
+            "🔧": "Modifier",
             "⚙️": "Configuration",
-            "📦": "Stocker un clip, Stock",
+            "📦": "Stocker, Stock",
             "💾": "Stocker",
             "📋": "Stock",
             "⌨️": "Raccourcis clavier",
-            "➖": "Supprimer, Stocker un clip, Accès au Stock",
+            "➖": supprimer_text,
         }
         
         # Afficher dans l'ordre de button_descriptions
@@ -679,7 +681,7 @@ class KeyboardShortcutsManager(QDialog):
     def set_shortcut(self, shortcut_key, label_widget):
         """Ouvre le dialogue de capture de raccourci"""
         current = self.shortcuts.get(shortcut_key, "")
-        dialog = ShortcutCaptureDialog(self, current)
+        dialog = ShortcutCaptureDialog(self, current, self.nb_icons_menu)
         
         if dialog.exec() == QDialog.DialogCode.Accepted:
             new_shortcut = dialog.captured_shortcut
@@ -726,7 +728,7 @@ class KeyboardShortcutsManager(QDialog):
         self.save_shortcuts()
         # Recharger la fenêtre
         self.close()
-        new_window = KeyboardShortcutsManager(self.app_instance, self.parent())
+        new_window = KeyboardShortcutsManager(self.app_instance, self.parent(), self.nb_icons_menu)
         new_window.show()
     
     def load_clips(self):

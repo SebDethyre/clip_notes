@@ -3570,7 +3570,7 @@ class ClipNotesWindow(QMainWindow):
             x, y = self.tracker.last_x, self.tracker.last_y
         
         # Créer et afficher la fenêtre des raccourcis
-        shortcuts_window = KeyboardShortcutsManager(self, self.current_popup)
+        shortcuts_window = KeyboardShortcutsManager(self, self.current_popup, self.nb_icons_menu)
         
         # Centrer la fenêtre sur l'écran
         screen = QApplication.primaryScreen()
