@@ -300,7 +300,7 @@ class KeyboardShortcutsManager(QDialog):
         
         self.setWindowTitle("⌨️ Raccourcis clavier")
         self.setWindowFlags(
-            Qt.WindowType.Dialog | 
+            Qt.WindowType.Popup | 
             Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)

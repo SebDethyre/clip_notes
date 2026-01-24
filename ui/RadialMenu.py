@@ -1,7 +1,7 @@
 import math
-from PyQt6.QtGui import QPainter, QColor, QIcon, QRadialGradient, QFont, QPen, QCursor
+from PyQt6.QtGui import QPainter, QColor, QIcon, QRadialGradient, QFont, QPen, QCursor, QPalette
 from PyQt6.QtCore import Qt, QSize, QTimer, QRect, QEasingCurve, QVariantAnimation, QEvent, QPointF, QRectF
-from PyQt6.QtWidgets import QApplication, QWidget, QPushButton
+from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QDialog, QVBoxLayout, QHBoxLayout
 from PyQt6.QtWidgets import QLabel
 
 from utils import *
@@ -104,9 +104,13 @@ class RadialMenu(QWidget):
         self.dragging_child_group_alias = None  # Alias du groupe source
         self.dragging_child_data = None  # Données du clip enfant
         
+        # === DROP SPÉCIAUX : CENTRE (stocker) et DEHORS (supprimer) ===
+        self.drop_on_center = False  # True si on survole le centre pendant le drag
+        self.drop_outside = False  # True si on a quitté le widget pendant le drag
+        self.drag_left_widget = False  # True si le drag a quitté le widget
+        
         # Activer le tracking de la souris pour détecter le hover
         self.setMouseTracking(True)
-        
         
         # === NOUVELLE FENÊTRE TOOLTIP ===
         self.tooltip_window = TooltipWindow(parent=self)
@@ -185,8 +189,6 @@ class RadialMenu(QWidget):
             }
         if buttons:
             angle_step = 360 / len(buttons)
-            # print(dir(buttons))
-            # print(buttons.count())
             for i, button in enumerate(buttons):
                 if len(button) == 2:
                     label, callback = button
@@ -887,7 +889,6 @@ class RadialMenu(QWidget):
     
     def show_group_hover_submenu(self, group_button, button_index):
         """Affiche le sous-menu d'un groupe au hover"""
-        from utils import paperclip_copy, execute_terminal, execute_command
         
         # Ne pas recréer si déjà ouvert
         if self.hover_submenu is not None:
@@ -948,7 +949,6 @@ class RadialMenu(QWidget):
     
     def make_group_child_click_handler(self, alias, string, action, group_alias):
         """Crée un handler pour un clip enfant d'un groupe (appelé depuis le sous-menu)"""
-        from utils import paperclip_copy, execute_terminal, execute_command
         
         def handler():
             # Fermer le sous-menu d'abord
@@ -1152,10 +1152,84 @@ class RadialMenu(QWidget):
             # Libérer la capture de la souris
             self.releaseMouse()
             
-            # === CAS 0: Drop d'un enfant de groupe (sortie du groupe) ===
+            # Vérifier si on drag un enfant de groupe
+            is_child_drag = self.dragging_child_from_group and self.dragging_child_data is not None
+            
+            # === CAS: Drop AU CENTRE -> Proposer de STOCKER le clip ===
+            if self.drop_on_center:
+                if is_child_drag:
+                    # Stocker un enfant de groupe
+                    child_alias = self.dragging_child_data.get('alias', '')
+                    child_string = self.dragging_child_data.get('string', '')
+                    child_action = self.dragging_child_data.get('action', 'copy')
+                    group_alias = self.dragging_child_group_alias
+                    
+                    if child_alias and group_alias and self.app_instance:
+                        self._reset_drag_state()
+                        self.update()
+                        # Afficher la confirmation de stockage pour l'enfant
+                        self.show_store_confirmation_from_drag_child(
+                            child_alias, child_string, child_action, group_alias
+                        )
+                        return
+                elif self.dragged_button_index is not None:
+                    # Stocker un clip normal
+                    source_alias = self.button_labels[self.dragged_button_index] if self.dragged_button_index < len(self.button_labels) else None
+                    source_action = self.button_actions[self.dragged_button_index] if self.dragged_button_index < len(self.button_actions) else "copy"
+                    
+                    if source_alias and self.app_instance:
+                        special_buttons = self.special_buttons_by_numbers[self.nb_icons_menu]
+                        if source_alias not in special_buttons:
+                            clip_data = self.app_instance.actions_map_sub.get(source_alias)
+                            if clip_data:
+                                _, value, action = clip_data
+                                self._reset_drag_state()
+                                self.update()
+                                self.show_store_confirmation_from_drag(source_alias, value, action)
+                                return
+                
+                self._reset_drag_state()
+                self.update()
+                return
+            
+            # === CAS: Drop EN DEHORS -> Proposer de SUPPRIMER le clip ===
+            if self.drop_outside:
+                if is_child_drag:
+                    # Supprimer un enfant de groupe
+                    child_alias = self.dragging_child_data.get('alias', '')
+                    child_string = self.dragging_child_data.get('string', '')
+                    group_alias = self.dragging_child_group_alias
+                    
+                    if child_alias and group_alias and self.app_instance:
+                        self._reset_drag_state()
+                        self.update()
+                        # Afficher la confirmation de suppression pour l'enfant
+                        self.show_delete_confirmation_from_drag_child(
+                            child_alias, child_string, group_alias
+                        )
+                        return
+                elif self.dragged_button_index is not None:
+                    # Supprimer un clip normal
+                    source_alias = self.button_labels[self.dragged_button_index] if self.dragged_button_index < len(self.button_labels) else None
+                    
+                    if source_alias and self.app_instance:
+                        special_buttons = self.special_buttons_by_numbers[self.nb_icons_menu]
+                        if source_alias not in special_buttons:
+                            clip_data = self.app_instance.actions_map_sub.get(source_alias)
+                            if clip_data:
+                                _, value, action = clip_data
+                                self._reset_drag_state()
+                                self.update()
+                                self.show_delete_confirmation_from_drag(source_alias, value)
+                                return
+                
+                self._reset_drag_state()
+                self.update()
+                return
+            
+            # === CAS 0: Drop d'un enfant de groupe sur le cercle (sortie du groupe) ===
             if self.dragging_child_from_group and self.dragging_child_data is not None:
                 if self.drop_target_info is not None:
-                    from utils import extract_clip_from_group_to_position
                     
                     # drop_target_info contient (target_index, insert_before, target_action)
                     target_index, insert_before, target_action = self.drop_target_info
@@ -1195,7 +1269,6 @@ class RadialMenu(QWidget):
                 
                 if source_alias and target_alias and source_alias != target_alias:
                     if self.app_instance:
-                        from utils import create_group_in_json, is_group, add_clip_to_group
                         
                         # Vérifier si la cible est déjà un groupe
                         if is_group(self.app_instance.clip_notes_file_json, target_alias):
@@ -1240,7 +1313,6 @@ class RadialMenu(QWidget):
                 if source_alias and target_alias and source_alias != target_alias:
                     # Effectuer le déplacement via l'app_instance
                     if self.app_instance:
-                        from utils import move_clip_in_json
                         success = move_clip_in_json(
                             self.app_instance.clip_notes_file_json,
                             source_alias,
@@ -1256,7 +1328,6 @@ class RadialMenu(QWidget):
                             self.app_instance.refresh_menu()
                             self.update_clips_by_link()
                             return
-            
             # Réinitialiser l'état du drag
             self._reset_drag_state()
             self.update()
@@ -1276,10 +1347,42 @@ class RadialMenu(QWidget):
         self.dragging_child_from_group = False
         self.dragging_child_group_alias = None
         self.dragging_child_data = None
+        # Variables pour drop au centre et en dehors
+        self.drop_on_center = False
+        self.drop_outside = False
+        self.drag_left_widget = False
         self.setCursor(Qt.CursorShape.ArrowCursor)
         # Masquer les badges
         for badge in self.action_badges.values():
             badge.setVisible(False)
+        # Masquer le tooltip
+        self.tooltip_window.hide()
+    
+    def _update_drag_tooltip(self):
+        """Met à jour le tooltip en fonction de l'état du drag"""
+        if not self.drag_active:
+            self.tooltip_window.hide()
+            return
+        
+        if self.drop_on_center:
+            # Au centre -> Stocker
+            self.tooltip_window.show_message("Stocker", 0)
+            self.update_tooltip_position()
+        elif self.drop_outside:
+            # En dehors -> Supprimer
+            self.tooltip_window.show_message("Supprimer", 0)
+            self.update_tooltip_position()
+        elif self.drop_on_clip_index is not None:
+            # Sur un clip -> Créer groupe
+            self.tooltip_window.show_message("Créer un groupe", 0)
+            self.update_tooltip_position()
+        elif self.drop_indicator_angle is not None:
+            # Entre deux clips -> Déplacer
+            self.tooltip_window.show_message("Déplacer", 0)
+            self.update_tooltip_position()
+        else:
+            # Rien -> masquer le tooltip
+            self.tooltip_window.hide()
     
     def leaveEvent(self, event):
         """Efface l'icône centrale quand la souris quitte le widget"""
@@ -1293,13 +1396,30 @@ class RadialMenu(QWidget):
             self.mouse_in_special_zone = False
             self.on_leave_special_zone()
         
-        # Annuler le drag si en cours
-        if self.drag_active or self.drag_pending:
-            if self.drag_active:
-                self.releaseMouse()
+        # Si un drag est en cours, marquer qu'on a quitté le widget (pour proposer la suppression)
+        if self.drag_active:
+            self.drag_left_widget = True
+            self.drop_outside = True
+            self.drop_on_center = False
+            self.drop_indicator_angle = None
+            self.drop_target_info = None
+            self.drop_on_clip_index = None
+            # Mettre à jour le tooltip pour afficher "Supprimer"
+            self._update_drag_tooltip()
+            self.update()
+        elif self.drag_pending:
+            # Si on n'a pas encore vraiment commencé le drag, annuler
             self._reset_drag_state()
             self.update()
 
+    def enterEvent(self, event):
+        """Gère le retour de la souris dans le widget pendant un drag"""
+        if self.drag_active and self.drag_left_widget:
+            # On revient dans le widget pendant le drag
+            self.drag_left_widget = False
+            self.drop_outside = False
+            # Le tooltip sera mis à jour dans mouseMoveEvent
+            self.update()
         
     def mouseMoveEvent(self, event):
         """Détecte quelle action est survolée par la souris (zone angulaire complète)
@@ -1307,10 +1427,16 @@ class RadialMenu(QWidget):
         
         # === GESTION DU DRAG EN COURS (grabMouse actif) ===
         if self.drag_active:
-            # Calculer l'angle de la souris
+            # Si on était sorti et on revient, reset drop_outside
+            if self.drag_left_widget:
+                self.drag_left_widget = False
+                self.drop_outside = False
+            
+            # Calculer l'angle et la distance de la souris
             center = self.rect().center()
             dx = event.pos().x() - center.x()
             dy = event.pos().y() - center.y()
+            distance = math.sqrt(dx * dx + dy * dy)
             
             angle_rad = math.atan2(dy, dx)
             if angle_rad < 0:
@@ -1321,9 +1447,50 @@ class RadialMenu(QWidget):
             visible_indices = [i for i, btn in enumerate(self.buttons) if btn.isVisible()]
             num_visible = len(visible_indices)
             
-            if num_visible > 0:
-                self._update_drop_indicator(angle_deg, visible_indices, num_visible)
-                self.update()
+            # Zone centrale pour le stockage (rayon < 40 pixels)
+            center_radius = 40
+            # Zone externe pour la suppression (au-delà du cercle des boutons)
+            outer_limit = self.radius + self.btn_size + 30
+            
+            # Sauvegarder les anciens états pour détecter les changements
+            old_drop_on_center = self.drop_on_center
+            old_drop_outside = self.drop_outside
+            old_drop_indicator_angle = self.drop_indicator_angle
+            old_drop_on_clip_index = self.drop_on_clip_index
+            
+            if distance < center_radius:
+                # On est au centre -> proposer de stocker
+                self.drop_on_center = True
+                self.drop_outside = False
+                self.drop_indicator_angle = None
+                self.drop_target_info = None
+                self.drop_on_clip_index = None
+            elif distance > outer_limit:
+                # On est en dehors -> proposer de supprimer
+                self.drop_outside = True
+                self.drop_on_center = False
+                self.drop_indicator_angle = None
+                self.drop_target_info = None
+                self.drop_on_clip_index = None
+            else:
+                # Zone normale de réordonnancement
+                self.drop_on_center = False
+                self.drop_outside = False
+                if num_visible > 0:
+                    self._update_drop_indicator(angle_deg, visible_indices, num_visible)
+            
+            # Mettre à jour le tooltip si l'état a changé
+            state_changed = (
+                old_drop_on_center != self.drop_on_center or
+                old_drop_outside != self.drop_outside or
+                old_drop_indicator_angle != self.drop_indicator_angle or
+                old_drop_on_clip_index != self.drop_on_clip_index
+            )
+            
+            if state_changed:
+                self._update_drag_tooltip()
+            
+            self.update()
             return  # Pas de gestion de hover pendant le drag
         
         if not self.buttons:
@@ -2119,6 +2286,60 @@ class RadialMenu(QWidget):
                 plus_y = target_y - fusion_radius * 0.6
                 painter.drawText(int(plus_x - 8), int(plus_y + 8), "+")
 
+        # === INDICATEUR DE DROP AU CENTRE (💾 stocker) ===
+        if self.drag_active and self.drop_on_center:
+            # Dessiner un cercle vert au centre pour indiquer le stockage
+            center_indicator_radius = int(35 * self.scale_factor)
+            
+            # Glow vert
+            glow_pen = QPen(QColor(100, 200, 100, 100))
+            glow_pen.setWidth(8)
+            painter.setPen(glow_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(QPointF(center.x(), center.y()), center_indicator_radius + 5, center_indicator_radius + 5)
+            
+            # Cercle principal vert
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(100, 200, 100, 180))
+            painter.drawEllipse(QPointF(center.x(), center.y()), center_indicator_radius, center_indicator_radius)
+            
+            # Dessiner l'icône 💾 au centre
+            store_icon = emoji_pixmap("💾", int(32 * self.scale_factor))
+            if not store_icon.isNull():
+                painter.drawPixmap(
+                    int(center.x() - store_icon.width() / 2),
+                    int(center.y() - store_icon.height() / 2),
+                    store_icon
+                )
+
+        # === INDICATEUR DE DROP EN DEHORS (🗑️ supprimer) ===
+        if self.drag_active and self.drop_outside:
+            # Dessiner un anneau rouge autour du menu pour indiquer la suppression
+            outer_indicator_radius = int((self.radius + self.btn_size + 15) * self.scale_factor)
+            
+            # Glow rouge
+            glow_pen = QPen(QColor(255, 100, 100, 80))
+            glow_pen.setWidth(12)
+            painter.setPen(glow_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(QPointF(center.x(), center.y()), outer_indicator_radius, outer_indicator_radius)
+            
+            # Cercle principal rouge (contour)
+            delete_pen = QPen(QColor(255, 70, 70, 200))
+            delete_pen.setWidth(4)
+            painter.setPen(delete_pen)
+            painter.drawEllipse(QPointF(center.x(), center.y()), outer_indicator_radius - 4, outer_indicator_radius - 4)
+            
+            # Dessiner l'icône 🗑️ en haut
+            delete_icon = emoji_pixmap("🗑️", int(32 * self.scale_factor))
+            if not delete_icon.isNull():
+                icon_y = center.y() - outer_indicator_radius - delete_icon.height() / 2 - 5
+                painter.drawPixmap(
+                    int(center.x() - delete_icon.width() / 2),
+                    int(icon_y),
+                    delete_icon
+                )
+
 
         if self.neon_enabled:
             scaled_neon_radius = self.neon_radius * self.scale_factor
@@ -2382,6 +2603,484 @@ class RadialMenu(QWidget):
         self.setMouseTracking(True)
         # Positionner la fenêtre tooltip après l'animation
         self.update_tooltip_position()
+    
+    def show_store_confirmation_from_drag(self, alias, value, action):
+        """Affiche une fenêtre de confirmation pour stocker un clip (depuis le drag au centre)"""
+        
+        dialog = QDialog(self.tracker if self.tracker else self)
+        dialog.setWindowTitle("💾 Stocker")
+        dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        # Palette sombre
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Base, QColor(35, 35, 35))
+        palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
+        dialog.setPalette(palette)
+        
+        dialog.setFixedSize(350, 180)
+        dialog.move(self.x - dialog.width() // 2, self.y - dialog.height() // 2)
+        
+        content = QWidget()
+        content.setStyleSheet("""
+            QWidget {
+                background-color: rgba(30, 30, 30, 200);
+                border-radius: 12px;
+                color: white;
+            }
+            QPushButton {
+                background-color: rgba(255, 255, 255, 30);
+                border: 1px solid rgba(255, 255, 255, 60);
+                border-radius: 6px;
+                padding: 6px;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 60);
+            }
+        """)
+        
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # Message de confirmation
+        display_alias = alias if len(alias) <= 30 else alias[:27] + "..."
+        message_label = QLabel(f"Voulez-vous stocker ce clip ?\n\n{display_alias}")
+        message_label.setWordWrap(True)
+        message_label.setStyleSheet("color: white; font-size: 14px;")
+        message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(message_label)
+        
+        # Boutons
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(10)
+        
+        cancel_button = QPushButton("Annuler")
+        cancel_button.setFixedHeight(32)
+        cancel_button.clicked.connect(dialog.reject)
+        
+        store_button = QPushButton("Stocker")
+        store_button.setFixedHeight(32)
+        store_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(100, 200, 100, 150);
+                border: 1px solid rgba(100, 255, 100, 200);
+                border-radius: 6px;
+                padding: 6px;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: rgba(100, 255, 100, 200);
+            }
+        """)
+        
+        def confirm_store():
+            if self.app_instance:
+                # Récupérer le HTML depuis le fichier JSON
+                _, html_string = self.app_instance.get_clip_data_from_json(alias)
+                
+                # Vérifier si c'est un groupe
+                if is_group(self.app_instance.clip_notes_file_json, alias):
+                    # Stocker tous les clips du groupe
+                    children = get_group_children(self.app_instance.clip_notes_file_json, alias)
+                    if children:
+                        for child in children:
+                            child_alias = child.get('alias', '')
+                            child_action = child.get('action', 'copy')
+                            child_string = child.get('string', '')
+                            child_html = child.get('html')
+                            self.app_instance.add_stored_clip(child_alias, child_action, child_string, child_html)
+                    
+                    # Supprimer le groupe
+                    delete_group_from_json(self.app_instance.clip_notes_file_json, alias)
+                else:
+                    # Stocker un clip normal
+                    self.app_instance.add_stored_clip(alias, action if action else "copy", value, html_string)
+                    
+                    # Supprimer du menu radial
+                    delete_from_json(self.app_instance.clip_notes_file_json, alias)
+                
+                # Mettre à jour actions_map_sub
+                self.app_instance.actions_map_sub.pop(alias, None)
+                
+                dialog.accept()
+                
+                # Afficher confirmation et rafraîchir le menu
+                self.tooltip_window.show_message("✓ Clip stocké", 1500)
+                self.update_tooltip_position()
+                self.app_instance.refresh_menu()
+        
+        store_button.clicked.connect(confirm_store)
+        
+        buttons_layout.addWidget(cancel_button)
+        buttons_layout.addWidget(store_button)
+        layout.addLayout(buttons_layout)
+        
+        dialog_layout = QVBoxLayout(dialog)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        dialog_layout.addWidget(content)
+        
+        dialog.exec()
+        
+        # Réactiver le mouse tracking
+        self.setMouseTracking(True)
+    
+    def show_delete_confirmation_from_drag(self, alias, value):
+        """Affiche une fenêtre de confirmation pour supprimer un clip (depuis le drag en dehors)"""
+        
+        dialog = QDialog(self.tracker if self.tracker else self)
+        dialog.setWindowTitle("🗑️ Supprimer")
+        dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        # Palette sombre
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Base, QColor(35, 35, 35))
+        palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
+        dialog.setPalette(palette)
+        
+        dialog.setFixedSize(350, 180)
+        dialog.move(self.x - dialog.width() // 2, self.y - dialog.height() // 2)
+        
+        content = QWidget()
+        content.setStyleSheet("""
+            QWidget {
+                background-color: rgba(30, 30, 30, 200);
+                border-radius: 12px;
+                color: white;
+            }
+            QPushButton {
+                background-color: rgba(255, 255, 255, 30);
+                border: 1px solid rgba(255, 255, 255, 60);
+                border-radius: 6px;
+                padding: 6px;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 60);
+            }
+        """)
+        
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # Message de confirmation
+        display_alias = alias if len(alias) <= 30 else alias[:27] + "..."
+        message_label = QLabel(f"Voulez-vous vraiment supprimer ?\n\n{display_alias}")
+        message_label.setWordWrap(True)
+        message_label.setStyleSheet("color: white; font-size: 14px;")
+        message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(message_label)
+        
+        # Boutons
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(10)
+        
+        cancel_button = QPushButton("Annuler")
+        cancel_button.setFixedHeight(32)
+        cancel_button.clicked.connect(dialog.reject)
+        
+        delete_button = QPushButton("Supprimer")
+        delete_button.setFixedHeight(32)
+        delete_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 70, 70, 150);
+                border: 1px solid rgba(255, 100, 100, 200);
+                border-radius: 6px;
+                padding: 6px;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 100, 100, 200);
+            }
+        """)
+        
+        def confirm_delete():
+            if self.app_instance:
+                
+                # Vérifier si c'est un groupe
+                if is_group(self.app_instance.clip_notes_file_json, alias):
+                    # Supprimer le groupe et tous ses clips
+                    delete_group_from_json(self.app_instance.clip_notes_file_json, alias)
+                else:
+                    # Supprimer un clip normal
+                    delete_from_json(self.app_instance.clip_notes_file_json, alias)
+                    # Supprimer le thumbnail s'il existe
+                    if os.path.exists(alias):
+                        if "/usr" not in alias and "/share" not in alias:
+                            try:
+                                os.remove(alias)
+                            except:
+                                pass
+                
+                # Mettre à jour actions_map_sub
+                self.app_instance.actions_map_sub.pop(alias, None)
+                
+                dialog.accept()
+                
+                # Afficher confirmation et rafraîchir le menu
+                self.tooltip_window.show_message("✓ Clip supprimé", 1500)
+                self.update_tooltip_position()
+                self.app_instance.refresh_menu()
+        
+        delete_button.clicked.connect(confirm_delete)
+        
+        buttons_layout.addWidget(cancel_button)
+        buttons_layout.addWidget(delete_button)
+        layout.addLayout(buttons_layout)
+        
+        dialog_layout = QVBoxLayout(dialog)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        dialog_layout.addWidget(content)
+        
+        dialog.exec()
+        
+        # Réactiver le mouse tracking
+        self.setMouseTracking(True)
+    
+    def show_store_confirmation_from_drag_child(self, child_alias, child_string, child_action, group_alias):
+        """Affiche une fenêtre de confirmation pour stocker un enfant de groupe (depuis le drag au centre)"""
+        
+        dialog = QDialog(self.tracker if self.tracker else self)
+        dialog.setWindowTitle("💾 Stocker")
+        dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        # Palette sombre
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Base, QColor(35, 35, 35))
+        palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
+        dialog.setPalette(palette)
+        
+        dialog.setFixedSize(350, 180)
+        dialog.move(self.x - dialog.width() // 2, self.y - dialog.height() // 2)
+        
+        content = QWidget()
+        content.setStyleSheet("""
+            QWidget {
+                background-color: rgba(30, 30, 30, 200);
+                border-radius: 12px;
+                color: white;
+            }
+            QPushButton {
+                background-color: rgba(255, 255, 255, 30);
+                border: 1px solid rgba(255, 255, 255, 60);
+                border-radius: 6px;
+                padding: 6px;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 60);
+            }
+        """)
+        
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # Message de confirmation
+        display_alias = child_alias if len(child_alias) <= 30 else child_alias[:27] + "..."
+        message_label = QLabel(f"Stocker ce clip du groupe ?\n\n{display_alias}")
+        message_label.setWordWrap(True)
+        message_label.setStyleSheet("color: white; font-size: 14px;")
+        message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(message_label)
+        
+        # Boutons
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(10)
+        
+        cancel_button = QPushButton("Annuler")
+        cancel_button.setFixedHeight(32)
+        cancel_button.clicked.connect(dialog.reject)
+        
+        store_button = QPushButton("Stocker")
+        store_button.setFixedHeight(32)
+        store_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(100, 200, 100, 150);
+                border: 1px solid rgba(100, 255, 100, 200);
+                border-radius: 6px;
+                padding: 6px;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: rgba(100, 255, 100, 200);
+            }
+        """)
+        
+        def confirm_store():
+            if self.app_instance:
+                # Récupérer le HTML de l'enfant
+                child_html = self.dragging_child_data.get('html') if self.dragging_child_data else None
+                
+                # Stocker l'enfant
+                self.app_instance.add_stored_clip(child_alias, child_action, child_string, child_html)
+                
+                # Supprimer l'enfant du groupe (avec context storage_mode pour ne pas le réinsérer)
+                remove_clip_from_group(self.app_instance.clip_notes_file_json, group_alias, child_alias, "storage_mode")
+                
+                dialog.accept()
+                
+                # Fermer le sous-menu hover s'il existe
+                if self.hover_submenu is not None:
+                    try:
+                        self.hover_submenu.close()
+                    except RuntimeError:
+                        pass
+                    self.hover_submenu = None
+                
+                # Afficher confirmation et rafraîchir le menu
+                self.tooltip_window.show_message("✓ Clip stocké", 1500)
+                self.update_tooltip_position()
+                self.app_instance.refresh_menu()
+        
+        store_button.clicked.connect(confirm_store)
+        
+        buttons_layout.addWidget(cancel_button)
+        buttons_layout.addWidget(store_button)
+        layout.addLayout(buttons_layout)
+        
+        dialog_layout = QVBoxLayout(dialog)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        dialog_layout.addWidget(content)
+        
+        dialog.exec()
+        
+        # Réactiver le mouse tracking
+        self.setMouseTracking(True)
+    
+    def show_delete_confirmation_from_drag_child(self, child_alias, child_string, group_alias):
+        """Affiche une fenêtre de confirmation pour supprimer un enfant de groupe (depuis le drag en dehors)"""
+        
+        dialog = QDialog(self.tracker if self.tracker else self)
+        dialog.setWindowTitle("🗑️ Supprimer")
+        dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        # Palette sombre
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Base, QColor(35, 35, 35))
+        palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
+        dialog.setPalette(palette)
+        
+        dialog.setFixedSize(350, 180)
+        dialog.move(self.x - dialog.width() // 2, self.y - dialog.height() // 2)
+        
+        content = QWidget()
+        content.setStyleSheet("""
+            QWidget {
+                background-color: rgba(30, 30, 30, 200);
+                border-radius: 12px;
+                color: white;
+            }
+            QPushButton {
+                background-color: rgba(255, 255, 255, 30);
+                border: 1px solid rgba(255, 255, 255, 60);
+                border-radius: 6px;
+                padding: 6px;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 60);
+            }
+        """)
+        
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # Message de confirmation
+        display_alias = child_alias if len(child_alias) <= 30 else child_alias[:27] + "..."
+        message_label = QLabel(f"Supprimer ce clip du groupe ?\n\n{display_alias}")
+        message_label.setWordWrap(True)
+        message_label.setStyleSheet("color: white; font-size: 14px;")
+        message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(message_label)
+        
+        # Boutons
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(10)
+        
+        cancel_button = QPushButton("Annuler")
+        cancel_button.setFixedHeight(32)
+        cancel_button.clicked.connect(dialog.reject)
+        
+        delete_button = QPushButton("Supprimer")
+        delete_button.setFixedHeight(32)
+        delete_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 70, 70, 150);
+                border: 1px solid rgba(255, 100, 100, 200);
+                border-radius: 6px;
+                padding: 6px;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 100, 100, 200);
+            }
+        """)
+        
+        def confirm_delete():
+            if self.app_instance:
+                # Supprimer l'enfant du groupe (avec context delete_mode pour ne pas le réinsérer)
+                remove_clip_from_group(self.app_instance.clip_notes_file_json, group_alias, child_alias, "delete_mode")
+                
+                # Supprimer le thumbnail si c'est un chemin d'image
+                if "/" in child_alias and os.path.exists(child_alias):
+                    if "/usr" not in child_alias and "/share" not in child_alias:
+                        try:
+                            os.remove(child_alias)
+                        except:
+                            pass
+                
+                dialog.accept()
+                
+                # Fermer le sous-menu hover s'il existe
+                if self.hover_submenu is not None:
+                    try:
+                        self.hover_submenu.close()
+                    except RuntimeError:
+                        pass
+                    self.hover_submenu = None
+                
+                # Afficher confirmation et rafraîchir le menu
+                self.tooltip_window.show_message("✓ Clip supprimé", 1500)
+                self.update_tooltip_position()
+                self.app_instance.refresh_menu()
+        
+        delete_button.clicked.connect(confirm_delete)
+        
+        buttons_layout.addWidget(cancel_button)
+        buttons_layout.addWidget(delete_button)
+        layout.addLayout(buttons_layout)
+        
+        dialog_layout = QVBoxLayout(dialog)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        dialog_layout.addWidget(content)
+        
+        dialog.exec()
+        
+        # Réactiver le mouse tracking
+        self.setMouseTracking(True)
     
     def close_with_animation(self):
         self.neon_enabled = False
