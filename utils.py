@@ -243,6 +243,57 @@ def get_json_order(file_path):
         return {}
 
 
+# ====== FONCTIONS OPTIMISÉES (chargement unique du JSON) ======
+
+def load_clip_notes_data(file_path):
+    """Charge le fichier JSON une seule fois et retourne les données."""
+    json_path = file_path.replace('.txt', '.json')
+    if not os.path.exists(json_path):
+        return []
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except:
+        return []
+
+
+def populate_actions_map_from_data(json_data, actions_map_sub, callback):
+    """Version optimisée qui utilise des données déjà chargées."""
+    for item in json_data:
+        alias = item.get('alias')
+        item_type = item.get('type')
+        
+        if not alias:
+            continue
+        
+        if item_type == 'group':
+            children = item.get('children', [])
+            action = item.get('action', 'copy')
+            tooltip = f"📁 {len(children)} clips"
+            actions_map_sub[alias] = [(None, children, {'is_group': True}), tooltip, action]
+        else:
+            string = item.get('string', '')
+            action = item.get('action', 'copy')
+            actions_map_sub[alias] = [(callback, [string], {}), string, action]
+
+
+def get_json_order_from_data(json_data):
+    """Version optimisée qui utilise des données déjà chargées."""
+    return {item.get('alias'): i for i, item in enumerate(json_data) if item.get('alias')}
+
+
+def get_clip_data_from_data(json_data, alias):
+    """Version optimisée qui utilise des données déjà chargées."""
+    for item in json_data:
+        if item.get('alias') == alias:
+            action = item.get('action', 'copy')
+            action_to_slider = {'copy': 0, 'term': 1, 'exec': 2}
+            slider_value = action_to_slider.get(action, 0)
+            html_string = item.get('html_string', None)
+            return (slider_value, html_string)
+    return (0, None)
+
+
 def reorder_json_clips(file_path, action, new_order):
     """
     Réordonne les clips d'une action spécifique dans le fichier JSON.

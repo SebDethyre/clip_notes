@@ -5,8 +5,20 @@ from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QMainWindow, QVB
 from PyQt6.QtWidgets import QTextEdit, QTextBrowser, QLabel, QFileDialog, QCheckBox, QColorDialog, QScrollArea, QListWidgetItem, QAbstractItemView
 
 from utils import *
+from utils import load_clip_notes_data, populate_actions_map_from_data, get_json_order_from_data, get_clip_data_from_data
 from ui import EmojiSelector, AutoScrollListWidget, WhiteDropIndicatorStyle, HoverSubMenu, CursorTracker, TooltipWindow, RadialMenu, CalibrationWindow
 from ui import KeyboardShortcutsManager
+
+# Cache pour colors.json (chargé une seule fois)
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_COLOR_PALETTE_CACHE = None
+
+def _get_color_palette():
+    global _COLOR_PALETTE_CACHE
+    if _COLOR_PALETTE_CACHE is None:
+        with open(os.path.join(_SCRIPT_DIR, "colors.json"), "r") as f:
+            _COLOR_PALETTE_CACHE = json.load(f)
+    return _COLOR_PALETTE_CACHE
 
 class ClipNotesWindow(QMainWindow):
     def __init__(self):
@@ -43,6 +55,11 @@ class ClipNotesWindow(QMainWindow):
         self.menu_background_color = (50, 50, 50)
         self.neon_speed = 80
         self.neon_color = (0, 255, 255)
+        
+        self.shadow_offset = 4
+        self.shadow_color = (200, 200, 200)
+        self.shadow_enabled = True
+        self.shadow_angle = 135  # Angle en degrés (0=droite, 90=bas, 180=gauche, 270=haut)
 
         self.action_zone_colors = {
             "copy": (255, 150, 100),  # Orange
@@ -82,30 +99,56 @@ class ClipNotesWindow(QMainWindow):
         # Attribution des fonctions aux boutons de menus "fixes"
         self.buttons_actions_by_number = {
             5 : {
-                    "➕": [(self.new_clip,    [x,y], {}), "Ajouter", None],
-                    "🔧": [(self.update_clip, [x,y], {}), "Modifier", None],
-                    "⚙️": [(self.show_config_dialog, [x,y], {}), "Configurer", None],
-                    "⌨️": [(self.show_shortcuts_dialog, [x,y], {}), "Raccourcis", None],
-                    "➖": [(self.show_storage_menu, [x,y], {}), "Supprimer", None],
+                    "➕": [(self.new_clip,    [0,0], {}), "Ajouter", None],
+                    "🔧": [(self.update_clip, [0,0], {}), "Modifier", None],
+                    "⚙️": [(self.show_config_dialog, [0,0], {}), "Configurer", None],
+                    "⌨️": [(self.show_shortcuts_dialog, [0,0], {}), "Raccourcis", None],
+                    "➖": [(self.show_storage_menu, [0,0], {}), "Supprimer", None],
                 },
             6 : {
-                    "➕": [(self.new_clip,    [x,y], {}), "Ajouter", None],
-                    "🔧": [(self.update_clip, [x,y], {}), "Modifier", None],
-                    "⚙️": [(self.show_config_dialog, [x,y], {}), "Configurer", None],
-                    "⌨️": [(self.show_shortcuts_dialog, [x,y], {}), "Raccourcis", None],
-                    "📦": [(self.show_storage_menu, [x,y], {}), "Stocker", None],
-                    "➖": [(self.delete_clip, [x,y], {}), "Supprimer", None],
+                    "➕": [(self.new_clip,    [0,0], {}), "Ajouter", None],
+                    "🔧": [(self.update_clip, [0,0], {}), "Modifier", None],
+                    "⚙️": [(self.show_config_dialog, [0,0], {}), "Configurer", None],
+                    "⌨️": [(self.show_shortcuts_dialog, [0,0], {}), "Raccourcis", None],
+                    "📦": [(self.show_storage_menu, [0,0], {}), "Stocker", None],
+                    "➖": [(self.delete_clip, [0,0], {}), "Supprimer", None],
                 },
             7 : {
-                    "➕": [(self.new_clip,    [x,y], {}), "Ajouter", None],
-                    "🔧": [(self.update_clip, [x,y], {}), "Modifier", None],
-                    "⚙️": [(self.show_config_dialog, [x,y], {}), "Configurer", None],
-                    "⌨️": [(self.show_shortcuts_dialog, [x,y], {}), "Raccourcis", None],
-                    "💾": [(self.store_clip_mode, [x,y], {}), "Stocker", None],
-                    "📋": [(self.show_stored_clips_dialog, [x,y], {}), "Stock", None],
-                    "➖": [(self.delete_clip, [x,y], {}), "Supprimer", None],
+                    "➕": [(self.new_clip,    [0,0], {}), "Ajouter", None],
+                    "🔧": [(self.update_clip, [0,0], {}), "Modifier", None],
+                    "⚙️": [(self.show_config_dialog, [0,0], {}), "Configurer", None],
+                    "⌨️": [(self.show_shortcuts_dialog, [0,0], {}), "Raccourcis", None],
+                    "💾": [(self.store_clip_mode, [0,0], {}), "Stocker", None],
+                    "📋": [(self.show_stored_clips_dialog, [0,0], {}), "Stock", None],
+                    "➖": [(self.delete_clip, [0,0], {}), "Supprimer", None],
                 }
         }
+        # self.buttons_actions_by_number = {
+        #     5 : {
+        #             "➕": [(self.new_clip,    [0,0], {}), "Ajouter", None],
+        #             "🔧": [(self.update_clip, [0,0], {}), "Modifier", None],
+        #             "⚙️": [(self.show_config_dialog, [0,0], {}), "Configurer", None],
+        #             "⌨️": [(self.show_shortcuts_dialog, [0,0], {}), "Raccourcis", None],
+        #             "➖": [(self.show_storage_menu, [0,0], {}), "Supprimer", None],
+        #         },
+        #     6 : {
+        #             "➕": [(self.new_clip,    [0,0], {}), "Ajouter", None],
+        #             "🔧": [(self.update_clip, [0,0], {}), "Modifier", None],
+        #             "⚙️": [(self.show_config_dialog, [0,0], {}), "Configurer", None],
+        #             "⌨️": [(self.show_shortcuts_dialog, [0,0], {}), "Raccourcis", None],
+        #             "📦": [(self.show_storage_menu, [0,0], {}), "Stocker", None],
+        #             "➖": [(self.delete_clip, [0,0], {}), "Supprimer", None],
+        #         },
+        #     7 : {
+        #             "➕": [(self.new_clip,    [0,0], {}), "Ajouter", None],
+        #             "🔧": [(self.update_clip, [0,0], {}), "Modifier", None],
+        #             "⚙️": [(self.show_config_dialog, [0,0], {}), "Configurer", None],
+        #             "⌨️": [(self.show_shortcuts_dialog, [0,0], {}), "Raccourcis", None],
+        #             "💾": [(self.store_clip_mode, [0,0], {}), "Stocker", None],
+        #             "📋": [(self.show_stored_clips_dialog, [0,0], {}), "Stock", None],
+        #             "➖": [(self.delete_clip, [0,0], {}), "Supprimer", None],
+        #         }
+        # }
 
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
         self.clip_notes_file_json = os.path.join(self.script_dir, "clip_notes.json")
@@ -113,8 +156,7 @@ class ClipNotesWindow(QMainWindow):
         self.thumbnails_dir = os.path.join(self.script_dir, "thumbnails")
         self.config_file = os.path.join(self.script_dir, "config.json")
         self.stored_clips_file = os.path.join(self.script_dir, "stored_clips.json")
-        with open(os.path.join(os.path.dirname(__file__), "colors.json"), "r") as f:
-            self.color_palette = json.load(f)
+        self.color_palette = _get_color_palette()
         # Créer le dossier des miniatures s'il n'existe pas
         os.makedirs(self.thumbnails_dir, exist_ok=True)
         # Charger la configuration au démarrage
@@ -154,6 +196,13 @@ class ClipNotesWindow(QMainWindow):
             # Charger la couleur du néon
             neon_col = config.get('neon_color', self.neon_color)
             self.neon_color = tuple(neon_col) if isinstance(neon_col, list) else neon_col
+            
+            # Charger les paramètres d'ombre
+            self.shadow_offset = config.get('shadow_offset', self.shadow_offset)
+            shadow_col = config.get('shadow_color', self.shadow_color)
+            self.shadow_color = tuple(shadow_col) if isinstance(shadow_col, list) else shadow_col
+            self.shadow_enabled = config.get('shadow_enabled', self.shadow_enabled)
+            self.shadow_angle = config.get('shadow_angle', self.shadow_angle)
             
             # Charger les couleurs et migrer l'ancien format si nécessaire
             loaded_colors = config.get('action_zone_colors', self.action_zone_colors)
@@ -197,7 +246,11 @@ class ClipNotesWindow(QMainWindow):
             'menu_opacity': self.menu_opacity,
             'menu_background_color': self.menu_background_color,
             'neon_color': self.neon_color,
-            'neon_speed': self.neon_speed
+            'neon_speed': self.neon_speed,
+            'shadow_offset': self.shadow_offset,
+            'shadow_color': self.shadow_color,
+            'shadow_enabled': self.shadow_enabled,
+            'shadow_angle': self.shadow_angle
         }
         
         try:
@@ -377,14 +430,17 @@ class ClipNotesWindow(QMainWindow):
         self.buttons_sub = []
         x, y = self.x, self.y
     
+        # ===== OPTIMISATION : charger le JSON une seule fois =====
+        json_data = load_clip_notes_data(self.clip_notes_file_json)
+        
         self.actions_map_sub = self.buttons_actions_by_number[self.nb_icons_menu].copy()
         special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
-        populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
+        populate_actions_map_from_data(json_data, self.actions_map_sub, execute_command)
         # Séparer les boutons spéciaux des autres
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
-        # Récupérer l'ordre du JSON pour le tri personnalisé
-        json_order = get_json_order(self.clip_notes_file_json)
+        # Récupérer l'ordre du JSON (données déjà chargées)
+        json_order = get_json_order_from_data(json_data)
         
         # Trier seulement les clips (pas les boutons spéciaux)
         sorted_clips = sort_actions_map(clips_to_sort, json_order)
@@ -399,8 +455,8 @@ class ClipNotesWindow(QMainWindow):
         # Puis ajouter les clips triés (avec le HTML pour les tooltips)
         for name, (action_data, value, action) in sorted_clips:
             tooltip = value.replace(r'\n', '\n')
-            # Récupérer le HTML du clip pour le tooltip
-            _, clip_html = self.get_clip_data_from_json(name)
+            # Récupérer le HTML du clip (données déjà chargées)
+            _, clip_html = get_clip_data_from_data(json_data, name)
             self.buttons_sub.append((name, self.make_handler_sub(name, value, self.x, self.y), tooltip, action, clip_html))
         
         # CRITIQUE: Propager nb_icons_menu et autres paramètres au popup AVANT update_buttons
@@ -411,6 +467,10 @@ class ClipNotesWindow(QMainWindow):
         self.current_popup.menu_background_color = self.menu_background_color
         self.current_popup.zone_basic_opacity = self.zone_basic_opacity
         self.current_popup.zone_hover_opacity = self.zone_hover_opacity
+        self.current_popup.shadow_offset = self.shadow_offset
+        self.current_popup.shadow_color = self.shadow_color
+        self.current_popup.shadow_enabled = self.shadow_enabled
+        self.current_popup.shadow_angle = self.shadow_angle
         
         # Mettre à jour les boutons du menu existant
         self.current_popup.update_buttons(self.buttons_sub)
@@ -3082,10 +3142,67 @@ class ClipNotesWindow(QMainWindow):
         dialog.exec()
     
     def show_config_dialog(self, x, y):
-        """Affiche le dialogue de configuration"""
+        """Affiche le dialogue de configuration avec aperçu en temps réel"""
         if self.tracker:
             self.tracker.update_pos()
             x, y = self.tracker.last_x, self.tracker.last_y
+        
+        # === SAUVEGARDER L'ÉTAT INITIAL pour restauration si Annuler ===
+        initial_state = {
+            'menu_background_color': self.menu_background_color,
+            'action_zone_colors': dict(self.action_zone_colors),
+            'zone_basic_opacity': self.zone_basic_opacity,
+            'zone_hover_opacity': self.zone_hover_opacity,
+            'menu_opacity': self.menu_opacity,
+            'nb_icons_menu': self.nb_icons_menu,
+            'show_central_icon': self.show_central_icon,
+            'central_neon': self.central_neon,
+            'neon_color': self.neon_color,
+            'neon_speed': self.neon_speed,
+            'shadow_enabled': self.shadow_enabled,
+            'shadow_offset': self.shadow_offset,
+            'shadow_angle': self.shadow_angle,
+            'shadow_color': self.shadow_color,
+        }
+        
+        def apply_live():
+            """Applique les changements en temps réel sur le menu"""
+            if self.current_popup:
+                self.current_popup.menu_background_color = self.menu_background_color
+                self.current_popup.action_zone_colors = self.action_zone_colors
+                self.current_popup.zone_basic_opacity = self.zone_basic_opacity
+                self.current_popup.zone_hover_opacity = self.zone_hover_opacity
+                self.current_popup.set_widget_opacity(self.menu_opacity / 100.0)
+                self.current_popup.nb_icons_menu = self.nb_icons_menu
+                self.current_popup.show_central_icon = self.show_central_icon
+                self.current_popup.neon_color = self.neon_color
+                self.current_popup.toggle_neon(self.central_neon)
+                if self.central_neon:
+                    self.current_popup.timer.stop()
+                    self.current_popup.timer.start(self.neon_speed)
+                self.current_popup.shadow_enabled = self.shadow_enabled
+                self.current_popup.shadow_offset = self.shadow_offset
+                self.current_popup.shadow_angle = self.shadow_angle
+                self.current_popup.shadow_color = self.shadow_color
+                self.current_popup.update()
+        
+        def restore_initial():
+            """Restaure l'état initial"""
+            self.menu_background_color = initial_state['menu_background_color']
+            self.action_zone_colors = dict(initial_state['action_zone_colors'])
+            self.zone_basic_opacity = initial_state['zone_basic_opacity']
+            self.zone_hover_opacity = initial_state['zone_hover_opacity']
+            self.menu_opacity = initial_state['menu_opacity']
+            self.nb_icons_menu = initial_state['nb_icons_menu']
+            self.show_central_icon = initial_state['show_central_icon']
+            self.central_neon = initial_state['central_neon']
+            self.neon_color = initial_state['neon_color']
+            self.neon_speed = initial_state['neon_speed']
+            self.shadow_enabled = initial_state['shadow_enabled']
+            self.shadow_offset = initial_state['shadow_offset']
+            self.shadow_angle = initial_state['shadow_angle']
+            self.shadow_color = initial_state['shadow_color']
+            apply_live()
         
         dialog = QDialog(self.tracker)
         dialog.setWindowTitle("⚙️ Configurer")
@@ -3108,7 +3225,7 @@ class ClipNotesWindow(QMainWindow):
         palette.setColor(QPalette.ColorRole.HighlightedText, QColor(35, 35, 35))
         dialog.setPalette(palette)
         
-        dialog.setFixedSize(400, 830)
+        dialog.setFixedSize(400, 980)
         
         if x is None or y is None:
             screen = QApplication.primaryScreen().geometry()
@@ -3164,6 +3281,9 @@ class ClipNotesWindow(QMainWindow):
                 selected_menu_bg_color[1] = color.green()
                 selected_menu_bg_color[2] = color.blue()
                 update_menu_bg_button()
+                # Appliquer en live
+                self.menu_background_color = tuple(selected_menu_bg_color)
+                apply_live()
         
         menu_bg_color_button.clicked.connect(pick_menu_bg_color)
         update_menu_bg_button()
@@ -3207,7 +3327,6 @@ class ClipNotesWindow(QMainWindow):
                         border: 2px solid rgba(255, 255, 255, 200);
                     }}
                 """)
-                # button.setText(f"RGB({r}, {g}, {b})")
             
             def pick_color():
                 r, g, b = selected_colors[action_name]
@@ -3216,6 +3335,9 @@ class ClipNotesWindow(QMainWindow):
                 if color.isValid():
                     selected_colors[action_name] = (color.red(), color.green(), color.blue())
                     update_button_color()
+                    # Appliquer en live
+                    self.action_zone_colors[action_name] = selected_colors[action_name]
+                    apply_live()
             
             button.clicked.connect(pick_color)
             update_button_color()
@@ -3248,9 +3370,13 @@ class ClipNotesWindow(QMainWindow):
         menu_opacity_slider.setMinimum(0)
         menu_opacity_slider.setMaximum(100)
         menu_opacity_slider.setValue(self.menu_opacity)
-        menu_opacity_slider.valueChanged.connect(
-            lambda v: menu_opacity_label.setText(f"Opacité générale ➤ <b>{v}</b>")
-        )
+        
+        def on_menu_opacity_changed(v):
+            menu_opacity_label.setText(f"Opacité générale ➤ <b>{v}</b>")
+            self.menu_opacity = v
+            apply_live()
+        
+        menu_opacity_slider.valueChanged.connect(on_menu_opacity_changed)
         menu_opacity_layout.addWidget(menu_opacity_label)
         menu_opacity_layout.addWidget(menu_opacity_slider)
         menu_opacity_layout.setContentsMargins(20, 0, 20, 0)
@@ -3263,9 +3389,13 @@ class ClipNotesWindow(QMainWindow):
         basic_opacity_slider.setMinimum(0)
         basic_opacity_slider.setMaximum(100)
         basic_opacity_slider.setValue(self.zone_basic_opacity)
-        basic_opacity_slider.valueChanged.connect(
-            lambda v: basic_opacity_label.setText(f"Opacité des zones ➤ <b>{v}</b>")
-        )
+        
+        def on_basic_opacity_changed(v):
+            basic_opacity_label.setText(f"Opacité des zones ➤ <b>{v}</b>")
+            self.zone_basic_opacity = v
+            apply_live()
+        
+        basic_opacity_slider.valueChanged.connect(on_basic_opacity_changed)
         basic_opacity_layout.addWidget(basic_opacity_label)
         basic_opacity_layout.addWidget(basic_opacity_slider)
         basic_opacity_layout.setContentsMargins(20, 0, 20, 0)
@@ -3278,9 +3408,13 @@ class ClipNotesWindow(QMainWindow):
         hover_opacity_slider.setMinimum(0)
         hover_opacity_slider.setMaximum(100)
         hover_opacity_slider.setValue(self.zone_hover_opacity)
-        hover_opacity_slider.valueChanged.connect(
-            lambda v: hover_opacity_label.setText(f"Opacité des zones au survol ➤ <b>{v}</b>")
-        )
+        
+        def on_hover_opacity_changed(v):
+            hover_opacity_label.setText(f"Opacité des zones au survol ➤ <b>{v}</b>")
+            self.zone_hover_opacity = v
+            apply_live()
+        
+        hover_opacity_slider.valueChanged.connect(on_hover_opacity_changed)
         hover_opacity_layout.addWidget(hover_opacity_label)
         hover_opacity_layout.addWidget(hover_opacity_slider)
         hover_opacity_layout.setContentsMargins(20, 0, 20, 0)
@@ -3348,6 +3482,13 @@ class ClipNotesWindow(QMainWindow):
         slider.setProperty("help_text", "Associer une action")
         slider.installEventFilter(self)
         self.nb_icons_dialog_slider = slider  # Stocker pour les clics sur emojis
+        
+        def on_nb_icons_changed(v):
+            self.nb_icons_menu = v
+            # Reconstruire le menu avec le nouveau nombre d'icônes
+            self.refresh_menu()
+        
+        slider.valueChanged.connect(on_nb_icons_changed)
         slider.setStyleSheet("""
             QSlider::groove:horizontal {
                 height: 6px;
@@ -3385,6 +3526,12 @@ class ClipNotesWindow(QMainWindow):
                 background-color: #ff8c00;
             }
             """)
+        
+        def on_central_icon_changed(state):
+            self.show_central_icon = (state == Qt.CheckState.Checked.value)
+            apply_live()
+        
+        central_icon_checkbox.stateChanged.connect(on_central_icon_changed)
         layout.addWidget(central_icon_checkbox)
         
         # Checkbox pour le néon central
@@ -3402,6 +3549,12 @@ class ClipNotesWindow(QMainWindow):
                 background-color: #ff8c00;
             }
             """)
+        
+        def on_neon_changed(state):
+            self.central_neon = (state == Qt.CheckState.Checked.value)
+            apply_live()
+        
+        neon_checkbox.stateChanged.connect(on_neon_changed)
         layout.addWidget(neon_checkbox)
 
         # Couleur du néon
@@ -3439,6 +3592,9 @@ class ClipNotesWindow(QMainWindow):
                 selected_neon_color[1] = color.green()
                 selected_neon_color[2] = color.blue()
                 update_neon_button()
+                # Appliquer en live
+                self.neon_color = tuple(selected_neon_color)
+                apply_live()
         
         neon_color_button.clicked.connect(pick_neon_color)
         update_neon_button()
@@ -3457,9 +3613,13 @@ class ClipNotesWindow(QMainWindow):
         neon_speed_slider.setMinimum(1)
         neon_speed_slider.setMaximum(200)
         neon_speed_slider.setValue(self.neon_speed)
-        neon_speed_slider.valueChanged.connect(
-            lambda v: neon_speed_label.setText(f"Vitesse du néon ➤ <b>{v}</b> ms")
-        )
+        
+        def on_neon_speed_changed(v):
+            neon_speed_label.setText(f"Vitesse du néon ➤ <b>{v}</b> ms")
+            self.neon_speed = v
+            apply_live()
+        
+        neon_speed_slider.valueChanged.connect(on_neon_speed_changed)
         neon_speed_layout.addWidget(neon_speed_label)
         neon_speed_layout.addWidget(neon_speed_slider)
         neon_speed_layout.setContentsMargins(45, 0, 30, 0)
@@ -3476,13 +3636,145 @@ class ClipNotesWindow(QMainWindow):
             enabled = neon_checkbox.isChecked()
             for widget in neon_widgets:
                 widget.setVisible(enabled)
-            dialog.setFixedSize(400, 830 if enabled else 740)
+            dialog.setFixedSize(400, 980 if enabled else 890)
 
         # Initialisation
         update_neon_config_visibility()
 
         # Connexion
         neon_checkbox.stateChanged.connect(update_neon_config_visibility)
+
+        # --- Ombre ---
+        # Checkbox pour activer l'ombre
+        shadow_checkbox = QCheckBox("Ombre")
+        shadow_checkbox.setChecked(self.shadow_enabled)
+        shadow_checkbox.setStyleSheet("""
+            QCheckBox {
+                font-weight: bold;
+                margin-top: 10px;
+            }
+            QCheckBox::indicator {
+                background-color: white;
+                border: 1px solid black;
+                width: 14px;
+                height: 14px;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #ff8c00;
+            }
+            """)
+        
+        def on_shadow_enabled_changed(state):
+            self.shadow_enabled = (state == Qt.CheckState.Checked.value)
+            apply_live()
+        
+        shadow_checkbox.stateChanged.connect(on_shadow_enabled_changed)
+        layout.addWidget(shadow_checkbox)
+        
+        # Slider pour le décalage de l'ombre
+        shadow_offset_layout = QVBoxLayout()
+        shadow_offset_label = QLabel(f"Décalage ➤ <b>{self.shadow_offset}</b> px")
+        shadow_offset_slider = QSlider(Qt.Orientation.Horizontal)
+        shadow_offset_slider.setMinimum(0)
+        shadow_offset_slider.setMaximum(15)
+        shadow_offset_slider.setValue(self.shadow_offset)
+        
+        def on_shadow_offset_changed(v):
+            shadow_offset_label.setText(f"Décalage ➤ <b>{v}</b> px")
+            self.shadow_offset = v
+            apply_live()
+        
+        shadow_offset_slider.valueChanged.connect(on_shadow_offset_changed)
+        shadow_offset_layout.addWidget(shadow_offset_label)
+        shadow_offset_layout.addWidget(shadow_offset_slider)
+        shadow_offset_layout.setContentsMargins(45, 0, 30, 0)
+        layout.addLayout(shadow_offset_layout)
+        
+        # Slider pour l'angle de l'ombre
+        shadow_angle_layout = QVBoxLayout()
+        shadow_angle_label = QLabel(f"Angle ➤ <b>{self.shadow_angle}</b>°")
+        shadow_angle_slider = QSlider(Qt.Orientation.Horizontal)
+        shadow_angle_slider.setMinimum(0)
+        shadow_angle_slider.setMaximum(360)
+        shadow_angle_slider.setValue(self.shadow_angle)
+        
+        def on_shadow_angle_changed(v):
+            shadow_angle_label.setText(f"Angle ➤ <b>{v}</b>°")
+            self.shadow_angle = v
+            apply_live()
+        
+        shadow_angle_slider.valueChanged.connect(on_shadow_angle_changed)
+        shadow_angle_layout.addWidget(shadow_angle_label)
+        shadow_angle_layout.addWidget(shadow_angle_slider)
+        shadow_angle_layout.setContentsMargins(45, 0, 30, 0)
+        layout.addLayout(shadow_angle_layout)
+        
+        # Couleur de l'ombre
+        shadow_color_layout = QHBoxLayout()
+        shadow_color_label = QLabel("Couleur")
+        shadow_color_label.setFixedWidth(140)
+        
+        shadow_color_button = QPushButton()
+        shadow_color_button.setFixedHeight(30)
+        shadow_color_button.setFixedWidth(150)
+        
+        selected_shadow_color = list(self.shadow_color)
+        
+        def update_shadow_button():
+            r, g, b = selected_shadow_color
+            shadow_color_button.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: rgb({r}, {g}, {b});
+                    border: 2px solid rgba(255, 255, 255, 100);
+                    border-radius: 10px;
+                }}
+                QPushButton:hover {{
+                    border: 2px solid rgba(255, 255, 255, 200);
+                }}
+            """)
+        
+        def pick_shadow_color():
+            r, g, b = selected_shadow_color
+            initial_color = QColor(r, g, b)
+            color = QColorDialog.getColor(initial_color, dialog, "Couleur de l'ombre")
+            if color.isValid():
+                selected_shadow_color[0] = color.red()
+                selected_shadow_color[1] = color.green()
+                selected_shadow_color[2] = color.blue()
+                update_shadow_button()
+                # Appliquer en live
+                self.shadow_color = tuple(selected_shadow_color)
+                apply_live()
+        
+        shadow_color_button.clicked.connect(pick_shadow_color)
+        update_shadow_button()
+        
+        shadow_color_layout.addWidget(shadow_color_label)
+        shadow_color_layout.addWidget(shadow_color_button)
+        shadow_color_layout.setContentsMargins(45, 0, 60, 0)
+        shadow_color_layout.addStretch()
+        layout.addLayout(shadow_color_layout)
+
+        # Widgets de l'ombre à cacher/montrer
+        shadow_widgets = (
+            shadow_offset_label,
+            shadow_offset_slider,
+            shadow_angle_label,
+            shadow_angle_slider,
+            shadow_color_label,
+            shadow_color_button,
+        )
+
+        def update_shadow_config_visibility():
+            enabled = shadow_checkbox.isChecked()
+            for widget in shadow_widgets:
+                widget.setVisible(enabled)
+
+        # Initialisation
+        update_shadow_config_visibility()
+
+        # Connexion
+        shadow_checkbox.stateChanged.connect(update_shadow_config_visibility)
 
         # Boutons Sauvegarder et Annuler
         layout.addStretch()
@@ -3503,7 +3795,13 @@ class ClipNotesWindow(QMainWindow):
                 background-color: rgba(255, 100, 100, 150);
             }
         """)
-        cancel_button.clicked.connect(dialog.reject)
+        
+        def cancel_and_restore():
+            """Annuler : restaurer l'état initial et fermer"""
+            restore_initial()
+            dialog.reject()
+        
+        cancel_button.clicked.connect(cancel_and_restore)
         
         # Bouton Sauvegarder
         save_button = QPushButton("💾")
@@ -3522,22 +3820,8 @@ class ClipNotesWindow(QMainWindow):
         """)
         
         def save_and_close():
-            
-            # Mettre à jour les variables globales
-            self.action_zone_colors["copy"] = selected_colors["copy"]
-            self.action_zone_colors["term"] = selected_colors["term"]
-            self.action_zone_colors["exec"] = selected_colors["exec"]
-            self.zone_basic_opacity = basic_opacity_slider.value()
-            self.zone_hover_opacity = hover_opacity_slider.value()
-            self.menu_opacity = menu_opacity_slider.value()
-            self.menu_background_color = tuple(selected_menu_bg_color)
-            self.neon_color = tuple(selected_neon_color)
-            self.neon_speed = neon_speed_slider.value()
-            self.show_central_icon = central_icon_checkbox.isChecked()
-            self.nb_icons_menu = slider.value()
-            self.central_neon = neon_checkbox.isChecked()
-            
-            # Sauvegarder dans le fichier
+            # Les valeurs sont déjà dans self grâce au live preview
+            # Il suffit de sauvegarder dans le fichier
             self.save_config()
             
             # Fermer le dialogue
@@ -3559,9 +3843,9 @@ class ClipNotesWindow(QMainWindow):
         if self.current_popup:
             self.current_popup.setMouseTracking(True)
         
-        # Si le dialogue a été accepté (sauvegarde), rafraîchir le menu
-        if dialog.result() == QDialog.DialogCode.Accepted:
-            self.refresh_menu()
+        # Si le dialogue a été rejeté (annulé, X, Escape), restaurer l'état initial
+        if dialog.result() != QDialog.DialogCode.Accepted:
+            restore_initial()
 
     def show_shortcuts_dialog(self, x, y):
         """Affiche la fenêtre de configuration des raccourcis clavier"""
@@ -3765,16 +4049,18 @@ class ClipNotesWindow(QMainWindow):
 
         self.buttons_sub = []
         
+        # ===== OPTIMISATION : charger le JSON une seule fois =====
+        json_data = load_clip_notes_data(self.clip_notes_file_json)
+        
         # Définir les tooltips pour les boutons spéciaux
         self.actions_map_sub = self.buttons_actions_by_number[self.nb_icons_menu].copy()
-        populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
+        populate_actions_map_from_data(json_data, self.actions_map_sub, execute_command)
         # Séparer les boutons spéciaux des autres
         special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
-        # special_buttons = special_buttons
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
-        # Récupérer l'ordre du JSON pour le tri personnalisé
-        json_order = get_json_order(self.clip_notes_file_json)
+        # Récupérer l'ordre du JSON pour le tri personnalisé (données déjà chargées)
+        json_order = get_json_order_from_data(json_data)
         
         # Trier seulement les clips (pas les boutons spéciaux)
         sorted_clips = sort_actions_map(clips_to_sort, json_order)
@@ -3789,10 +4075,10 @@ class ClipNotesWindow(QMainWindow):
         # Puis ajouter les clips triés (avec le HTML pour les tooltips)
         for name, (action_data, value, action) in sorted_clips:
             tooltip = value.replace(r'\n', '\n')
-            # Récupérer le HTML du clip pour le tooltip
-            _, clip_html = self.get_clip_data_from_json(name)
+            # Récupérer le HTML du clip (données déjà chargées)
+            _, clip_html = get_clip_data_from_data(json_data, name)
             self.buttons_sub.append((name, self.make_handler_sub(name, value, x, y), tooltip, action, clip_html))
-        # print(self.actions_map_sub)
+        
         menu_dict=self.actions_map_sub
         clips_by_link = []
 
@@ -3805,10 +4091,7 @@ class ClipNotesWindow(QMainWindow):
             else:
                 clips_by_link.append(1)
 
-        # print(clips_by_link)
-
-        # print(array)
-        self.current_popup = RadialMenu(x, y, self.buttons_sub, sub=True, tracker=self.tracker, app_instance=self, neon_color=self.neon_color, action_zone_colors=self.action_zone_colors, nb_icons_menu=self.nb_icons_menu, show_central_icon=self.show_central_icon, menu_background_color=self.menu_background_color, zone_basic_opacity=self.zone_basic_opacity, zone_hover_opacity=self.zone_hover_opacity, clips_by_link=clips_by_link)
+        self.current_popup = RadialMenu(x, y, self.buttons_sub, parent=self.tracker, sub=True, tracker=self.tracker, app_instance=self, neon_color=self.neon_color, action_zone_colors=self.action_zone_colors, nb_icons_menu=self.nb_icons_menu, show_central_icon=self.show_central_icon, menu_background_color=self.menu_background_color, zone_basic_opacity=self.zone_basic_opacity, zone_hover_opacity=self.zone_hover_opacity, clips_by_link=clips_by_link, shadow_offset=self.shadow_offset, shadow_color=self.shadow_color, shadow_enabled=self.shadow_enabled, shadow_angle=self.shadow_angle)
         self.current_popup.show()
         self.current_popup.animate_open()
         
@@ -3819,59 +4102,232 @@ class ClipNotesWindow(QMainWindow):
         self.current_popup.toggle_neon(self.central_neon)
         self.current_popup.timer.start(self.neon_speed)
 
-if __name__ == "__main__":
-    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-    LOCK_FILE = os.path.join(SCRIPT_DIR, ".clipnotes.lock")
+# if __name__ == "__main__":
+#     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+#     LOCK_FILE = os.path.join(SCRIPT_DIR, ".clipnotes.lock")
 
-    def create_lock_file():
-        with open(LOCK_FILE, 'w') as f:
-            f.write(str(os.getpid()))
+#     def create_lock_file():
+#         with open(LOCK_FILE, 'w') as f:
+#             f.write(str(os.getpid()))
 
-    def remove_lock_file():
+#     def remove_lock_file():
+#         try:
+#             if os.path.exists(LOCK_FILE):
+#                 os.remove(LOCK_FILE)
+#         except:
+#             pass
+
+#     create_lock_file()
+    
+#     def cleanup_handler(sig, frame):
+#         remove_lock_file()
+#         QApplication.quit()
+#         sys.exit(0)
+    
+#     signal.signal(signal.SIGINT, cleanup_handler)
+#     signal.signal(signal.SIGTERM, cleanup_handler)
+    
+#     app = QApplication(sys.argv)
+    
+#     global tracker
+#     tracker = CursorTracker()
+#     tracker.show()
+
+#     max_wait = 0.3
+#     elapsed = 0.0
+#     while (tracker.last_x == 0 and tracker.last_y == 0) and elapsed < max_wait:
+#         QApplication.processEvents()
+#         time.sleep(0.1)
+#         elapsed += 0.1
+    
+#     tracker.update_pos()
+#     x, y = tracker.last_x, tracker.last_y
+    
+#     QApplication.processEvents()
+    
+#     main_app = ClipNotesWindow()
+#     main_app.tracker = tracker
+
+#     # Fenêtre de calibration du menu Radial
+#     # calibration_window = CalibrationWindow(tracker, main_app)
+#     # calibration_window.show()
+
+#     main_app.show_window_at(x, y, "")
+
+#     try:
+#         sys.exit(app.exec())
+#     finally:
+#         remove_lock_file()
+
+
+
+    # global tracker
+    # tracker = CursorTracker()
+
+    # main_app = ClipNotesWindow()
+    # main_app.tracker = tracker
+
+    # def on_first_move():
+    #     """Appelé dès que la souris bouge sur l'overlay."""
+    #     x, y = tracker.last_x, tracker.last_y
+    #     tracker.hide_overlay()  # Cacher l'overlay
+    #     main_app.show_window_at(x, y, "")
+
+    # tracker.on_first_move_callback = on_first_move
+    # tracker.show()
+
+    # try:
+    #     sys.exit(app.exec())
+    # finally:
+    #     remove_lock_file()
+
+
+
+
+
+
+
+
+
+
+    
+import sys, os, time, json, subprocess, signal
+
+# APRÈS:
+import sys, os, time, json, subprocess, signal, fcntl
+LOCK_FILE = "/tmp/clipnotes.lock"
+PID_FILE = "/tmp/clipnotes.pid"
+lock_fd = None  # File descriptor global pour maintenir le lock
+
+
+# ============================================================
+# 3. AVANT "if __name__ == "__main__":" (ligne ~3848)
+#    Ajouter ces fonctions de gestion du lock
+# ============================================================
+
+# ====== FONCTIONS DE GESTION DU LOCK ET PID ======
+
+def acquire_lock():
+    """
+    Acquiert un lock exclusif sur le fichier.
+    Retourne le file descriptor si succès, None sinon.
+    """
+    global lock_fd
+    try:
+        lock_fd = open(LOCK_FILE, 'w')
+        fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return lock_fd
+    except (IOError, OSError):
+        if lock_fd:
+            lock_fd.close()
+            lock_fd = None
+        return None
+
+def release_lock():
+    """Libère le lock et supprime les fichiers."""
+    global lock_fd
+    try:
+        if lock_fd:
+            fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
+            lock_fd.close()
+            lock_fd = None
+    except:
+        pass
+    
+    # Nettoyer les fichiers
+    for f in [LOCK_FILE, PID_FILE]:
         try:
-            if os.path.exists(LOCK_FILE):
-                os.remove(LOCK_FILE)
+            if os.path.exists(f):
+                os.remove(f)
         except:
             pass
 
-    create_lock_file()
+def write_pid():
+    """Écrit le PID courant dans le fichier PID."""
+    try:
+        with open(PID_FILE, 'w') as f:
+            f.write(str(os.getpid()))
+    except Exception as e:
+        print(f"Erreur écriture PID: {e}")
+
+def get_running_pid():
+    """Lit le PID de l'instance en cours depuis le fichier."""
+    try:
+        with open(PID_FILE, 'r') as f:
+            return int(f.read().strip())
+    except:
+        return None
+
+
+if __name__ == "__main__":
+    # Variable globale pour l'app Qt (nécessaire pour le handler de signal)
+    qt_app = None
     
-    def cleanup_handler(sig, frame):
-        remove_lock_file()
-        QApplication.quit()
+    def handle_close_signal(signum, frame):
+        """Handler pour SIGUSR1 - fermeture propre de l'application."""
+        release_lock()
+        if qt_app:
+            qt_app.quit()
         sys.exit(0)
     
+    def cleanup_handler(signum, frame):
+        """Handler pour SIGINT/SIGTERM."""
+        release_lock()
+        if qt_app:
+            qt_app.quit()
+        sys.exit(0)
+    
+    # Configurer les handlers de signaux
+    signal.signal(signal.SIGUSR1, handle_close_signal)  # Signal de fermeture propre
     signal.signal(signal.SIGINT, cleanup_handler)
     signal.signal(signal.SIGTERM, cleanup_handler)
     
-    app = QApplication(sys.argv)
+    # Tenter d'acquérir le lock
+    if acquire_lock() is None:
+        # Une instance existe déjà - envoyer SIGUSR1 et réessayer
+        existing_pid = get_running_pid()
+        if existing_pid:
+            try:
+                os.kill(existing_pid, signal.SIGUSR1)
+                time.sleep(0.15)  # Attendre la fermeture
+            except ProcessLookupError:
+                pass  # Le process n'existe plus
+        
+        # Réessayer d'acquérir le lock
+        if acquire_lock() is None:
+            print("Impossible d'acquérir le lock après fermeture de l'instance précédente")
+            sys.exit(1)
+    
+    # Écrire notre PID
+    write_pid()
+    
+    # Créer l'application Qt
+    qt_app = QApplication(sys.argv)
     
     global tracker
     tracker = CursorTracker()
     tracker.show()
 
-    max_wait = 0.3
+    # Créer ClipNotesWindow PENDANT que le tracker s'initialise
+    # (son __init__ charge config, colors.json, etc.)
+    main_app = ClipNotesWindow()
+    main_app.tracker = tracker
+
+    max_wait = 0.25
     elapsed = 0.0
     while (tracker.last_x == 0 and tracker.last_y == 0) and elapsed < max_wait:
         QApplication.processEvents()
-        time.sleep(0.1)
-        elapsed += 0.1
+        time.sleep(0.05)
+        elapsed += 0.05
     
     tracker.update_pos()
     x, y = tracker.last_x, tracker.last_y
     
     QApplication.processEvents()
-    
-    main_app = ClipNotesWindow()
-    main_app.tracker = tracker
-
-    # Fenêtre de calibration du menu Radial
-    # calibration_window = CalibrationWindow(tracker, main_app)
-    # calibration_window.show()
 
     main_app.show_window_at(x, y, "")
 
     try:
-        sys.exit(app.exec())
+        sys.exit(qt_app.exec())
     finally:
-        remove_lock_file()
+        release_lock()

@@ -1,5 +1,5 @@
 import math
-from PyQt6.QtGui import QPainter, QColor, QIcon, QRadialGradient, QFont, QPen, QCursor, QPalette
+from PyQt6.QtGui import QPainter, QColor, QIcon, QRadialGradient, QFont, QPen, QCursor, QPalette, QPainterPath
 from PyQt6.QtCore import Qt, QSize, QTimer, QRect, QEasingCurve, QVariantAnimation, QEvent, QPointF, QRectF
 from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QDialog, QVBoxLayout, QHBoxLayout
 from PyQt6.QtWidgets import QLabel
@@ -8,7 +8,7 @@ from utils import *
 from ui import HoverSubMenu, RadialKeyboardListener, TooltipWindow
 
 class RadialMenu(QWidget):
-    def __init__(self, x, y, buttons, parent=None, sub=False, tracker=None, app_instance=None, neon_color=None, action_zone_colors=None, nb_icons_menu=None, show_central_icon=None, menu_background_color=None, zone_basic_opacity=None, zone_hover_opacity=None, clips_by_link =[]):
+    def __init__(self, x, y, buttons, parent=None, sub=False, tracker=None, app_instance=None, neon_color=None, action_zone_colors=None, nb_icons_menu=None, show_central_icon=None, menu_background_color=None, zone_basic_opacity=None, zone_hover_opacity=None, clips_by_link=[], shadow_offset=4, shadow_color=(200, 200, 200), shadow_enabled=True, shadow_angle=135):
         super().__init__(parent)  # Ne jamais utiliser tracker comme parent
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.ToolTip)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -30,6 +30,10 @@ class RadialMenu(QWidget):
         
         self.buttons = []
         self.clips_by_link = clips_by_link
+        self.shadow_offset = shadow_offset
+        self.shadow_color = shadow_color
+        self.shadow_enabled = shadow_enabled
+        self.shadow_angle = shadow_angle
 
         self.diameter = 2 * (self.radius + self.btn_size)
         # Ajouter de l'espace pour les badges (50 pixels de chaque côté)
@@ -1947,6 +1951,33 @@ class RadialMenu(QWidget):
             scaled_diameter,
             scaled_diameter
         )
+
+        # === OMBRE pour effet de volume (seulement la partie visible) ===
+        if self.shadow_enabled and self.shadow_offset > 0:
+            # Calculer le décalage X/Y selon l'angle (0=droite, 90=bas, 180=gauche, 270=haut)
+            angle_rad = math.radians(self.shadow_angle)
+            shadow_offset_x = int(self.shadow_offset * math.cos(angle_rad) * self.scale_factor)
+            shadow_offset_y = int(self.shadow_offset * math.sin(angle_rad) * self.scale_factor)
+            
+            shadow_rect = QRect(
+                circle_rect.x() + shadow_offset_x,
+                circle_rect.y() + shadow_offset_y,
+                scaled_diameter,
+                scaled_diameter
+            )
+            
+            # Créer un path = ombre MOINS cercle principal
+            shadow_path = QPainterPath()
+            shadow_path.addEllipse(QRectF(shadow_rect))
+            main_circle_path = QPainterPath()
+            main_circle_path.addEllipse(QRectF(circle_rect))
+            visible_shadow = shadow_path.subtracted(main_circle_path)
+            
+            # Transparence de l'ombre calée sur celle du menu
+            shadow_alpha = int(255 * self.widget_opacity)
+            painter.setBrush(QColor(*self.shadow_color, shadow_alpha))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawPath(visible_shadow)
 
         # Dessiner le fond global avec opacité contrôlée par MENU_OPACITY
         # _widget_opacity va de 0.0 à 1.0, on le convertit en alpha 0-255
