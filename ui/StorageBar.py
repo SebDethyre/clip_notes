@@ -74,9 +74,11 @@ class StorageBar(QWidget):
         self.create_buttons(buttons)
         
         # Animation d'ouverture
-        self.scale_factor = 0.1
-        self.opacity = 0.0
+        self.scale_factor = 1.0
+        self.opacity = 1.0
         self.anim = None
+        self.target_width = self.bar_width
+        self.current_width = self.bar_width
         
         # Navigation clavier
         self.focused_index = -1
@@ -173,9 +175,9 @@ class StorageBar(QWidget):
         super().enterEvent(event)
     
     def leaveEvent(self, event):
-        """Ferme immédiatement la barre quand on la quitte"""
+        """Ferme la barre avec animation quand on la quitte"""
         if not self.closing:
-            self.close_immediately()
+            self.animate_close()
         super().leaveEvent(event)
     
     def close_immediately(self):
@@ -212,17 +214,52 @@ class StorageBar(QWidget):
         painter.drawPath(path)
     
     def animate_open(self):
-        """Animation d'ouverture de la barre"""
+        """Animation d'ouverture de la barre - élargissement de gauche à droite"""
+        # Stocker la largeur finale
+        self.target_width = self.bar_width
+        self.current_width = 0
+        
+        # Commencer avec une largeur minimale
+        self.resize(1, self.bar_height)
+        
+        # Cacher tous les boutons au début
+        for btn in self.buttons:
+            btn.setVisible(False)
+        
         self.anim = QVariantAnimation(self)
-        self.anim.setDuration(200)
+        self.anim.setDuration(150)
         self.anim.setStartValue(0.0)
         self.anim.setEndValue(1.0)
-        self.anim.setEasingCurve(QEasingCurve.Type.OutBack)
+        self.anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         
         def update_anim(value):
-            self.scale_factor = value
-            self.opacity = value
-            self.apply_scale()
+            # Calculer la largeur actuelle
+            self.current_width = int(self.target_width * value)
+            self.current_width = max(1, self.current_width)
+            
+            # Redimensionner le widget
+            self.resize(self.current_width, self.bar_height)
+            
+            # Afficher les boutons qui sont dans la zone visible
+            for i, btn in enumerate(self.buttons):
+                btn_x = self.padding_h + i * (self.btn_size + self.btn_spacing)
+                btn_right = btn_x + self.btn_size
+                
+                if btn_right <= self.current_width:
+                    # Le bouton est entièrement visible
+                    btn.setVisible(True)
+                    btn.move(int(btn_x), self.padding_v)
+                    btn.setFixedSize(self.btn_size, self.btn_size)
+                elif btn_x < self.current_width:
+                    # Le bouton est partiellement visible - on l'affiche quand même
+                    btn.setVisible(True)
+                    btn.move(int(btn_x), self.padding_v)
+                    btn.setFixedSize(self.btn_size, self.btn_size)
+                else:
+                    # Le bouton n'est pas encore visible
+                    btn.setVisible(False)
+            
+            self.opacity = min(1.0, value * 2)  # Fade in rapide
             self.update()
         
         self.anim.valueChanged.connect(update_anim)
@@ -265,23 +302,52 @@ class StorageBar(QWidget):
     
     def on_open_finished(self):
         """Appelé quand l'animation d'ouverture est terminée"""
-        for btn in self.buttons:
+        # S'assurer que la barre a sa taille finale
+        self.resize(self.bar_width, self.bar_height)
+        self.opacity = 1.0
+        
+        # S'assurer que tous les boutons sont visibles et bien positionnés
+        for i, btn in enumerate(self.buttons):
+            btn_x = self.padding_h + i * (self.btn_size + self.btn_spacing)
+            btn.move(int(btn_x), self.padding_v)
+            btn.setFixedSize(self.btn_size, self.btn_size)
             btn.setVisible(True)
+        
+        self.update()
     
     def animate_close(self):
-        """Animation de fermeture de la barre"""
+        """Animation de fermeture de la barre - rétrécissement de droite à gauche"""
         self.closing = True
+        
+        # Stocker la largeur actuelle
+        self.target_width = self.bar_width
+        self.current_width = self.bar_width
         
         self.anim = QVariantAnimation(self)
         self.anim.setDuration(150)
         self.anim.setStartValue(1.0)
         self.anim.setEndValue(0.0)
-        self.anim.setEasingCurve(QEasingCurve.Type.InQuad)
+        self.anim.setEasingCurve(QEasingCurve.Type.InCubic)
         
         def update_anim(value):
-            self.scale_factor = value
+            # Calculer la largeur actuelle
+            self.current_width = int(self.target_width * value)
+            self.current_width = max(1, self.current_width)
+            
+            # Redimensionner le widget
+            self.resize(self.current_width, self.bar_height)
+            
+            # Cacher les boutons qui sortent de la zone visible
+            for i, btn in enumerate(self.buttons):
+                btn_x = self.padding_h + i * (self.btn_size + self.btn_spacing)
+                btn_right = btn_x + self.btn_size
+                
+                if btn_x < self.current_width:
+                    btn.setVisible(True)
+                else:
+                    btn.setVisible(False)
+            
             self.opacity = value
-            self.apply_scale()
             self.update()
         
         self.anim.valueChanged.connect(update_anim)

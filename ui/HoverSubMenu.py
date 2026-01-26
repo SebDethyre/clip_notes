@@ -1,6 +1,6 @@
 import math
-from PyQt6.QtCore import Qt, QTimer, QEvent, QSize, QRect, QVariantAnimation, QEasingCurve
-from PyQt6.QtGui import QPainter, QColor, QIcon, QCursor, QPen
+from PyQt6.QtCore import Qt, QEvent, QSize, QRect, QVariantAnimation, QEasingCurve
+from PyQt6.QtGui import QPainter, QColor, QIcon, QPen
 from PyQt6.QtWidgets import QWidget, QPushButton
 from utils import *
 
@@ -60,10 +60,8 @@ class HoverSubMenu(QWidget):
         self.resize(self.widget_size, self.widget_size)
         self.move(self.target_x, self.target_y)
         
-        # Timer pour fermeture retardée (permet les transitions hover)
-        self.close_timer = QTimer(self)
-        self.close_timer.setSingleShot(True)
-        self.close_timer.timeout.connect(self.check_and_close)
+        # Rayon de détection pour la fermeture (cercle englobant les boutons)
+        self.detection_radius = self.radius + self.btn_size // 2 + 5  # +5 marge
         
         # Créer les boutons
         self.create_buttons(buttons)
@@ -159,10 +157,6 @@ class HoverSubMenu(QWidget):
     def eventFilter(self, watched, event):
         """Gère les événements de hover et drag sur les boutons du sous-menu"""
         if event.type() == QEvent.Type.Enter:
-            # Annuler la fermeture si on entre sur un bouton
-            if self.close_timer.isActive():
-                self.close_timer.stop()
-            
             # Afficher le tooltip dans le parent_menu si disponible
             if watched in self.tooltips and self.parent_menu:
                 tooltip_data = self.tooltips[watched]
@@ -231,16 +225,12 @@ class HoverSubMenu(QWidget):
     
     def enterEvent(self, event):
         """Quand la souris entre dans le sous-menu"""
-        # Annuler tout timer de fermeture
-        if self.close_timer.isActive():
-            self.close_timer.stop()
         super().enterEvent(event)
     
     def leaveEvent(self, event):
-        """Quand la souris quitte le sous-menu"""
+        """Quand la souris quitte le widget - fermer immédiatement"""
         if not self.closing:
-            # Lancer un timer pour vérifier si on doit fermer
-            self.close_timer.start(100)  # 100ms de délai
+            self.close_submenu()
         super().leaveEvent(event)
     
     def mousePressEvent(self, event):
@@ -277,13 +267,24 @@ class HoverSubMenu(QWidget):
         event.accept()
     
     def mouseMoveEvent(self, event):
-        """Gère le mouvement de la souris pour le drag du groupe"""
+        """Gère le mouvement de la souris pour le drag du groupe et la détection de sortie"""
+        # Vérifier si on est hors du cercle de détection
+        center = self.rect().center()
+        dx = event.pos().x() - center.x()
+        dy = event.pos().y() - center.y()
+        distance = math.sqrt(dx * dx + dy * dy)
+        
+        if distance > self.detection_radius and not self.closing:
+            # Souris hors du cercle - fermer immédiatement
+            self.close_submenu()
+            return
+        
         if self.drag_pending and self.drag_start_pos is not None:
             # Calculer la distance parcourue
             delta = event.pos() - self.drag_start_pos
-            distance = math.sqrt(delta.x() ** 2 + delta.y() ** 2)
+            drag_distance = math.sqrt(delta.x() ** 2 + delta.y() ** 2)
             
-            if distance > self.drag_threshold:
+            if drag_distance > self.drag_threshold:
                 # Seuil atteint - transférer le drag au RadialMenu parent
                 self.start_group_drag()
                 return
@@ -356,40 +357,11 @@ class HoverSubMenu(QWidget):
         # Fermer ce widget
         self.close()
     
-    def check_and_close(self):
-        """Vérifie si la souris est sur le bouton parent ou le sous-menu, sinon ferme"""
+    def close_submenu(self):
+        """Ferme le sous-menu immédiatement"""
         if self.closing:
             return
         
-        # Vérifier si la souris est sur ce widget
-        cursor_pos = QCursor.pos()
-        local_pos = self.mapFromGlobal(cursor_pos)
-        if self.rect().contains(local_pos):
-            return  # Souris encore sur le sous-menu
-        
-        # Vérifier si la souris est sur le bouton ➖ du menu parent (pour le sous-menu storage)
-        if self.parent_menu and hasattr(self.parent_menu, 'storage_button_index') and not self.is_group_submenu:
-            storage_idx = self.parent_menu.storage_button_index
-            if storage_idx is not None and storage_idx < len(self.parent_menu.buttons):
-                storage_btn = self.parent_menu.buttons[storage_idx]
-                btn_global_pos = storage_btn.mapToGlobal(storage_btn.rect().topLeft())
-                btn_rect_global = QRect(btn_global_pos, storage_btn.size())
-                if btn_rect_global.contains(cursor_pos):
-                    return  # Souris sur le bouton ➖
-        
-        # Vérifier si la souris est sur le bouton du groupe parent (pour les sous-menus de groupe)
-        if self.is_group_submenu and self.group_alias and self.parent_menu:
-            # Trouver le bouton du groupe
-            for i, label in enumerate(self.parent_menu.button_labels):
-                if label == self.group_alias and i < len(self.parent_menu.buttons):
-                    group_btn = self.parent_menu.buttons[i]
-                    btn_global_pos = group_btn.mapToGlobal(group_btn.rect().topLeft())
-                    btn_rect_global = QRect(btn_global_pos, group_btn.size())
-                    if btn_rect_global.contains(cursor_pos):
-                        return  # Souris sur le bouton du groupe
-                    break
-        
-        # Sinon fermer le sous-menu
         self.closing = True
         if self.parent_menu:
             self.parent_menu.hover_submenu = None
@@ -398,16 +370,6 @@ class HoverSubMenu(QWidget):
             self.parent_menu.central_icon = None
             self.parent_menu.update()
         self.close()
-
-    def schedule_close(self):
-        """Planifie la fermeture du sous-menu (appelé depuis le parent)"""
-        if not self.closing:
-            self.close_timer.start(100)
-
-    def cancel_close(self):
-        """Annule la fermeture planifiée"""
-        if self.close_timer.isActive():
-            self.close_timer.stop()
 
     def paintEvent(self, event):
         """Dessine le fond du sous-menu"""
