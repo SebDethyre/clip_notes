@@ -2836,8 +2836,8 @@ class ClipNotesWindow(QMainWindow):
     
     def delete_stored_clip_and_refresh(self, alias, dialog, x, y):
         """Affiche une confirmation avant de supprimer un clip stocké"""
-        # Fermer le dialogue actuel
-        dialog.accept()
+        # Référence au dialogue principal pour mise à jour ultérieure
+        main_dialog = dialog
         
         # Afficher la confirmation
         confirm_dialog = QDialog(self.tracker)
@@ -2875,7 +2875,7 @@ class ClipNotesWindow(QMainWindow):
         
         cancel_button = QPushButton("Annuler")
         cancel_button.setFixedHeight(40)
-        cancel_button.clicked.connect(lambda: (confirm_dialog.reject(), self.show_stored_clips_dialog(x, y)))
+        cancel_button.clicked.connect(confirm_dialog.reject)
         
         delete_button = QPushButton("🗑️ Supprimer")
         delete_button.setFixedHeight(40)
@@ -2900,7 +2900,42 @@ class ClipNotesWindow(QMainWindow):
             
             self.remove_stored_clip(alias)
             confirm_dialog.accept()
-            self.show_stored_clips_dialog(x, y)
+            
+            # Afficher un message de confirmation
+            if self.current_popup:
+                self.current_popup.tooltip_window.show_message(f"✓ {display_name} supprimé", 1500)
+                self.current_popup.update_tooltip_position()
+            
+            # Mettre à jour la liste dans le dialogue principal
+            scroll = main_dialog.findChild(QScrollArea)
+            if scroll:
+                scroll_content = scroll.widget()
+                if scroll_content:
+                    scroll_layout = scroll_content.layout()
+                    if scroll_layout:
+                        # Parcourir les items pour trouver celui avec cet alias
+                        for i in range(scroll_layout.count()):
+                            item = scroll_layout.itemAt(i)
+                            if item and item.layout():
+                                item_layout = item.layout()
+                                # Le premier widget est le QLabel avec l'alias
+                                if item_layout.count() > 0:
+                                    first_widget = item_layout.itemAt(0).widget()
+                                    if isinstance(first_widget, QLabel) and first_widget.text() == alias:
+                                        # Supprimer tous les widgets de ce layout
+                                        while item_layout.count():
+                                            child = item_layout.takeAt(0)
+                                            if child.widget():
+                                                child.widget().deleteLater()
+                                        # Supprimer le layout lui-même
+                                        scroll_layout.removeItem(item)
+                                        break
+            
+            # Vérifier s'il reste des clips stockés
+            stored_clips = self.load_stored_clips()
+            if not stored_clips:
+                # Plus de clips stockés, fermer le dialogue principal
+                main_dialog.accept()
         
         delete_button.clicked.connect(confirm_delete)
         
@@ -2935,12 +2970,46 @@ class ClipNotesWindow(QMainWindow):
         # Supprimer du stockage
         self.remove_stored_clip(alias)
         
-        # Mettre à jour le menu en arrière-plan
+        # Mettre à jour le menu radial
         self.refresh_menu()
         
-        # Fermer le dialogue actuel et rouvrir la fenêtre de stockage
-        dialog.accept()
-        self.show_stored_clips_dialog(x, y)
+        # Afficher un message de confirmation dans le tooltip
+        display_name = alias if "/" not in alias else os.path.basename(alias)
+        if self.current_popup:
+            self.current_popup.tooltip_window.show_message(f"✓ {display_name} restauré", 1500)
+            self.current_popup.update_tooltip_position()
+        
+        # Mettre à jour la liste dans le dialogue (retirer l'item restauré)
+        # Chercher et supprimer le layout correspondant dans le scroll_content
+        scroll = dialog.findChild(QScrollArea)
+        if scroll:
+            scroll_content = scroll.widget()
+            if scroll_content:
+                layout = scroll_content.layout()
+                if layout:
+                    # Parcourir les items pour trouver celui avec cet alias
+                    for i in range(layout.count()):
+                        item = layout.itemAt(i)
+                        if item and item.layout():
+                            item_layout = item.layout()
+                            # Le premier widget est le QLabel avec l'alias
+                            if item_layout.count() > 0:
+                                first_widget = item_layout.itemAt(0).widget()
+                                if isinstance(first_widget, QLabel) and first_widget.text() == alias:
+                                    # Supprimer tous les widgets de ce layout
+                                    while item_layout.count():
+                                        child = item_layout.takeAt(0)
+                                        if child.widget():
+                                            child.widget().deleteLater()
+                                    # Supprimer le layout lui-même
+                                    layout.removeItem(item)
+                                    break
+        
+        # Vérifier s'il reste des clips stockés
+        stored_clips = self.load_stored_clips()
+        if not stored_clips:
+            # Plus de clips stockés, fermer le dialogue
+            dialog.accept()
     
     def show_reorder_dialog(self, x, y):
         """Affiche la fenêtre de réordonnancement des clips par drag and drop"""
