@@ -274,7 +274,18 @@ def populate_actions_map_from_data(json_data, actions_map_sub, callback):
         else:
             string = item.get('string', '')
             action = item.get('action', 'copy')
-            actions_map_sub[alias] = [(callback, [string], {}), string, action]
+            
+            # Déterminer quelle fonction utiliser selon l'action
+            if action == 'copy':
+                func = paperclip_copy
+            elif action == 'term':
+                func = execute_terminal
+            elif action == 'exec':
+                func = execute_command
+            else:
+                func = callback  # Fallback
+            
+            actions_map_sub[alias] = [(func, [string], {}), string, action]
 
 
 def get_json_order_from_data(json_data):
