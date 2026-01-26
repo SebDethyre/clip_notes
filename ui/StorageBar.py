@@ -12,7 +12,8 @@ from utils import is_emoji, emoji_pixmap, text_pixmap, image_pixmap
 class StorageBar(QWidget):
     """Barre horizontale de sous-menu qui apparaît au hover d'un bouton (pour ➖)"""
     
-    def __init__(self, anchor_x, anchor_y, buttons, parent_menu=None, app_instance=None):
+    def __init__(self, anchor_x, anchor_y, buttons, parent_menu=None, app_instance=None, 
+                 menu_background_color=None, menu_opacity=1.0):
         """
         Args:
             anchor_x: Position X du centre du bouton d'origine (sera recouvert par le coin gauche)
@@ -20,6 +21,8 @@ class StorageBar(QWidget):
             buttons: Liste de tuples (label, callback, tooltip)
             parent_menu: Le menu radial parent
             app_instance: Instance de l'application
+            menu_background_color: Couleur de fond (tuple RGB ou None pour défaut)
+            menu_opacity: Opacité du menu (0.0 à 1.0)
         """
         super().__init__(parent_menu)
         self.setWindowFlags(
@@ -47,8 +50,14 @@ class StorageBar(QWidget):
         self.padding_h = 10  # Padding horizontal (réduit pour les bords arrondis)
         self.padding_v = 8   # Padding vertical
         
-        # Couleur de fond
-        self.bg_color = QColor(60, 60, 60, 220)
+        # Couleur de fond - utiliser celle du menu radial si fournie
+        if menu_background_color:
+            r, g, b = menu_background_color
+            # Appliquer l'opacité (convertir 0.0-1.0 en 0-255)
+            alpha = int(menu_opacity * 255)
+            self.bg_color = QColor(r, g, b, alpha)
+        else:
+            self.bg_color = QColor(60, 60, 60, 220)
         self.border_color = QColor(100, 100, 100, 150)
         
         # Calculer les dimensions

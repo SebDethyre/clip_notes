@@ -339,7 +339,8 @@ class RadialMenu(QWidget):
             # Utiliser la couleur de la zone d'action avec son opacité
             if self.action_zone_colors and action in self.action_zone_colors:
                 r, g, b = self.action_zone_colors[action]
-                opacity = self.zone_hover_opacity if self.zone_hover_opacity else 120
+                # Convertir l'opacité de 0-100 vers 0-255
+                opacity = int(self.zone_hover_opacity * 255 / 100) if self.zone_hover_opacity else 120
                 badge.setStyleSheet(f"""
                     QLabel {{
                         background-color: rgba({r}, {g}, {b}, {opacity});
@@ -834,7 +835,9 @@ class RadialMenu(QWidget):
             btn_center_global.y(),
             submenu_buttons,
             parent_menu=self,
-            app_instance=self.app_instance
+            app_instance=self.app_instance,
+            menu_background_color=self.menu_background_color,
+            menu_opacity=self.widget_opacity
         )
         self.hover_submenu.show()
         self.hover_submenu.animate_open()
@@ -1978,19 +1981,24 @@ class RadialMenu(QWidget):
         # Dessiner le fond global avec opacité contrôlée par MENU_OPACITY
         # _widget_opacity va de 0.0 à 1.0, on le convertit en alpha 0-255
         background_alpha = int(255 * self.widget_opacity)
+        
+        # Dessiner d'abord le fond complet
         painter.setBrush(QColor(*self.menu_background_color, background_alpha))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(circle_rect)
         
-        # Dessiner les zones colorées seulement pour les boutons VISIBLES
-        # Les zones sont positionnées selon la position dans le cercle des visibles
+        # Préparer les zones colorées seulement pour les boutons VISIBLES
+        # Convertir les opacités de 0-100 (config) vers 0-255 (QColor alpha)
+        basic_alpha = int(self.zone_basic_opacity * 255 / 100)
+        hover_alpha = int(self.zone_hover_opacity * 255 / 100)
+        
         action_colors_base = {
-            action: QColor(*rgb, self.zone_basic_opacity)
+            action: QColor(*rgb, basic_alpha)
             for action, rgb in self.action_zone_colors.items()
         }
 
         action_colors_hover = {
-            action: QColor(*rgb, self.zone_hover_opacity)
+            action: QColor(*rgb, hover_alpha)
             for action, rgb in self.action_zone_colors.items()
         }
         
@@ -1999,10 +2007,22 @@ class RadialMenu(QWidget):
         
         if visible_indices:
             angle_step = 360 / len(visible_indices)
+            num_visible = len(visible_indices)
             
-            # Dessiner les zones seulement pour les boutons visibles
+            # Pré-calculer l'action de chaque position pour détecter les adjacences
+            pos_actions = []
             for pos, btn_index in enumerate(visible_indices):
                 action = self.button_actions[btn_index] if btn_index < len(self.button_actions) else None
+                pos_actions.append(action)
+            
+            # Dessiner les zones avec CompositionMode_Source pour écraser le fond
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+            
+            # Léger chevauchement en degrés pour masquer les artefacts d'anti-aliasing
+            overlap = 1.0
+            
+            for pos, btn_index in enumerate(visible_indices):
+                action = pos_actions[pos]
                 
                 if action in action_colors_base:
                     # Choisir la couleur selon si c'est survolé ou non
@@ -2014,13 +2034,26 @@ class RadialMenu(QWidget):
                     # Calculer l'angle basé sur la position dans les visibles
                     button_angle = pos * angle_step
                     
+                    # Vérifier si les secteurs adjacents ont la même action
+                    prev_pos = (pos - 1) % num_visible
+                    next_pos = (pos + 1) % num_visible
+                    same_as_prev = pos_actions[prev_pos] == action
+                    same_as_next = pos_actions[next_pos] == action
+                    
+                    # Ajouter un overlap si le secteur adjacent a la même couleur
+                    extra_start = overlap if same_as_prev else 0
+                    extra_end = overlap if same_as_next else 0
+                    
                     # Convertir en angle Qt (0° à droite, sens anti-horaire)
-                    start_angle = -button_angle - (angle_step / 2)
+                    start_angle = -button_angle - (angle_step / 2) - extra_start
+                    span_angle = angle_step + extra_start + extra_end
                     
                     painter.setBrush(color)
                     painter.setPen(Qt.PenStyle.NoPen)
-                    # drawPie utilise des "16èmes de degrés"
-                    painter.drawPie(circle_rect, int(start_angle * 16), int(angle_step * 16))
+                    painter.drawPie(circle_rect, int(start_angle * 16), int(span_angle * 16))
+            
+            # Revenir au mode de composition normal
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
         
         # === INDICATEUR DE DROP (mode réordonnancement) ===
         # if self.drag_active and self.drop_indicator_angle is not None:
