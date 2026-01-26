@@ -328,6 +328,10 @@ class RadialMenu(QWidget):
             
         # Créer les 3 badges globaux (un par action) - seront positionnés dynamiquement
         self.action_badges = {}
+        self._create_action_badges()
+
+    def _create_action_badges(self):
+        """Crée ou recrée les badges d'action avec les couleurs actuelles"""
         badge_info = {
             "copy": "✂️",
             "term": "💻", 
@@ -364,6 +368,34 @@ class RadialMenu(QWidget):
             # CRITIQUE: Les badges ne doivent pas intercepter les événements souris
             badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
             self.action_badges[action] = badge
+
+    def update_badge_colors(self):
+        """Met à jour les couleurs des badges selon action_zone_colors et zone_hover_opacity"""
+        if not hasattr(self, 'action_badges'):
+            return
+        
+        for action, badge in self.action_badges.items():
+            if self.action_zone_colors and action in self.action_zone_colors:
+                r, g, b = self.action_zone_colors[action]
+                # Convertir l'opacité de 0-100 vers 0-255
+                opacity = int(self.zone_hover_opacity * 255 / 100) if self.zone_hover_opacity else 120
+                badge.setStyleSheet(f"""
+                    QLabel {{
+                        background-color: rgba({r}, {g}, {b}, {opacity});
+                        border-radius: 17px;
+                        padding: 4px;
+                        font-size: 22px;
+                    }}
+                """)
+            else:
+                badge.setStyleSheet("""
+                    QLabel {
+                        background-color: rgba(255, 255, 255, 80);
+                        border-radius: 17px;
+                        padding: 4px;
+                        font-size: 22px;
+                    }
+                """)
 
     def update_buttons(self, buttons):
         """Met à jour les boutons existants sans recréer le widget entier"""
@@ -449,6 +481,9 @@ class RadialMenu(QWidget):
         self.setMouseTracking(True)
         # Repositionner la fenêtre tooltip
         self.update_tooltip_position()
+        
+        # Recréer les badges d'action avec les couleurs actuelles
+        self._create_action_badges()
         
         # Réinitialiser le focus visuel mais garder l'état du clavier
         # Si l'utilisateur a déjà utilisé le clavier, on garde cet état

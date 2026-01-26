@@ -3198,6 +3198,7 @@ class ClipNotesWindow(QMainWindow):
                 self.current_popup.action_zone_colors = self.action_zone_colors
                 self.current_popup.zone_basic_opacity = self.zone_basic_opacity
                 self.current_popup.zone_hover_opacity = self.zone_hover_opacity
+                self.current_popup.update_badge_colors()  # Mettre à jour les couleurs des badges
                 self.current_popup.set_widget_opacity(self.menu_opacity / 100.0)
                 self.current_popup.nb_icons_menu = self.nb_icons_menu
                 self.current_popup.show_central_icon = self.show_central_icon
