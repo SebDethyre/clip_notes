@@ -6,6 +6,10 @@ from PyQt6.QtWidgets import QLabel
 
 from utils import *
 from ui import HoverSubMenu, RadialKeyboardListener, TooltipWindow
+try:
+    from ui.StorageBar import StorageBar
+except ImportError:
+    from StorageBar import StorageBar
 
 class RadialMenu(QWidget):
     def __init__(self, x, y, buttons, parent=None, sub=False, tracker=None, app_instance=None, neon_color=None, action_zone_colors=None, nb_icons_menu=None, show_central_icon=None, menu_background_color=None, zone_basic_opacity=None, zone_hover_opacity=None, clips_by_link=[], shadow_offset=4, shadow_color=(200, 200, 200), shadow_enabled=True, shadow_angle=135):
@@ -813,18 +817,19 @@ class RadialMenu(QWidget):
         x, y = self.x, self.y
         if self.nb_icons_menu == 5:
             submenu_buttons = [
-                ("📋", lambda: self.storage_action_clips(x, y), "Clips stockés"),
-                ("🗑️", lambda: self.storage_action_delete(x, y), "Supprimer"),
                 ("💾", lambda: self.storage_action_store(x, y), "Stocker"),
+                ("🗑️", lambda: self.storage_action_delete(x, y), "Supprimer"),
+                ("📋", lambda: self.storage_action_clips(x, y), "Clips stockés"),
             ]
         elif self.nb_icons_menu == 6:
             submenu_buttons = [
-                ("📋", lambda: self.storage_action_clips(x, y), "Clips stockés"),
                 ("💾", lambda: self.storage_action_store(x, y), "Stocker"),
+                ("📋", lambda: self.storage_action_clips(x, y), "Clips stockés"),
             ]
         
-        # Créer le sous-menu avec self comme parent (nécessaire pour Wayland)
-        self.hover_submenu = HoverSubMenu(
+        # Créer la barre horizontale avec self comme parent (nécessaire pour Wayland)
+        # Le bord gauche de la barre est positionné sur le centre du bouton
+        self.hover_submenu = StorageBar(
             btn_center_global.x(),
             btn_center_global.y(),
             submenu_buttons,
@@ -1132,23 +1137,19 @@ class RadialMenu(QWidget):
         Met à jour la liste clips_by_link pour le radial menu.
         1 pour un bouton simple, N pour un bouton groupe.
         """
-        if not clips_by_link:
-            self.clips_by_link = []
         if clips_by_link:
+            # Si une liste est fournie, l'utiliser directement
             self.clips_by_link = clips_by_link
-        # print(self.clips_by_link)
-        # ⚠️ On utilise app_instance.actions_map_sub
-        for key, value in self.app_instance.actions_map_sub.items():
-            func, children, meta = value[0]  # value[0] = (fonction, enfants, meta)
-            
-            if isinstance(meta, dict) and meta.get("is_group"):
-                self.clips_by_link.append(len(children))
-            else:
-                self.clips_by_link.append(1)
-        # print(self.clips_by_link)
-
-        # Mettre à jour la liste des boutons qui sont des groupes (utile pour paintEvent)
-        # self.button_is_group = [len_ > 1 for len_ in self.clips_by_link]
+        else:
+            # Sinon, reconstruire depuis actions_map_sub
+            self.clips_by_link = []
+            for key, value in self.app_instance.actions_map_sub.items():
+                func, children, meta = value[0]  # value[0] = (fonction, enfants, meta)
+                
+                if isinstance(meta, dict) and meta.get("is_group"):
+                    self.clips_by_link.append(len(children))
+                else:
+                    self.clips_by_link.append(1)
 
     def mouseReleaseEvent(self, event):
         """Gère la fin du drag en mode réordonnancement"""
@@ -1258,7 +1259,6 @@ class RadialMenu(QWidget):
                             self.tooltip_window.show_message("✓ Clip sorti du groupe", 1000)
                             self.update_tooltip_position()
                             self.app_instance.refresh_menu()
-                            self.update_clips_by_link() 
                             return
                 
                 # Pas de position de drop valide, annuler
@@ -1299,10 +1299,8 @@ class RadialMenu(QWidget):
                             self.update_tooltip_position()
                             if self.reorder_mode:
                                 self.app_instance.reorder_clip_mode(self.x, self.y)
-                                self.update_clips_by_link()
                             else:
                                 self.app_instance.refresh_menu()
-                                self.update_clips_by_link()
                             return
             
             # === CAS 2: Drop à côté -> Déplacement normal ===
@@ -1326,11 +1324,9 @@ class RadialMenu(QWidget):
                         )
                         if success:
                             self._reset_drag_state()
-                            self.update_clips_by_link()
                             self.tooltip_window.show_message("✓ Clip déplacé", 1000)
                             self.update_tooltip_position()
                             self.app_instance.refresh_menu()
-                            self.update_clips_by_link()
                             return
             # Réinitialiser l'état du drag
             self._reset_drag_state()
@@ -2440,9 +2436,8 @@ class RadialMenu(QWidget):
                     painter.setFont(font)
                     text_rect = QRectF(badge_x - badge_radius, badge_y - badge_radius, 
                                        badge_radius * 2, badge_radius * 2)
-                    if self.app_instance.get_update_mode() or self.app_instance.get_delete_mode() or self.app_instance.get_store_mode():
-                        painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, str(self.clips_by_link[4:][btn_index]))
-                    else: 
+                    # clips_by_link est maintenant toujours aligné avec buttons_sub
+                    if btn_index < len(self.clips_by_link):
                         painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, str(self.clips_by_link[btn_index]))
         
         # Dessiner le cercle de focus (seulement si le clavier a été utilisé)

@@ -459,6 +459,20 @@ class ClipNotesWindow(QMainWindow):
             _, clip_html = get_clip_data_from_data(json_data, name)
             self.buttons_sub.append((name, self.make_handler_sub(name, value, self.x, self.y), tooltip, action, clip_html))
         
+        # Construire clips_by_link dans le même ordre que buttons_sub
+        clips_by_link = []
+        # D'abord les boutons spéciaux (toujours 1)
+        for name in special_buttons:
+            if name in self.actions_map_sub:
+                clips_by_link.append(1)
+        # Puis les clips triés
+        for name, (action_data, value, action) in sorted_clips:
+            func, children, meta = action_data
+            if isinstance(meta, dict) and meta.get("is_group"):
+                clips_by_link.append(len(children))
+            else:
+                clips_by_link.append(1)
+        
         # CRITIQUE: Propager nb_icons_menu et autres paramètres au popup AVANT update_buttons
         # Sinon l'escamotage des icônes fixes ne correspondra pas à la nouvelle configuration
         self.current_popup.nb_icons_menu = self.nb_icons_menu
@@ -474,6 +488,8 @@ class ClipNotesWindow(QMainWindow):
         
         # Mettre à jour les boutons du menu existant
         self.current_popup.update_buttons(self.buttons_sub)
+        # Mettre à jour clips_by_link pour les badges de groupe
+        self.current_popup.update_clips_by_link(clips_by_link)
         # Réappliquer l'opacité configurée
         self.current_popup.set_widget_opacity(self.menu_opacity / 100.0)
         # Réappliquer le néon central configuré
@@ -519,8 +535,8 @@ class ClipNotesWindow(QMainWindow):
                 )
             )
         clips_by_link = []
-        for key, value in self.actions_map_sub.items():
-            func, children, meta = value[0]
+        for name, (action_data, value, action) in sorted_clips:
+            func, children, meta = action_data
             if isinstance(meta, dict) and meta.get("is_group"):
                 clips_by_link.append(len(children))
             else:
@@ -579,8 +595,8 @@ class ClipNotesWindow(QMainWindow):
                 )
             )
         clips_by_link = []
-        for key, value in self.actions_map_sub.items():
-            func, children, meta = value[0]
+        for name, (action_data, value, action) in sorted_clips:
+            func, children, meta = action_data
             if isinstance(meta, dict) and meta.get("is_group"):
                 clips_by_link.append(len(children))
             else:
@@ -635,8 +651,18 @@ class ClipNotesWindow(QMainWindow):
                 )
             )
         
+        # Construire clips_by_link dans le même ordre que buttons_sub (seulement les clips triés)
+        clips_by_link = []
+        for name, (action_data, value, action) in sorted_clips:
+            func, children, meta = action_data
+            if isinstance(meta, dict) and meta.get("is_group"):
+                clips_by_link.append(len(children))
+            else:
+                clips_by_link.append(1)
+        
         if self.current_popup:
             self.current_popup.update_buttons(self.buttons_sub)
+            self.current_popup.update_clips_by_link(clips_by_link)
             self.current_popup.set_central_text("↔️")
             self.current_popup.set_neon_color("cyan")
             self.current_popup.toggle_neon(True)
@@ -2422,8 +2448,8 @@ class ClipNotesWindow(QMainWindow):
                 )
             )
         clips_by_link = []
-        for key, value in self.actions_map_sub.items():
-            func, children, meta = value[0]
+        for name, (action_data, value, action) in sorted_clips:
+            func, children, meta = action_data
             if isinstance(meta, dict) and meta.get("is_group"):
                 clips_by_link.append(len(children))
             else:
@@ -4082,10 +4108,14 @@ class ClipNotesWindow(QMainWindow):
         menu_dict=self.actions_map_sub
         clips_by_link = []
 
-        for key, value in menu_dict.items():
-            # value[0] = (fonction, enfants, meta)
-            func, children, meta = value[0]
-
+        # D'abord les boutons spéciaux (toujours 1)
+        for name in special_buttons:
+            if name in self.actions_map_sub:
+                clips_by_link.append(1)
+        
+        # Puis les clips triés
+        for name, (action_data, value, action) in sorted_clips:
+            func, children, meta = action_data
             if isinstance(meta, dict) and meta.get("is_group"):
                 clips_by_link.append(len(children))
             else:

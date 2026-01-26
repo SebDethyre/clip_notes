@@ -6,5 +6,6 @@ from .RadialKeyboardListener import RadialKeyboardListener
 from .CursorTracker import CursorTracker
 from .CalibrationWindow import CalibrationWindow
 from .TooltipWindow import TooltipWindow
+from .StorageBar import StorageBar
 from .RadialMenu import RadialMenu
 from .KeyboardShortcutsManager import KeyboardShortcutsManager
