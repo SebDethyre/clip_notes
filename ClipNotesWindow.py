@@ -1,7 +1,7 @@
-import sys, os, time, json, subprocess, signal
-from PyQt6.QtGui import QPainter, QColor, QIcon, QPalette, QPixmap, QPainterPath
-from PyQt6.QtCore import Qt, QSize, QTimer, QEvent
-from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QMainWindow, QVBoxLayout, QHBoxLayout, QSlider, QDialog, QLineEdit
+import sys, os, time, json, subprocess, signal, math
+from PyQt6.QtGui import QPainter, QColor, QIcon, QPalette, QPixmap, QPainterPath, QLinearGradient
+from PyQt6.QtCore import Qt, QSize, QTimer, QEvent, pyqtSignal, QPoint,QRect
+from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QMainWindow, QVBoxLayout, QHBoxLayout, QSlider, QDialog, QLineEdit, QGridLayout
 from PyQt6.QtWidgets import QTextEdit, QTextBrowser, QLabel, QFileDialog, QCheckBox, QColorDialog, QScrollArea, QListWidgetItem, QAbstractItemView
 
 from utils import *
@@ -19,6 +19,93 @@ def _get_color_palette():
         with open(os.path.join(_SCRIPT_DIR, "colors.json"), "r") as f:
             _COLOR_PALETTE_CACHE = json.load(f)
     return _COLOR_PALETTE_CACHE
+class InlineColorPicker(QWidget):
+    colorChanged = pyqtSignal(tuple)  # (r, g, b)
+
+    def __init__(self, initial_rgb, parent=None, radius=38):
+        super().__init__(parent)
+        self.radius = radius
+
+        # HSV interne
+        c = QColor(*initial_rgb)
+        self.h, self.s, self.v, _ = c.getHsvF()
+
+        # Augmenter la hauteur pour inclure le label "luminosité"
+        self.setFixedSize(radius * 2, radius * 2 + 40)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        center = QPoint(self.radius, self.radius)
+
+        # ===== ROUE HSV (H + S) =====
+        for x in range(-self.radius, self.radius):
+            for y in range(-self.radius, self.radius):
+                r = (x * x + y * y) ** 0.5
+                if r <= self.radius:
+                    hue = (math.degrees(math.atan2(y, x)) + 360) % 360
+                    sat = r / self.radius
+                    color = QColor.fromHsvF(hue / 360, sat, self.v)
+                    painter.setPen(color)
+                    painter.drawPoint(center + QPoint(x, y))
+
+        # ===== BARRE LUMINOSITÉ (V) =====
+        bar_y = self.radius * 2 + 4
+        bar_rect = QRect(5, bar_y, self.radius * 2 - 10, 10)
+
+        grad = QLinearGradient(bar_rect.left(), 0, bar_rect.right(), 0)
+        grad.setColorAt(0.0, QColor.fromHsvF(self.h, self.s, 0.0))
+        grad.setColorAt(1.0, QColor.fromHsvF(self.h, self.s, 1.0))
+
+        painter.fillRect(bar_rect, grad)
+
+        # curseur V
+        vx = int(bar_rect.left() + self.v * bar_rect.width())
+        painter.setPen(Qt.GlobalColor.white)
+        painter.drawLine(vx, bar_rect.top(), vx, bar_rect.bottom())
+        
+        # ===== LABEL "luminosité" =====
+        painter.setPen(QColor(255, 255, 255, 180))
+        font = painter.font()
+        font.setPointSize(9)
+        font.setItalic(True)
+        painter.setFont(font)
+        text_rect = QRect(0, bar_y + 12, self.radius * 2, 16)
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, "luminosité")
+
+    def mousePressEvent(self, event):
+        self._pick(event)
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            self._pick(event)
+
+    def _pick(self, event):
+        pos = event.position().toPoint()
+
+        # ----- ROUE -----
+        dx = pos.x() - self.radius
+        dy = pos.y() - self.radius
+        r = (dx * dx + dy * dy) ** 0.5
+
+        if r <= self.radius:
+            self.h = ((math.degrees(math.atan2(dy, dx)) + 360) % 360) / 360
+            self.s = min(1.0, r / self.radius)
+            self._emit()
+            return
+
+        # ----- BARRE V -----
+        bar_y = self.radius * 2 + 4
+        if bar_y <= pos.y() <= bar_y + 10:
+            self.v = min(1.0, max(0.0, (pos.x() - 5) / (self.radius * 2 - 10)))
+            self._emit()
+
+    def _emit(self):
+        color = QColor.fromHsvF(self.h, self.s, self.v)
+        self.colorChanged.emit((color.red(), color.green(), color.blue()))
+        self.update()
+
 
 class ClipNotesWindow(QMainWindow):
     def __init__(self):
@@ -3304,23 +3391,145 @@ class ClipNotesWindow(QMainWindow):
         dialog.setWindowTitle("⚙️ Configurer")
         dialog.setWindowFlags(Qt.WindowType.Dialog)
         dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+                
+        dialog.setFixedSize(400, 700)
         
-        # Appliquer une palette sombre au dialogue
-        palette = QPalette()
-        palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
-        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
-        palette.setColor(QPalette.ColorRole.Base, QColor(35, 35, 35))
-        palette.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
-        palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(25, 25, 25))
-        palette.setColor(QPalette.ColorRole.ToolTipText, QColor(255, 255, 255))
-        palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
-        palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
-        palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
-        palette.setColor(QPalette.ColorRole.Link, QColor(42, 130, 218))
-        palette.setColor(QPalette.ColorRole.Highlight, QColor(42, 130, 218))
-        palette.setColor(QPalette.ColorRole.HighlightedText, QColor(35, 35, 35))
-        dialog.setPalette(palette)
+        if x is None or y is None:
+            screen = QApplication.primaryScreen().geometry()
+            x = screen.center().x() - dialog.width() // 2
+            y = screen.center().y() - dialog.height() // 2
+        dialog.move(x, y)
         
+        content = QWidget()
+        content.setStyleSheet(self.dialog_style)
+        
+        layout = QVBoxLayout(content)
+        layout.setSpacing(12)
+        layout.setContentsMargins(20, 20, 20, 20)
+        # # Appliquer une palette sombre au dialogue
+        # palette = QPalette()
+        # palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+        # palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
+        # palette.setColor(QPalette.ColorRole.Base, QColor(35, 35, 35))
+        # palette.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
+        # palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(25, 25, 25))
+        # palette.setColor(QPalette.ColorRole.ToolTipText, QColor(255, 255, 255))
+        # palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
+        # palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+        # palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
+        # palette.setColor(QPalette.ColorRole.Link, QColor(42, 130, 218))
+        # palette.setColor(QPalette.ColorRole.Highlight, QColor(42, 130, 218))
+        # palette.setColor(QPalette.ColorRole.HighlightedText, QColor(35, 35, 35))
+        # dialog.setPalette(palette)
+        
+
+        # # --- Couleurs des zones ---
+        # colors_label = QLabel("🎨 Couleurs")
+        # colors_label.setStyleSheet("font-weight: bold; color: white; margin-top: 10px;")
+        # layout.addWidget(colors_label)
+               
+        # # Couleur du fond du menu
+        # menu_bg_color_layout = QHBoxLayout()
+        # menu_bg_color_label = QLabel("🔘 Général")
+        # # menu_bg_color_label.setStyleSheet("margin-top: 10px;")
+        # menu_bg_color_label.setFixedWidth(140)
+        
+        # menu_bg_color_button = QPushButton()
+        # menu_bg_color_button.setFixedHeight(30)
+        # menu_bg_color_button.setFixedWidth(150)
+        
+        # # Variable pour stocker la couleur du fond du menu
+        # selected_menu_bg_color = list(self.menu_background_color)
+        
+        # def update_menu_bg_button():
+        #     r, g, b = selected_menu_bg_color
+        #     menu_bg_color_button.setStyleSheet(f"""
+        #         QPushButton {{
+        #             background-color: rgb({r}, {g}, {b});
+        #             border: 2px solid rgba(255, 255, 255, 100);
+        #             border-radius: 10px;
+        #         }}
+        #         QPushButton:hover {{
+        #             border: 2px solid rgba(255, 255, 255, 200);
+        #         }}
+        #     """)
+        #     # menu_bg_color_button.setText(f"RGB({r}, {g}, {b})")
+        
+        # def pick_menu_bg_color():
+        #     r, g, b = selected_menu_bg_color
+        #     initial_color = QColor(r, g, b)
+        #     color = QColorDialog.getColor(initial_color, dialog, "Couleur de fond du menu")
+        #     if color.isValid():
+        #         selected_menu_bg_color[0] = color.red()
+        #         selected_menu_bg_color[1] = color.green()
+        #         selected_menu_bg_color[2] = color.blue()
+        #         update_menu_bg_button()
+        #         # Appliquer en live
+        #         self.menu_background_color = tuple(selected_menu_bg_color)
+        #         apply_live()
+        
+        # menu_bg_color_button.clicked.connect(pick_menu_bg_color)
+        # update_menu_bg_button()
+        
+        # menu_bg_color_layout.addWidget(menu_bg_color_label)
+        # menu_bg_color_layout.addWidget(menu_bg_color_button)
+        # menu_bg_color_layout.setContentsMargins(20, 0, 0, 0)
+        # menu_bg_color_layout.addStretch()
+        # layout.addLayout(menu_bg_color_layout)
+
+        # colors_zones_label = QLabel("zones par actions")
+        # colors_zones_label.setStyleSheet("font-style: italic; color: white; margin-left: 35px;")
+        # layout.addWidget(colors_zones_label)
+
+        # # Variables pour stocker les couleurs sélectionnées
+        # selected_colors = {
+        #     "copy": self.action_zone_colors["copy"],
+        #     "term": self.action_zone_colors["term"],
+        #     "exec": self.action_zone_colors["exec"]
+        # }
+        
+        # def create_color_button(action_name, label_text, rgb):
+        #     """Crée un bouton coloré qui ouvre un color picker"""
+        #     layout_h = QHBoxLayout()
+        #     label = QLabel(label_text)
+        #     label.setFixedWidth(140)
+            
+        #     button = QPushButton()
+        #     button.setFixedHeight(30)
+        #     button.setFixedWidth(150)
+            
+        #     def update_button_color():
+        #         r, g, b = selected_colors[action_name]
+        #         button.setStyleSheet(f"""
+        #             QPushButton {{
+        #                 background-color: rgb({r}, {g}, {b});
+        #                 border: 2px solid rgba(255, 255, 255, 100);
+        #                 border-radius: 10px;
+        #             }}
+        #             QPushButton:hover {{
+        #                 border: 2px solid rgba(255, 255, 255, 200);
+        #             }}
+        #         """)
+            
+        #     def pick_color():
+        #         r, g, b = selected_colors[action_name]
+        #         initial_color = QColor(r, g, b)
+        #         color = QColorDialog.getColor(initial_color, dialog, f"Couleur pour {label_text}")
+        #         if color.isValid():
+        #             selected_colors[action_name] = (color.red(), color.green(), color.blue())
+        #             update_button_color()
+        #             # Appliquer en live
+        #             self.action_zone_colors[action_name] = selected_colors[action_name]
+        #             apply_live()
+            
+        #     button.clicked.connect(pick_color)
+        #     update_button_color()
+            
+        #     layout_h.addWidget(label)
+        #     layout_h.addWidget(button)
+        #     layout_h.setContentsMargins(20, 0, 0, 0)
+        #     layout_h.addStretch()
+        #     return layout_h
         dialog.setFixedSize(400, 980)
         
         if x is None or y is None:
@@ -3336,123 +3545,118 @@ class ClipNotesWindow(QMainWindow):
         layout.setSpacing(12)
         layout.setContentsMargins(20, 20, 20, 20)
         
-        # --- Couleurs des zones ---
-        colors_label = QLabel("🎨 Couleurs")
-        colors_label.setStyleSheet("font-weight: bold; color: white; margin-top: 10px;")
-        layout.addWidget(colors_label)
-               
-        # Couleur du fond du menu
-        menu_bg_color_layout = QHBoxLayout()
-        menu_bg_color_label = QLabel("🔘 Général")
-        # menu_bg_color_label.setStyleSheet("margin-top: 10px;")
-        menu_bg_color_label.setFixedWidth(140)
-        
-        menu_bg_color_button = QPushButton()
-        menu_bg_color_button.setFixedHeight(30)
-        menu_bg_color_button.setFixedWidth(150)
-        
-        # Variable pour stocker la couleur du fond du menu
-        selected_menu_bg_color = list(self.menu_background_color)
-        
-        def update_menu_bg_button():
-            r, g, b = selected_menu_bg_color
-            menu_bg_color_button.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: rgb({r}, {g}, {b});
-                    border: 2px solid rgba(255, 255, 255, 100);
-                    border-radius: 10px;
-                }}
-                QPushButton:hover {{
-                    border: 2px solid rgba(255, 255, 255, 200);
-                }}
-            """)
-            # menu_bg_color_button.setText(f"RGB({r}, {g}, {b})")
-        
-        def pick_menu_bg_color():
-            r, g, b = selected_menu_bg_color
-            initial_color = QColor(r, g, b)
-            color = QColorDialog.getColor(initial_color, dialog, "Couleur de fond du menu")
-            if color.isValid():
-                selected_menu_bg_color[0] = color.red()
-                selected_menu_bg_color[1] = color.green()
-                selected_menu_bg_color[2] = color.blue()
-                update_menu_bg_button()
-                # Appliquer en live
-                self.menu_background_color = tuple(selected_menu_bg_color)
+        #     # ===================== COULEURS =====================
+        # layout.addWidget(QLabel("🎨 Couleurs", styleSheet="font-weight:bold;"))
+
+        # # --- MENU BACKGROUND ---
+        # row = QHBoxLayout()
+        # row.addWidget(QLabel("🔘 Général"))
+
+        # # menu_picker = InlineColorPicker(self.menu_background_color)
+        # menu_picker = InlineColorPicker(
+        #     self.menu_background_color,
+        #     radius=38
+        # )
+        # menu_picker.colorChanged.connect(
+        #     lambda rgb: (
+        #         setattr(self, "menu_background_color", rgb),
+        #         apply_live()
+        #     )
+        # )
+
+        # row.addWidget(menu_picker)
+        # row.addStretch()
+        # layout.addLayout(row)
+
+        # # --- ZONES ---
+        # layout.addWidget(QLabel(
+        #     "zones par actions",
+        #     styleSheet="font-style:italic; margin-left:35px;"
+        # ))
+
+        # def add_zone_picker(action, label):
+        #     row = QHBoxLayout()
+        #     row.addWidget(QLabel(label))
+
+        #     # picker = InlineColorPicker(self.action_zone_colors[action])
+        #     picker = InlineColorPicker(
+        #         self.action_zone_colors[action],
+        #         radius=38
+        #     )
+        #     picker.colorChanged.connect(
+        #         lambda rgb, a=action: (
+        #             self.action_zone_colors.__setitem__(a, rgb),
+        #             apply_live()
+        #         )
+        #     )
+
+        #     row.addWidget(picker)
+        #     row.addStretch()
+        #     layout.addLayout(row)
+        layout.addWidget(QLabel("🎨 Couleurs", styleSheet="font-weight:bold;"))
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(20)
+        grid.setVerticalSpacing(8)
+
+        def add_picker(col, title, initial_rgb, on_change):
+            title_lbl = QLabel(title)
+            title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            picker = InlineColorPicker(
+                initial_rgb,
+                radius=38
+            )
+            picker.colorChanged.connect(on_change)
+
+            grid.addWidget(title_lbl, 0, col)
+            grid.addWidget(picker, 1, col, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        # Général
+        add_picker(
+            0,
+            "🔘 Générale",
+            self.menu_background_color,
+            lambda rgb: (
+                setattr(self, "menu_background_color", rgb),
                 apply_live()
-        
-        menu_bg_color_button.clicked.connect(pick_menu_bg_color)
-        update_menu_bg_button()
-        
-        menu_bg_color_layout.addWidget(menu_bg_color_label)
-        menu_bg_color_layout.addWidget(menu_bg_color_button)
-        menu_bg_color_layout.setContentsMargins(20, 0, 0, 0)
-        menu_bg_color_layout.addStretch()
-        layout.addLayout(menu_bg_color_layout)
+            )
+        )
 
-        colors_zones_label = QLabel("zones par actions")
-        colors_zones_label.setStyleSheet("font-style: italic; color: white; margin-left: 35px;")
-        layout.addWidget(colors_zones_label)
+        # Copier
+        add_picker(
+            1,
+            "📋 Copier",
+            self.action_zone_colors["copy"],
+            lambda rgb: (
+                self.action_zone_colors.__setitem__("copy", rgb),
+                apply_live()
+            )
+        )
 
-        # Variables pour stocker les couleurs sélectionnées
-        selected_colors = {
-            "copy": self.action_zone_colors["copy"],
-            "term": self.action_zone_colors["term"],
-            "exec": self.action_zone_colors["exec"]
-        }
-        
-        def create_color_button(action_name, label_text, rgb):
-            """Crée un bouton coloré qui ouvre un color picker"""
-            layout_h = QHBoxLayout()
-            label = QLabel(label_text)
-            label.setFixedWidth(140)
-            
-            button = QPushButton()
-            button.setFixedHeight(30)
-            button.setFixedWidth(150)
-            
-            def update_button_color():
-                r, g, b = selected_colors[action_name]
-                button.setStyleSheet(f"""
-                    QPushButton {{
-                        background-color: rgb({r}, {g}, {b});
-                        border: 2px solid rgba(255, 255, 255, 100);
-                        border-radius: 10px;
-                    }}
-                    QPushButton:hover {{
-                        border: 2px solid rgba(255, 255, 255, 200);
-                    }}
-                """)
-            
-            def pick_color():
-                r, g, b = selected_colors[action_name]
-                initial_color = QColor(r, g, b)
-                color = QColorDialog.getColor(initial_color, dialog, f"Couleur pour {label_text}")
-                if color.isValid():
-                    selected_colors[action_name] = (color.red(), color.green(), color.blue())
-                    update_button_color()
-                    # Appliquer en live
-                    self.action_zone_colors[action_name] = selected_colors[action_name]
-                    apply_live()
-            
-            button.clicked.connect(pick_color)
-            update_button_color()
-            
-            layout_h.addWidget(label)
-            layout_h.addWidget(button)
-            layout_h.setContentsMargins(20, 0, 0, 0)
-            layout_h.addStretch()
-            return layout_h
-        
-        # Boutons pour chaque action
-        copy_layout = create_color_button("copy", "✂️ Copie", self.action_zone_colors["copy"])
-        layout.addLayout(copy_layout)
-        
-        term_layout = create_color_button("term", "💻 Terminal", self.action_zone_colors["term"])
-        layout.addLayout(term_layout)
-        
-        exec_layout = create_color_button("exec", "🚀 Exécution", self.action_zone_colors["exec"])
-        layout.addLayout(exec_layout)
+        # Terminal
+        add_picker(
+            2,
+            "🖥️ Terminal",
+            self.action_zone_colors["term"],
+            lambda rgb: (
+                self.action_zone_colors.__setitem__("term", rgb),
+                apply_live()
+            )
+        )
+
+        # Exécuter
+        add_picker(
+            3,
+            "⚡ Exécuter",
+            self.action_zone_colors["exec"],
+            lambda rgb: (
+                self.action_zone_colors.__setitem__("exec", rgb),
+                apply_live()
+            )
+        )
+
+        layout.addLayout(grid)
 
         # --- Opacités ---
         opacity_label = QLabel("🔆 Opacités")
@@ -3461,14 +3665,14 @@ class ClipNotesWindow(QMainWindow):
         
         # Slider pour opacité du menu
         menu_opacity_layout = QVBoxLayout()
-        menu_opacity_label = QLabel(f"Opacité générale ➤ <b>{self.menu_opacity}</b>")
+        menu_opacity_label = QLabel(f"Générale ➤ <b>{self.menu_opacity}</b>")
         menu_opacity_slider = QSlider(Qt.Orientation.Horizontal)
         menu_opacity_slider.setMinimum(0)
         menu_opacity_slider.setMaximum(100)
         menu_opacity_slider.setValue(self.menu_opacity)
         
         def on_menu_opacity_changed(v):
-            menu_opacity_label.setText(f"Opacité générale ➤ <b>{v}</b>")
+            menu_opacity_label.setText(f"Générale ➤ <b>{v}</b>")
             self.menu_opacity = v
             apply_live()
         
@@ -3480,14 +3684,14 @@ class ClipNotesWindow(QMainWindow):
                
         # Slider pour opacité de base
         basic_opacity_layout = QVBoxLayout()
-        basic_opacity_label = QLabel(f"Opacité des zones ➤ <b>{self.zone_basic_opacity}</b>")
+        basic_opacity_label = QLabel(f"Zones ➤ <b>{self.zone_basic_opacity}</b>")
         basic_opacity_slider = QSlider(Qt.Orientation.Horizontal)
         basic_opacity_slider.setMinimum(0)
         basic_opacity_slider.setMaximum(100)
         basic_opacity_slider.setValue(self.zone_basic_opacity)
         
         def on_basic_opacity_changed(v):
-            basic_opacity_label.setText(f"Opacité des zones ➤ <b>{v}</b>")
+            basic_opacity_label.setText(f"Zones ➤ <b>{v}</b>")
             self.zone_basic_opacity = v
             apply_live()
         
@@ -3499,14 +3703,14 @@ class ClipNotesWindow(QMainWindow):
         
         # Slider pour opacité au survol
         hover_opacity_layout = QVBoxLayout()
-        hover_opacity_label = QLabel(f"Opacité des zones au survol ➤ <b>{self.zone_hover_opacity}</b>")
+        hover_opacity_label = QLabel(f"Zones au survol ➤ <b>{self.zone_hover_opacity}</b>")
         hover_opacity_slider = QSlider(Qt.Orientation.Horizontal)
         hover_opacity_slider.setMinimum(0)
         hover_opacity_slider.setMaximum(100)
         hover_opacity_slider.setValue(self.zone_hover_opacity)
         
         def on_hover_opacity_changed(v):
-            hover_opacity_label.setText(f"Opacité des zones au survol ➤ <b>{v}</b>")
+            hover_opacity_label.setText(f"Zones au survol ➤ <b>{v}</b>")
             self.zone_hover_opacity = v
             apply_live()
         
@@ -3653,57 +3857,32 @@ class ClipNotesWindow(QMainWindow):
         neon_checkbox.stateChanged.connect(on_neon_changed)
         layout.addWidget(neon_checkbox)
 
-        # Couleur du néon
-        neon_color_layout = QHBoxLayout()
-        neon_color_label = QLabel("Couleur du néon")
+        # Couleur du néon avec InlineColorPicker
+        neon_color_row = QHBoxLayout()
+        neon_color_label = QLabel("Couleur")
         neon_color_label.setFixedWidth(140)
         
-        neon_color_button = QPushButton()
-        neon_color_button.setFixedHeight(30)
-        neon_color_button.setFixedWidth(150)
+        neon_picker = InlineColorPicker(
+            self.neon_color,
+            radius=28  # plus petit que les autres
+        )
         
-        # Variable pour stocker la couleur du néon
-        selected_neon_color = list(self.neon_color)
-        
-        def update_neon_button():
-            r, g, b = selected_neon_color
-            neon_color_button.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: rgb({r}, {g}, {b});
-                    border: 2px solid rgba(255, 255, 255, 100);
-                    border-radius: 10px;
-                }}
-                QPushButton:hover {{
-                    border: 2px solid rgba(255, 255, 255, 200);
-                }}
-            """)
-            # neon_color_button.setText(f"RGB({r}, {g}, {b})")
-        
-        def pick_neon_color():
-            r, g, b = selected_neon_color
-            initial_color = QColor(r, g, b)
-            color = QColorDialog.getColor(initial_color, dialog, "Couleur du néon")
-            if color.isValid():
-                selected_neon_color[0] = color.red()
-                selected_neon_color[1] = color.green()
-                selected_neon_color[2] = color.blue()
-                update_neon_button()
-                # Appliquer en live
-                self.neon_color = tuple(selected_neon_color)
+        neon_picker.colorChanged.connect(
+            lambda rgb: (
+                setattr(self, "neon_color", rgb),
                 apply_live()
+            )
+        )
         
-        neon_color_button.clicked.connect(pick_neon_color)
-        update_neon_button()
-        
-        neon_color_layout.addWidget(neon_color_label)
-        neon_color_layout.addWidget(neon_color_button)
-        neon_color_layout.setContentsMargins(45, 0, 60, 0)
-        neon_color_layout.addStretch()
-        layout.addLayout(neon_color_layout)
+        neon_color_row.addWidget(neon_color_label)
+        neon_color_row.addWidget(neon_picker)
+        neon_color_row.addStretch()
+        neon_color_row.setContentsMargins(45, 0, 60, 0)
+        layout.addLayout(neon_color_row)
         
         # Slider pour la vitesse du néon
         neon_speed_layout = QVBoxLayout()
-        neon_speed_label = QLabel(f"Vitesse du néon ➤ <b>{self.neon_speed}</b> ms")
+        neon_speed_label = QLabel(f"Fréquence ➤ <b>{self.neon_speed}</b> ms")
         neon_speed_slider = QSlider(Qt.Orientation.Horizontal)
         # Bornes des vitesses
         neon_speed_slider.setMinimum(1)
@@ -3711,7 +3890,7 @@ class ClipNotesWindow(QMainWindow):
         neon_speed_slider.setValue(self.neon_speed)
         
         def on_neon_speed_changed(v):
-            neon_speed_label.setText(f"Vitesse du néon ➤ <b>{v}</b> ms")
+            neon_speed_label.setText(f"Fréquence ➤ <b>{v}</b> ms")
             self.neon_speed = v
             apply_live()
         
@@ -3723,7 +3902,7 @@ class ClipNotesWindow(QMainWindow):
 
         neon_widgets = (
             neon_color_label,
-            neon_color_button,
+            neon_picker,
             neon_speed_label,
             neon_speed_slider,
         )
@@ -3732,7 +3911,7 @@ class ClipNotesWindow(QMainWindow):
             enabled = neon_checkbox.isChecked()
             for widget in neon_widgets:
                 widget.setVisible(enabled)
-            dialog.setFixedSize(400, 980 if enabled else 890)
+            # La taille du dialog est gérée par update_dialog_size()
 
         # Initialisation
         update_neon_config_visibility()
@@ -3745,15 +3924,12 @@ class ClipNotesWindow(QMainWindow):
         shadow_checkbox = QCheckBox("Ombre")
         shadow_checkbox.setChecked(self.shadow_enabled)
         shadow_checkbox.setStyleSheet("""
-            QCheckBox {
-                font-weight: bold;
-                margin-top: 10px;
-            }
             QCheckBox::indicator {
                 background-color: white;
                 border: 1px solid black;
                 width: 14px;
                 height: 14px;
+                margin-left: 20px;
             }
             QCheckBox::indicator:checked {
                 background-color: #ff8c00;
@@ -3766,7 +3942,28 @@ class ClipNotesWindow(QMainWindow):
         
         shadow_checkbox.stateChanged.connect(on_shadow_enabled_changed)
         layout.addWidget(shadow_checkbox)
-        
+        # Couleur de l'ombre avec InlineColorPicker
+        shadow_color_row = QHBoxLayout()
+        shadow_color_label = QLabel("Couleur")
+        shadow_color_label.setFixedWidth(140)
+
+        shadow_picker = InlineColorPicker(
+            self.shadow_color,
+            radius=28  # plus petit que les autres
+        )
+
+        shadow_picker.colorChanged.connect(
+            lambda rgb: (
+                setattr(self, "shadow_color", rgb),
+                apply_live()
+            )
+        )
+
+        shadow_color_row.addWidget(shadow_color_label)
+        shadow_color_row.addWidget(shadow_picker)
+        shadow_color_row.addStretch()
+        shadow_color_row.setContentsMargins(45, 0, 60, 0)
+        layout.addLayout(shadow_color_row)
         # Slider pour le décalage de l'ombre
         shadow_offset_layout = QVBoxLayout()
         shadow_offset_label = QLabel(f"Décalage ➤ <b>{self.shadow_offset}</b> px")
@@ -3804,52 +4001,6 @@ class ClipNotesWindow(QMainWindow):
         shadow_angle_layout.addWidget(shadow_angle_slider)
         shadow_angle_layout.setContentsMargins(45, 0, 30, 0)
         layout.addLayout(shadow_angle_layout)
-        
-        # Couleur de l'ombre
-        shadow_color_layout = QHBoxLayout()
-        shadow_color_label = QLabel("Couleur")
-        shadow_color_label.setFixedWidth(140)
-        
-        shadow_color_button = QPushButton()
-        shadow_color_button.setFixedHeight(30)
-        shadow_color_button.setFixedWidth(150)
-        
-        selected_shadow_color = list(self.shadow_color)
-        
-        def update_shadow_button():
-            r, g, b = selected_shadow_color
-            shadow_color_button.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: rgb({r}, {g}, {b});
-                    border: 2px solid rgba(255, 255, 255, 100);
-                    border-radius: 10px;
-                }}
-                QPushButton:hover {{
-                    border: 2px solid rgba(255, 255, 255, 200);
-                }}
-            """)
-        
-        def pick_shadow_color():
-            r, g, b = selected_shadow_color
-            initial_color = QColor(r, g, b)
-            color = QColorDialog.getColor(initial_color, dialog, "Couleur de l'ombre")
-            if color.isValid():
-                selected_shadow_color[0] = color.red()
-                selected_shadow_color[1] = color.green()
-                selected_shadow_color[2] = color.blue()
-                update_shadow_button()
-                # Appliquer en live
-                self.shadow_color = tuple(selected_shadow_color)
-                apply_live()
-        
-        shadow_color_button.clicked.connect(pick_shadow_color)
-        update_shadow_button()
-        
-        shadow_color_layout.addWidget(shadow_color_label)
-        shadow_color_layout.addWidget(shadow_color_button)
-        shadow_color_layout.setContentsMargins(45, 0, 60, 0)
-        shadow_color_layout.addStretch()
-        layout.addLayout(shadow_color_layout)
 
         # Widgets de l'ombre à cacher/montrer
         shadow_widgets = (
@@ -3858,19 +4009,47 @@ class ClipNotesWindow(QMainWindow):
             shadow_angle_label,
             shadow_angle_slider,
             shadow_color_label,
-            shadow_color_button,
+            shadow_picker,
         )
 
         def update_shadow_config_visibility():
             enabled = shadow_checkbox.isChecked()
             for widget in shadow_widgets:
                 widget.setVisible(enabled)
+            # La taille du dialog est gérée par update_dialog_size()
 
         # Initialisation
         update_shadow_config_visibility()
 
         # Connexion
         shadow_checkbox.stateChanged.connect(update_shadow_config_visibility)
+
+        # Fonction commune pour adapter la taille du dialog
+        def update_dialog_size():
+            neon_enabled = neon_checkbox.isChecked()
+            shadow_enabled = shadow_checkbox.isChecked()
+            
+            # Hauteur de base (sans néon ni ombre)
+            base_height = 710
+            # Hauteur supplémentaire pour le néon
+            neon_height = 150
+            # Hauteur supplémentaire pour l'ombre
+            shadow_height = 230
+            
+            total_height = base_height
+            if neon_enabled:
+                total_height += neon_height
+            if shadow_enabled:
+                total_height += shadow_height
+            
+            dialog.setFixedSize(400, total_height)
+        
+        # Connecter aux deux checkboxes
+        neon_checkbox.stateChanged.connect(update_dialog_size)
+        shadow_checkbox.stateChanged.connect(update_dialog_size)
+        
+        # Initialisation de la taille
+        update_dialog_size()
 
         # Boutons Sauvegarder et Annuler
         layout.addStretch()
