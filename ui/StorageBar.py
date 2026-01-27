@@ -162,16 +162,22 @@ class StorageBar(QWidget):
                 self.parent_menu.tooltip_window.show_message(tooltip_text, 0)
                 self.parent_menu.update_tooltip_position()
             
-            # Afficher l'icône survolée dans le menu parent
-            if watched in self.buttons and self.parent_menu:
+            if watched in self.buttons and self.parent_menu.show_central_icon:
                 button_index = self.buttons.index(watched)
+                self.hovered_button_index = button_index
+                
+                # Créer l'icône centrale pour ce bouton (sauf pendant le drag)
                 if button_index < len(self.button_labels):
                     label = self.button_labels[button_index]
+                    # Créer un pixmap adapté au type de label
                     if "/" in label:
+                        # C'est un chemin d'image
                         self.parent_menu.central_icon = image_pixmap(label, 64)
                     elif is_emoji(label):
+                        # C'est un emoji
                         self.parent_menu.central_icon = emoji_pixmap(label, 48)
                     else:
+                        # C'est du texte simple
                         self.parent_menu.central_icon = text_pixmap(label, 48)
                     self.parent_menu.update()
             

@@ -548,37 +548,6 @@ class RadialMenu(QWidget):
                 button_index = self.buttons.index(watched)
                 self.hovered_button_index = button_index
                 
-                # === Changer le curseur pour les clips (toujours actif) ===
-                if not self.drag_active:
-                    label = self.button_labels[button_index] if button_index < len(self.button_labels) else ""
-                    special_buttons = self.special_buttons_by_numbers[self.nb_icons_menu]
-                    is_clip = label not in special_buttons and button_index < len(self.button_actions) and self.button_actions[button_index] is not None
-                    if is_clip:
-                        # C'est un clip, montrer qu'on peut l'attraper
-                        self.setCursor(Qt.CursorShape.OpenHandCursor)
-                
-                # Vérifier si on entre dans la zone spéciale
-                all_special_indices = self.special_button_indices + ([self.plus_button_index] if self.plus_button_index is not None else [])
-                if button_index in all_special_indices:
-                    if not self.mouse_in_special_zone:
-                        self.mouse_in_special_zone = True
-                        self.on_enter_special_zone()
-                else:
-                    # On entre sur un bouton non-spécial
-                    # Ne pas interrompre l'animation de révélation en cours
-                    if self.mouse_in_special_zone and not (self.special_animating and self.special_reveal_queue):
-                        self.mouse_in_special_zone = False
-                        # print("sortie mouse_in_special_zone 3")
-                        self.on_leave_special_zone()
-                
-                # Cas spécial : hover sur le bouton ➖ -> ouvrir le sous-menu
-                if button_index == self.storage_button_index:
-                    self.show_storage_submenu(watched)
-                
-                # Cas spécial : hover sur un groupe -> ouvrir le sous-menu du groupe
-                if button_index < len(self.button_is_group) and self.button_is_group[button_index]:
-                    self.show_group_hover_submenu(watched, button_index)
-                
                 # Créer l'icône centrale pour ce bouton (sauf pendant le drag)
                 if not self.drag_active and button_index < len(self.button_labels):
                     label = self.button_labels[button_index]
@@ -592,7 +561,38 @@ class RadialMenu(QWidget):
                     else:
                         # C'est du texte simple
                         self.central_icon = text_pixmap(label, 48)
+
+            # === Changer le curseur pour les clips (toujours actif) ===
+            if not self.drag_active:
+                label = self.button_labels[button_index] if button_index < len(self.button_labels) else ""
+                special_buttons = self.special_buttons_by_numbers[self.nb_icons_menu]
+                is_clip = label not in special_buttons and button_index < len(self.button_actions) and self.button_actions[button_index] is not None
+                if is_clip:
+                    # C'est un clip, montrer qu'on peut l'attraper
+                    self.setCursor(Qt.CursorShape.OpenHandCursor)
                     self.update()
+                    
+            # Cas spécial : hover sur le bouton ➖ -> ouvrir le sous-menu
+            if button_index == self.storage_button_index:
+                self.show_storage_submenu(watched)
+            
+            # Cas spécial : hover sur un groupe -> ouvrir le sous-menu du groupe
+            if button_index < len(self.button_is_group) and self.button_is_group[button_index]:
+                self.show_group_hover_submenu(watched, button_index)
+
+            # Vérifier si on entre dans la zone spéciale
+            all_special_indices = self.special_button_indices + ([self.plus_button_index] if self.plus_button_index is not None else [])
+            if button_index in all_special_indices:
+                if not self.mouse_in_special_zone:
+                    self.mouse_in_special_zone = True
+                    self.on_enter_special_zone()
+            else:
+                # On entre sur un bouton non-spécial
+                # Ne pas interrompre l'animation de révélation en cours
+                if self.mouse_in_special_zone and not (self.special_animating and self.special_reveal_queue):
+                    self.mouse_in_special_zone = False
+                    # print("sortie mouse_in_special_zone 3")
+                    self.on_leave_special_zone()
             
             # Afficher le message de hover dans la fenêtre tooltip (sauf pendant le drag)
             if not self.drag_active and watched in self.tooltips:
@@ -1579,10 +1579,10 @@ class RadialMenu(QWidget):
         in_special_zone = self.is_angle_in_special_zone(angle_deg)
         
         if in_special_zone and self.mouse_in_special_zone and not self.special_animating:
+            self.on_enter_special_zone()
             # On entre dans la zone spéciale
             # print("entrée mouse_in_special_zone")
             self.mouse_in_special_zone = True
-            self.on_enter_special_zone()
         elif not in_special_zone and self.mouse_in_special_zone and not self.special_animating:
             # On sort de la zone spéciale
             # self.mouse_in_special_zone = False
