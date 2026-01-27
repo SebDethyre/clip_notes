@@ -1,13 +1,14 @@
-import sys, os, time, json, subprocess, signal, math
-from PyQt6.QtGui import QPainter, QColor, QIcon, QPalette, QPixmap, QPainterPath, QLinearGradient
-from PyQt6.QtCore import Qt, QSize, QTimer, QEvent, pyqtSignal, QPoint,QRect
+import sys, os, time, json, subprocess, signal,fcntl
+
+from PyQt6.QtGui import QPainter, QColor, QIcon, QPalette, QPixmap, QPainterPath
+from PyQt6.QtCore import Qt, QSize, QTimer, QEvent
 from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QMainWindow, QVBoxLayout, QHBoxLayout, QSlider, QDialog, QLineEdit, QGridLayout
-from PyQt6.QtWidgets import QTextEdit, QTextBrowser, QLabel, QFileDialog, QCheckBox, QColorDialog, QScrollArea, QListWidgetItem, QAbstractItemView
+from PyQt6.QtWidgets import QTextEdit, QTextBrowser, QLabel, QFileDialog, QCheckBox, QScrollArea, QListWidgetItem, QAbstractItemView
 
 from utils import *
 from utils import load_clip_notes_data, populate_actions_map_from_data, get_json_order_from_data, get_clip_data_from_data
 from ui import EmojiSelector, AutoScrollListWidget, WhiteDropIndicatorStyle, HoverSubMenu, CursorTracker, TooltipWindow, RadialMenu, CalibrationWindow
-from ui import KeyboardShortcutsManager
+from ui import KeyboardShortcutsManager, CircularColorPicker
 
 # Cache pour colors.json (chargé une seule fois)
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -19,93 +20,6 @@ def _get_color_palette():
         with open(os.path.join(_SCRIPT_DIR, "colors.json"), "r") as f:
             _COLOR_PALETTE_CACHE = json.load(f)
     return _COLOR_PALETTE_CACHE
-class InlineColorPicker(QWidget):
-    colorChanged = pyqtSignal(tuple)  # (r, g, b)
-
-    def __init__(self, initial_rgb, parent=None, radius=38):
-        super().__init__(parent)
-        self.radius = radius
-
-        # HSV interne
-        c = QColor(*initial_rgb)
-        self.h, self.s, self.v, _ = c.getHsvF()
-
-        # Augmenter la hauteur pour inclure le label "luminosité"
-        self.setFixedSize(radius * 2, radius * 2 + 40)
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        center = QPoint(self.radius, self.radius)
-
-        # ===== ROUE HSV (H + S) =====
-        for x in range(-self.radius, self.radius):
-            for y in range(-self.radius, self.radius):
-                r = (x * x + y * y) ** 0.5
-                if r <= self.radius:
-                    hue = (math.degrees(math.atan2(y, x)) + 360) % 360
-                    sat = r / self.radius
-                    color = QColor.fromHsvF(hue / 360, sat, self.v)
-                    painter.setPen(color)
-                    painter.drawPoint(center + QPoint(x, y))
-
-        # ===== BARRE LUMINOSITÉ (V) =====
-        bar_y = self.radius * 2 + 4
-        bar_rect = QRect(5, bar_y, self.radius * 2 - 10, 10)
-
-        grad = QLinearGradient(bar_rect.left(), 0, bar_rect.right(), 0)
-        grad.setColorAt(0.0, QColor.fromHsvF(self.h, self.s, 0.0))
-        grad.setColorAt(1.0, QColor.fromHsvF(self.h, self.s, 1.0))
-
-        painter.fillRect(bar_rect, grad)
-
-        # curseur V
-        vx = int(bar_rect.left() + self.v * bar_rect.width())
-        painter.setPen(Qt.GlobalColor.white)
-        painter.drawLine(vx, bar_rect.top(), vx, bar_rect.bottom())
-        
-        # ===== LABEL "luminosité" =====
-        painter.setPen(QColor(255, 255, 255, 180))
-        font = painter.font()
-        font.setPointSize(9)
-        font.setItalic(True)
-        painter.setFont(font)
-        text_rect = QRect(0, bar_y + 12, self.radius * 2, 16)
-        painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, "luminosité")
-
-    def mousePressEvent(self, event):
-        self._pick(event)
-
-    def mouseMoveEvent(self, event):
-        if event.buttons() & Qt.MouseButton.LeftButton:
-            self._pick(event)
-
-    def _pick(self, event):
-        pos = event.position().toPoint()
-
-        # ----- ROUE -----
-        dx = pos.x() - self.radius
-        dy = pos.y() - self.radius
-        r = (dx * dx + dy * dy) ** 0.5
-
-        if r <= self.radius:
-            self.h = ((math.degrees(math.atan2(dy, dx)) + 360) % 360) / 360
-            self.s = min(1.0, r / self.radius)
-            self._emit()
-            return
-
-        # ----- BARRE V -----
-        bar_y = self.radius * 2 + 4
-        if bar_y <= pos.y() <= bar_y + 10:
-            self.v = min(1.0, max(0.0, (pos.x() - 5) / (self.radius * 2 - 10)))
-            self._emit()
-
-    def _emit(self):
-        color = QColor.fromHsvF(self.h, self.s, self.v)
-        self.colorChanged.emit((color.red(), color.green(), color.blue()))
-        self.update()
-
 
 class ClipNotesWindow(QMainWindow):
     def __init__(self):
@@ -1691,43 +1605,9 @@ class ClipNotesWindow(QMainWindow):
         
         if self.current_popup:
             self.current_popup.setMouseTracking(True)
-    
-    # def store_group_child_clip(self, group_alias, child_alias, child_string, child_action, x, y):
-    #     """Stocke un clip qui appartient à un groupe"""
-    #     from utils import remove_clip_from_group, get_group_children
-        
-    #     if self.tracker:
-    #         self.tracker.update_pos()
-    #         x, y = self.tracker.last_x, self.tracker.last_y
-        
-    #     # Récupérer les données complètes du clip enfant (incluant HTML)
-    #     children = get_group_children(self.clip_notes_file_json, group_alias)
-    #     child_html = None
-    #     for c in children or []:
-    #         if c.get('alias') == child_alias:
-    #             child_html = c.get('html', None)
-    #             break
-        
-    #     # Ajouter le clip au stockage
-    #     self.add_stored_clip(child_alias, child_action, child_string, child_html)
-        
-    #     # Retirer le clip du groupe
-    #     remove_clip_from_group(self.clip_notes_file_json, group_alias, child_alias , "storage_mode")
-        
-    #     # Recharger les données et rester en mode store
-    #     special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
-    #     self.actions_map_sub = self.buttons_actions_by_number[self.nb_icons_menu].copy()
-    #     populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
-        
-    #     # Afficher un message
-    #     if self.current_popup:
-    #         self.current_popup.tooltip_window.show_message(f"✓ {child_alias} stocké", 1000)
-        
-        # self.store_clip_mode(x, y)
         
     def store_group_child_clip(self, group_alias, child_alias, child_string, child_action, x, y):
         """Stocke un clip qui appartient à un groupe"""
-        # from utils import store_clip_from_group
 
         if self.tracker:
             self.tracker.update_pos()
@@ -3406,193 +3286,6 @@ class ClipNotesWindow(QMainWindow):
         layout = QVBoxLayout(content)
         layout.setSpacing(12)
         layout.setContentsMargins(20, 20, 20, 20)
-        # # Appliquer une palette sombre au dialogue
-        # palette = QPalette()
-        # palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
-        # palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
-        # palette.setColor(QPalette.ColorRole.Base, QColor(35, 35, 35))
-        # palette.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
-        # palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(25, 25, 25))
-        # palette.setColor(QPalette.ColorRole.ToolTipText, QColor(255, 255, 255))
-        # palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
-        # palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
-        # palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
-        # palette.setColor(QPalette.ColorRole.Link, QColor(42, 130, 218))
-        # palette.setColor(QPalette.ColorRole.Highlight, QColor(42, 130, 218))
-        # palette.setColor(QPalette.ColorRole.HighlightedText, QColor(35, 35, 35))
-        # dialog.setPalette(palette)
-        
-
-        # # --- Couleurs des zones ---
-        # colors_label = QLabel("🎨 Couleurs")
-        # colors_label.setStyleSheet("font-weight: bold; color: white; margin-top: 10px;")
-        # layout.addWidget(colors_label)
-               
-        # # Couleur du fond du menu
-        # menu_bg_color_layout = QHBoxLayout()
-        # menu_bg_color_label = QLabel("🔘 Général")
-        # # menu_bg_color_label.setStyleSheet("margin-top: 10px;")
-        # menu_bg_color_label.setFixedWidth(140)
-        
-        # menu_bg_color_button = QPushButton()
-        # menu_bg_color_button.setFixedHeight(30)
-        # menu_bg_color_button.setFixedWidth(150)
-        
-        # # Variable pour stocker la couleur du fond du menu
-        # selected_menu_bg_color = list(self.menu_background_color)
-        
-        # def update_menu_bg_button():
-        #     r, g, b = selected_menu_bg_color
-        #     menu_bg_color_button.setStyleSheet(f"""
-        #         QPushButton {{
-        #             background-color: rgb({r}, {g}, {b});
-        #             border: 2px solid rgba(255, 255, 255, 100);
-        #             border-radius: 10px;
-        #         }}
-        #         QPushButton:hover {{
-        #             border: 2px solid rgba(255, 255, 255, 200);
-        #         }}
-        #     """)
-        #     # menu_bg_color_button.setText(f"RGB({r}, {g}, {b})")
-        
-        # def pick_menu_bg_color():
-        #     r, g, b = selected_menu_bg_color
-        #     initial_color = QColor(r, g, b)
-        #     color = QColorDialog.getColor(initial_color, dialog, "Couleur de fond du menu")
-        #     if color.isValid():
-        #         selected_menu_bg_color[0] = color.red()
-        #         selected_menu_bg_color[1] = color.green()
-        #         selected_menu_bg_color[2] = color.blue()
-        #         update_menu_bg_button()
-        #         # Appliquer en live
-        #         self.menu_background_color = tuple(selected_menu_bg_color)
-        #         apply_live()
-        
-        # menu_bg_color_button.clicked.connect(pick_menu_bg_color)
-        # update_menu_bg_button()
-        
-        # menu_bg_color_layout.addWidget(menu_bg_color_label)
-        # menu_bg_color_layout.addWidget(menu_bg_color_button)
-        # menu_bg_color_layout.setContentsMargins(20, 0, 0, 0)
-        # menu_bg_color_layout.addStretch()
-        # layout.addLayout(menu_bg_color_layout)
-
-        # colors_zones_label = QLabel("zones par actions")
-        # colors_zones_label.setStyleSheet("font-style: italic; color: white; margin-left: 35px;")
-        # layout.addWidget(colors_zones_label)
-
-        # # Variables pour stocker les couleurs sélectionnées
-        # selected_colors = {
-        #     "copy": self.action_zone_colors["copy"],
-        #     "term": self.action_zone_colors["term"],
-        #     "exec": self.action_zone_colors["exec"]
-        # }
-        
-        # def create_color_button(action_name, label_text, rgb):
-        #     """Crée un bouton coloré qui ouvre un color picker"""
-        #     layout_h = QHBoxLayout()
-        #     label = QLabel(label_text)
-        #     label.setFixedWidth(140)
-            
-        #     button = QPushButton()
-        #     button.setFixedHeight(30)
-        #     button.setFixedWidth(150)
-            
-        #     def update_button_color():
-        #         r, g, b = selected_colors[action_name]
-        #         button.setStyleSheet(f"""
-        #             QPushButton {{
-        #                 background-color: rgb({r}, {g}, {b});
-        #                 border: 2px solid rgba(255, 255, 255, 100);
-        #                 border-radius: 10px;
-        #             }}
-        #             QPushButton:hover {{
-        #                 border: 2px solid rgba(255, 255, 255, 200);
-        #             }}
-        #         """)
-            
-        #     def pick_color():
-        #         r, g, b = selected_colors[action_name]
-        #         initial_color = QColor(r, g, b)
-        #         color = QColorDialog.getColor(initial_color, dialog, f"Couleur pour {label_text}")
-        #         if color.isValid():
-        #             selected_colors[action_name] = (color.red(), color.green(), color.blue())
-        #             update_button_color()
-        #             # Appliquer en live
-        #             self.action_zone_colors[action_name] = selected_colors[action_name]
-        #             apply_live()
-            
-        #     button.clicked.connect(pick_color)
-        #     update_button_color()
-            
-        #     layout_h.addWidget(label)
-        #     layout_h.addWidget(button)
-        #     layout_h.setContentsMargins(20, 0, 0, 0)
-        #     layout_h.addStretch()
-        #     return layout_h
-        dialog.setFixedSize(400, 980)
-        
-        if x is None or y is None:
-            screen = QApplication.primaryScreen().geometry()
-            x = screen.center().x() - dialog.width() // 2
-            y = screen.center().y() - dialog.height() // 2
-        dialog.move(x, y)
-        
-        content = QWidget()
-        content.setStyleSheet(self.dialog_style)
-        
-        layout = QVBoxLayout(content)
-        layout.setSpacing(12)
-        layout.setContentsMargins(20, 20, 20, 20)
-        
-        #     # ===================== COULEURS =====================
-        # layout.addWidget(QLabel("🎨 Couleurs", styleSheet="font-weight:bold;"))
-
-        # # --- MENU BACKGROUND ---
-        # row = QHBoxLayout()
-        # row.addWidget(QLabel("🔘 Général"))
-
-        # # menu_picker = InlineColorPicker(self.menu_background_color)
-        # menu_picker = InlineColorPicker(
-        #     self.menu_background_color,
-        #     radius=38
-        # )
-        # menu_picker.colorChanged.connect(
-        #     lambda rgb: (
-        #         setattr(self, "menu_background_color", rgb),
-        #         apply_live()
-        #     )
-        # )
-
-        # row.addWidget(menu_picker)
-        # row.addStretch()
-        # layout.addLayout(row)
-
-        # # --- ZONES ---
-        # layout.addWidget(QLabel(
-        #     "zones par actions",
-        #     styleSheet="font-style:italic; margin-left:35px;"
-        # ))
-
-        # def add_zone_picker(action, label):
-        #     row = QHBoxLayout()
-        #     row.addWidget(QLabel(label))
-
-        #     # picker = InlineColorPicker(self.action_zone_colors[action])
-        #     picker = InlineColorPicker(
-        #         self.action_zone_colors[action],
-        #         radius=38
-        #     )
-        #     picker.colorChanged.connect(
-        #         lambda rgb, a=action: (
-        #             self.action_zone_colors.__setitem__(a, rgb),
-        #             apply_live()
-        #         )
-        #     )
-
-        #     row.addWidget(picker)
-        #     row.addStretch()
-        #     layout.addLayout(row)
         layout.addWidget(QLabel("🎨 Couleurs", styleSheet="font-weight:bold;"))
 
         grid = QGridLayout()
@@ -3603,7 +3296,7 @@ class ClipNotesWindow(QMainWindow):
             title_lbl = QLabel(title)
             title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-            picker = InlineColorPicker(
+            picker = CircularColorPicker(
                 initial_rgb,
                 radius=38
             )
@@ -3857,12 +3550,12 @@ class ClipNotesWindow(QMainWindow):
         neon_checkbox.stateChanged.connect(on_neon_changed)
         layout.addWidget(neon_checkbox)
 
-        # Couleur du néon avec InlineColorPicker
+        # Couleur du néon avec CircularColorPicker
         neon_color_row = QHBoxLayout()
         neon_color_label = QLabel("Couleur")
         neon_color_label.setFixedWidth(140)
         
-        neon_picker = InlineColorPicker(
+        neon_picker = CircularColorPicker(
             self.neon_color,
             radius=28  # plus petit que les autres
         )
@@ -3942,12 +3635,12 @@ class ClipNotesWindow(QMainWindow):
         
         shadow_checkbox.stateChanged.connect(on_shadow_enabled_changed)
         layout.addWidget(shadow_checkbox)
-        # Couleur de l'ombre avec InlineColorPicker
+        # Couleur de l'ombre avec CircularColorPicker
         shadow_color_row = QHBoxLayout()
         shadow_color_label = QLabel("Couleur")
         shadow_color_label.setFixedWidth(140)
 
-        shadow_picker = InlineColorPicker(
+        shadow_picker = CircularColorPicker(
             self.shadow_color,
             radius=28  # plus petit que les autres
         )
@@ -4381,108 +4074,11 @@ class ClipNotesWindow(QMainWindow):
         self.current_popup.toggle_neon(self.central_neon)
         self.current_popup.timer.start(self.neon_speed)
 
-# if __name__ == "__main__":
-#     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-#     LOCK_FILE = os.path.join(SCRIPT_DIR, ".clipnotes.lock")
-
-#     def create_lock_file():
-#         with open(LOCK_FILE, 'w') as f:
-#             f.write(str(os.getpid()))
-
-#     def remove_lock_file():
-#         try:
-#             if os.path.exists(LOCK_FILE):
-#                 os.remove(LOCK_FILE)
-#         except:
-#             pass
-
-#     create_lock_file()
     
-#     def cleanup_handler(sig, frame):
-#         remove_lock_file()
-#         QApplication.quit()
-#         sys.exit(0)
-    
-#     signal.signal(signal.SIGINT, cleanup_handler)
-#     signal.signal(signal.SIGTERM, cleanup_handler)
-    
-#     app = QApplication(sys.argv)
-    
-#     global tracker
-#     tracker = CursorTracker()
-#     tracker.show()
-
-#     max_wait = 0.3
-#     elapsed = 0.0
-#     while (tracker.last_x == 0 and tracker.last_y == 0) and elapsed < max_wait:
-#         QApplication.processEvents()
-#         time.sleep(0.1)
-#         elapsed += 0.1
-    
-#     tracker.update_pos()
-#     x, y = tracker.last_x, tracker.last_y
-    
-#     QApplication.processEvents()
-    
-#     main_app = ClipNotesWindow()
-#     main_app.tracker = tracker
-
-#     # Fenêtre de calibration du menu Radial
-#     # calibration_window = CalibrationWindow(tracker, main_app)
-#     # calibration_window.show()
-
-#     main_app.show_window_at(x, y, "")
-
-#     try:
-#         sys.exit(app.exec())
-#     finally:
-#         remove_lock_file()
-
-
-
-    # global tracker
-    # tracker = CursorTracker()
-
-    # main_app = ClipNotesWindow()
-    # main_app.tracker = tracker
-
-    # def on_first_move():
-    #     """Appelé dès que la souris bouge sur l'overlay."""
-    #     x, y = tracker.last_x, tracker.last_y
-    #     tracker.hide_overlay()  # Cacher l'overlay
-    #     main_app.show_window_at(x, y, "")
-
-    # tracker.on_first_move_callback = on_first_move
-    # tracker.show()
-
-    # try:
-    #     sys.exit(app.exec())
-    # finally:
-    #     remove_lock_file()
-
-
-
-
-
-
-
-
-
-
-    
-import sys, os, time, json, subprocess, signal
-
 # APRÈS:
-import sys, os, time, json, subprocess, signal, fcntl
 LOCK_FILE = "/tmp/clipnotes.lock"
 PID_FILE = "/tmp/clipnotes.pid"
 lock_fd = None  # File descriptor global pour maintenir le lock
-
-
-# ============================================================
-# 3. AVANT "if __name__ == "__main__":" (ligne ~3848)
-#    Ajouter ces fonctions de gestion du lock
-# ============================================================
 
 # ====== FONCTIONS DE GESTION DU LOCK ET PID ======
 
