@@ -571,7 +571,7 @@ class RadialMenu(QWidget):
                     # C'est un clip, montrer qu'on peut l'attraper
                     self.setCursor(Qt.CursorShape.OpenHandCursor)
                     self.update()
-                    
+
             # Cas spécial : hover sur le bouton ➖ -> ouvrir le sous-menu
             if button_index == self.storage_button_index:
                 self.show_storage_submenu(watched)
@@ -1559,7 +1559,7 @@ class RadialMenu(QWidget):
         
         # Si on est trop près du centre ou au-delà de la zone externe, pas de hover
         # if distance < 58 or distance > self.radius + self.btn_size + 10:
-        if distance < 40 or distance > self.radius + self.btn_size + 10:
+        if distance < 20 or distance > self.radius + self.btn_size + 10:
             if self.hovered_action is not None or self.central_icon is not None:
                 self.hovered_action = None
                 self.hovered_button_index = None
@@ -1602,6 +1602,7 @@ class RadialMenu(QWidget):
         
         # Mettre à jour si l'action survolée a changé
         if hovered_action != self.hovered_action:
+            self.on_leave_special_zone()
             self.hovered_action = hovered_action
             # Masquer tous les badges d'abord
             for badge in self.action_badges.values():
