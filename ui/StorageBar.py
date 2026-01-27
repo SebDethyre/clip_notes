@@ -117,22 +117,22 @@ class StorageBar(QWidget):
                 btn.setIcon(QIcon(image_pixmap(label, 34)))
                 btn.setIconSize(QSize(34, 34))
             elif is_emoji(label):
-                btn.setIcon(QIcon(emoji_pixmap(label, 28)))
-                btn.setIconSize(QSize(28, 28))
+                btn.setIcon(QIcon(emoji_pixmap(label, 32)))
+                btn.setIconSize(QSize(32, 32))
             else:
-                btn.setIcon(QIcon(text_pixmap(label, 28)))
-                btn.setIconSize(QSize(28, 28))
+                btn.setIcon(QIcon(text_pixmap(label, 32)))
+                btn.setIconSize(QSize(32, 32))
             
+                    # border: 2px solid rgba(255, 255, 255, 50);
+                    # border: 2px solid rgba(255, 255, 255, 0);
             # Style du bouton
             btn.setStyleSheet(f"""
                 QPushButton {{
                     background-color: rgba(80, 80, 80, 100);
                     border-radius: {self.btn_size // 2}px;
-                    border: 2px solid rgba(255, 255, 255, 0);
                 }}
                 QPushButton:hover {{
-                    background-color: rgba(120, 120, 120, 200);
-                    border: 2px solid rgba(255, 255, 255, 50);
+                    background-color: rgba(255, 255, 255, 100);
                 }}
             """)
             
@@ -224,9 +224,9 @@ class StorageBar(QWidget):
         painter.drawPath(path)
         
         # Dessiner la bordure
-        painter.setPen(QPen(self.border_color, 1))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawPath(path)
+        # painter.setPen(QPen(self.border_color, 1))
+        # painter.setBrush(Qt.BrushStyle.NoBrush)
+        # painter.drawPath(path)
     
     def animate_open(self):
         """Animation d'ouverture de la barre - élargissement de gauche à droite"""

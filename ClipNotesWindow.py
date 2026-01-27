@@ -411,8 +411,9 @@ class ClipNotesWindow(QMainWindow):
                                 'exec': 2
                             }
                             slider_value = action_to_slider.get(action, 0)
+                            string = clip.get('string', None)
                             html_string = clip.get('html_string', None)
-                            return (slider_value, html_string)
+                            return (slider_value, string, html_string)
         except Exception as e:
             print(f"Erreur lecture JSON: {e}")
         return (0, None)
@@ -524,7 +525,7 @@ class ClipNotesWindow(QMainWindow):
         self.buttons_sub = []
         for name, (action_data, value, action) in sorted_clips:
             # Lire l'action ET le HTML depuis le JSON pour ce clip
-            clip_slider_value, clip_html = self.get_clip_data_from_json(name)
+            clip_slider_value, clip, clip_html = self.get_clip_data_from_json(name)
             tooltip = value.replace(r'\n', '\n')
             self.buttons_sub.append(
                 (
@@ -585,7 +586,7 @@ class ClipNotesWindow(QMainWindow):
         for name, (action_data, value, action) in sorted_clips:
             tooltip = value.replace(r'\n', '\n')
             # Récupérer le HTML pour le tooltip
-            _, clip_html = self.get_clip_data_from_json(name)
+            _, clip, clip_html = self.get_clip_data_from_json(name)
             self.buttons_sub.append(
                 (
                     name, 
@@ -641,7 +642,7 @@ class ClipNotesWindow(QMainWindow):
         for name, (action_data, value, action) in sorted_clips:
             tooltip = value.replace(r'\n', '\n')
             # Récupérer le HTML pour le tooltip
-            _, clip_html = self.get_clip_data_from_json(name)
+            _, clip, clip_html = self.get_clip_data_from_json(name)
             self.buttons_sub.append(
                 (
                     name, 
@@ -2404,7 +2405,7 @@ class ClipNotesWindow(QMainWindow):
         for name, (action_data, value, action) in sorted_clips:
             tooltip = value.replace(r'\n', '\n')
             # Récupérer le HTML pour le tooltip
-            _, clip_html = self.get_clip_data_from_json(name)
+            _, clip, clip_html = self.get_clip_data_from_json(name)
             self.buttons_sub.append(
                 (
                     name, 

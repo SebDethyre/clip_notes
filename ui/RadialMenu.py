@@ -2703,7 +2703,7 @@ class RadialMenu(QWidget):
         """Affiche une fenêtre de confirmation pour stocker un clip (depuis le drag au centre)"""
         
         dialog = QDialog(self.tracker if self.tracker else self)
-        dialog.setWindowTitle("💾 Stocker")
+        dialog.setWindowTitle("🔧 Modifier / 💾 Stocker")
         dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
@@ -2717,7 +2717,7 @@ class RadialMenu(QWidget):
         palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
         dialog.setPalette(palette)
         
-        dialog.setFixedSize(350, 180)
+        dialog.setFixedSize(450, 180)
         dialog.move(self.x - dialog.width() // 2, self.y - dialog.height() // 2)
         
         content = QWidget()
@@ -2745,7 +2745,7 @@ class RadialMenu(QWidget):
         
         # Message de confirmation
         display_alias = alias if len(alias) <= 30 else alias[:27] + "..."
-        message_label = QLabel(f"Voulez-vous stocker ce clip ?\n\n{display_alias}")
+        message_label = QLabel(f"Voulez-vous modifier / stocker ce clip ?\n\n{display_alias}")
         message_label.setWordWrap(True)
         message_label.setStyleSheet("color: white; font-size: 14px;")
         message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -2758,6 +2758,21 @@ class RadialMenu(QWidget):
         cancel_button = QPushButton("Annuler")
         cancel_button.setFixedHeight(32)
         cancel_button.clicked.connect(dialog.reject)
+        
+        edit_button = QPushButton("Modifier")
+        edit_button.setFixedHeight(32)
+        edit_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 255, 0, 150);
+                border: 1px solid rgba(255, 255, 0, 200);
+                border-radius: 6px;
+                padding: 6px;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 0, 200);
+            }
+        """)
         
         store_button = QPushButton("Stocker")
         store_button.setFixedHeight(32)
@@ -2777,7 +2792,7 @@ class RadialMenu(QWidget):
         def confirm_store():
             if self.app_instance:
                 # Récupérer le HTML depuis le fichier JSON
-                _, html_string = self.app_instance.get_clip_data_from_json(alias)
+                _, string, html_string = self.app_instance.get_clip_data_from_json(alias)
                 
                 # Vérifier si c'est un groupe
                 if is_group(self.app_instance.clip_notes_file_json, alias):
@@ -2809,10 +2824,21 @@ class RadialMenu(QWidget):
                 self.tooltip_window.show_message("✓ Clip stocké", 1500)
                 self.update_tooltip_position()
                 self.app_instance.refresh_menu()
-        
+
+        def local_edit_clip():
+            if self.app_instance:
+                # Récupérer le HTML depuis le fichier JSON
+                dialog.accept()
+                slider_value, string, html_string = self.app_instance.get_clip_data_from_json(alias)
+                self.app_instance.edit_clip(alias, string, self.x, self.y, slider_value, html_string)
+                
+        # clip_slider_value, clip_html = self.get_clip_data_from_json(name)
+        # self.edit_clip(name, value, x, y, slider_value, html_string=html_string)
         store_button.clicked.connect(confirm_store)
+        edit_button.clicked.connect(local_edit_clip)
         
         buttons_layout.addWidget(cancel_button)
+        buttons_layout.addWidget(edit_button)
         buttons_layout.addWidget(store_button)
         layout.addLayout(buttons_layout)
         
