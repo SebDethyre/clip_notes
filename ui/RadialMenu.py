@@ -135,9 +135,10 @@ class RadialMenu(QWidget):
         # self.hover_close_timer.timeout.connect(self.check_hover_submenu_close)
         self.special_buttons_by_numbers = {
             5 : ["➖", "⚙️", "🔧", "➕"],
-            6 : ["➖", "💾", "⚙️", "🔧", "➕"],
-            7 : ["➖", "💾", "⚙️", "🔧", "➕"]
+            6 : ["➕", "🔧", "⚙️", "💾", "➖"],
+            7 : ["➕", "🔧", "⚙️", "💾", "➖"]
         }
+        
         # === ANIMATION BOUTONS SPÉCIAUX (hover sur ➕) ===
         self.special_buttons_revealed = False  # Les boutons spéciaux sont-ils complètement révélés ?
         self.special_animating = False  # Animation en cours ?

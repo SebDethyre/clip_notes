@@ -97,8 +97,8 @@ class ClipNotesWindow(QMainWindow):
         """
         self.special_buttons_by_number = {
             5 : ["➖", "⚙️", "🔧", "➕"],
-            6 : ["➖", "💾", "⚙️", "🔧", "➕"],
-            7 : ["➖", "💾", "⚙️", "🔧", "➕"]
+            6 : ["➕", "🔧", "⚙️", "💾", "➖"],
+            7 : ["➕", "🔧", "⚙️", "💾", "➖"]
         }
         # Attribution des fonctions aux boutons de menus "fixes"
         self.buttons_actions_by_number = {
