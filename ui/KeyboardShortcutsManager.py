@@ -11,7 +11,7 @@ from PyQt6.QtGui import QKeySequence, QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QWidget,
-    QScrollArea, QFrame, QAbstractItemView
+    QScrollArea, QFrame, QAbstractItemView, QTabWidget, QSizePolicy
 )
 
 from utils import emoji_pixmap, image_pixmap, text_pixmap, is_emoji
@@ -282,32 +282,39 @@ class ShortcutCaptureDialog(QDialog):
         pass
 
 
-class KeyboardShortcutsManager(QDialog):
+# class KeyboardShortcutsManager(QDialog):
+class KeyboardShortcutsManager(QWidget):
     """
     Fenêtre affichant le tableau récapitulatif des raccourcis clavier.
     Permet de configurer les raccourcis pour chaque bouton/clip.
     """
     
-    def __init__(self, app_instance, parent=None, nb_icons_menu=None):
+    def __init__(self, app_instance, parent=None, nb_icons_menu=None, dialog_parent=None):
         super().__init__(parent)
         self.nb_icons_menu = nb_icons_menu
         self.app_instance = app_instance
+        self.dialog_parent = dialog_parent  # Référence au dialog parent pour le fermer
         self.shortcuts_file = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), 
             "shortcuts.json"
         )
         self.shortcuts = self.load_shortcuts()
         
-        self.setWindowTitle("⌨️ Raccourcis clavier")
-        self.setWindowFlags(
-            Qt.WindowType.Dialog | 
-            Qt.WindowType.WindowStaysOnTopHint
-        )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setMinimumSize(850, 500)
-        self.resize(850, 600)
+        # self.setWindowTitle("⌨️ Raccourcis clavier")
+        # self.setWindowFlags(
+        #     Qt.WindowType.Dialog | 
+        #     Qt.WindowType.WindowStaysOnTopHint
+        # )
+        # self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        # self.setMinimumSize(850, 500)
+        # self.resize(850, 600)
         
         self.setup_ui()
+
+    def get_main_widget(self):
+        """Retourne le widget principal contenant toute l'UI (pour l'embed dans un onglet)"""
+        # main_layout = QVBoxLayout(self) contient self.container
+        return self.findChild(QFrame)  # ton container principal
     
     def load_shortcuts(self):
         """Charge les raccourcis depuis le fichier JSON"""
@@ -334,50 +341,50 @@ class KeyboardShortcutsManager(QDialog):
         
         # Conteneur principal avec fond sombre
         container = QFrame(self)
+                # border-radius: 16px;
         container.setStyleSheet("""
             QFrame {
                 background-color: rgba(20, 20, 25, 250);
-                border-radius: 16px;
                 border: 1px solid rgba(255, 255, 255, 15);
             }
         """)
         container_layout = QVBoxLayout(container)
-        container_layout.setContentsMargins(20, 20, 20, 20)
+        # container_layout.setContentsMargins(20, 20, 20, 20)
         container_layout.setSpacing(16)
         
-        # Titre
-        title_layout = QHBoxLayout()
-        title_label = QLabel("⌨️ Raccourcis clavier")
-        title_label.setStyleSheet("""
-            QLabel {
-                color: white;
-                font-size: 20px;
-                font-weight: bold;
-                background: transparent;
-                border: none;
-            }
-        """)
-        title_layout.addWidget(title_label)
-        title_layout.addStretch()
+        # # Titre
+        # title_layout = QHBoxLayout()
+        # title_label = QLabel("⌨️ Raccourcis clavier")
+        # title_label.setStyleSheet("""
+        #     QLabel {
+        #         color: white;
+        #         font-size: 20px;
+        #         font-weight: bold;
+        #         background: transparent;
+        #         border: none;
+        #     }
+        # """)
+        # title_layout.addWidget(title_label)
+        # title_layout.addStretch()
         
         # Bouton fermer
-        close_btn = QPushButton("✕")
-        close_btn.setFixedSize(32, 32)
-        close_btn.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(255, 100, 100, 60);
-                border: none;
-                border-radius: 16px;
-                color: white;
-                font-size: 16px;
-            }
-            QPushButton:hover {
-                background-color: rgba(255, 100, 100, 120);
-            }
-        """)
-        close_btn.clicked.connect(self.close)
-        title_layout.addWidget(close_btn)
-        container_layout.addLayout(title_layout)
+        # close_btn = QPushButton("✕")
+        # close_btn.setFixedSize(32, 32)
+        # close_btn.setStyleSheet("""
+        #     QPushButton {
+        #         background-color: rgba(255, 100, 100, 60);
+        #         border: none;
+        #         border-radius: 16px;
+        #         color: white;
+        #         font-size: 16px;
+        #     }
+        #     QPushButton:hover {
+        #         background-color: rgba(255, 100, 100, 120);
+        #     }
+        # """)
+        # close_btn.clicked.connect(self.close)
+        # title_layout.addWidget(close_btn)
+        # container_layout.addLayout(title_layout)
         
         # Info
         info_label = QLabel("Cliquez sur 'Définir' pour configurer un raccourci. Les touches 1-9 lancent directement les clips par défaut.")
@@ -447,6 +454,7 @@ class KeyboardShortcutsManager(QDialog):
         # Séparateur
         separator = QFrame()
         separator.setFrameShape(QFrame.Shape.HLine)
+        # separator.setStyleSheet("background-color: rgba(255, 255, 255, 20);")
         separator.setStyleSheet("background-color: rgba(255, 255, 255, 20);")
         separator.setFixedHeight(1)
         table_layout.addWidget(separator)
@@ -476,11 +484,33 @@ class KeyboardShortcutsManager(QDialog):
                 background-color: rgba(255, 100, 100, 60);
             }
         """)
-        reset_btn.clicked.connect(self.reset_all_shortcuts)
+        reset_btn.clicked.connect(self.confirm_reset_all_shortcuts)
         buttons_layout.addWidget(reset_btn)
         
+        # Bouton Fermer
+        close_btn = QPushButton("Fermer")
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(100, 100, 100, 50);
+                border: 1px solid rgba(150, 150, 150, 80);
+                border-radius: 8px;
+                padding: 10px 20px;
+                color: white;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: rgba(150, 150, 150, 80);
+            }
+        """)
+        close_btn.clicked.connect(self.close_parent_dialog)
+        buttons_layout.addWidget(close_btn)
+        
         container_layout.addLayout(buttons_layout)
-        main_layout.addWidget(container)
+        main_layout.addWidget(container, 1)
+        # if isinstance(self.parent(), QTabWidget):
+        #     # Prendre toute la taille de l'onglet
+        #     self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        #     self.resize(self.parent().width(), self.parent().height())
     
     def populate_table(self, layout):
         """Remplit le tableau avec les boutons fixes et les clips"""
@@ -501,14 +531,13 @@ class KeyboardShortcutsManager(QDialog):
         """)
         layout.addWidget(section_label)
         supprimer_text = "Supprimer, Stocker, Stock" if self.nb_icons_menu == 5 else "Supprimer"
+        stocker_text = "Stocker, Stock" if self.nb_icons_menu == 6 else "Stocker, Stock" if self.nb_icons_menu == 7 else "Stocker"
         button_descriptions = {
             "➕": "Ajouter un clip",
             "🔧": "Modifier",
             "⚙️": "Configuration",
             "📦": "Stocker, Stock",
-            "💾": "Stocker",
-            "📋": "Stock",
-            "⌨️": "Raccourcis clavier",
+            "💾": stocker_text,
             "➖": supprimer_text,
         }
         
@@ -545,9 +574,10 @@ class KeyboardShortcutsManager(QDialog):
         # Charger les clips depuis le JSON
         clips = self.load_clips()
         
-        # Trier les clips comme le menu radial : copy, term, exec
-        action_order = {"copy": 0, "term": 1, "exec": 2}
-        sorted_clips = sorted(clips, key=lambda c: action_order.get(c.get('action', 'copy'), 3))
+        # Trier les clips selon l'ordre configuré dans l'app
+        custom_order = getattr(self.app_instance, 'action_order', ["copy", "term", "exec"])
+        action_order = {action: i for i, action in enumerate(custom_order)}
+        sorted_clips = sorted(clips, key=lambda c: action_order.get(c.get('action', 'copy'), 999))
         
         action_description = {
             "copy" : "copie",
@@ -722,13 +752,105 @@ class KeyboardShortcutsManager(QDialog):
                 return False
         return False
     
+    def close_parent_dialog(self):
+        """Ferme le dialog parent (fenêtre de configuration)"""
+        if self.dialog_parent:
+            self.dialog_parent.accept()
+        else:
+            self.close()
+    
+    def confirm_reset_all_shortcuts(self):
+        """Affiche une confirmation avant de réinitialiser les raccourcis"""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
+        from PyQt6.QtGui import QPalette, QColor
+        
+        confirm_dialog = QDialog(self)
+        confirm_dialog.setWindowTitle("⚠️ Confirmation")
+        confirm_dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+        confirm_dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        # Palette sombre
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Base, QColor(35, 35, 35))
+        palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
+        palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
+        confirm_dialog.setPalette(palette)
+        
+        confirm_dialog.setFixedSize(350, 180)
+        
+        content = QWidget()
+        content.setStyleSheet("""
+            QWidget {
+                background-color: rgba(30, 30, 30, 230);
+                border-radius: 12px;
+                color: white;
+            }
+            QPushButton {
+                background-color: rgba(255, 255, 255, 30);
+                border: 1px solid rgba(255, 255, 255, 60);
+                border-radius: 6px;
+                padding: 6px;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 60);
+            }
+        """)
+        
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # Message
+        message = QLabel("Réinitialiser tous les raccourcis ?\n\nCette action est irréversible.")
+        message.setStyleSheet("color: white; font-size: 14px;")
+        message.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        message.setWordWrap(True)
+        layout.addWidget(message)
+        
+        # Boutons
+        buttons_layout = QHBoxLayout()
+        
+        cancel_button = QPushButton("Annuler")
+        cancel_button.setFixedHeight(35)
+        cancel_button.clicked.connect(confirm_dialog.reject)
+        
+        reset_button = QPushButton("Réinitialiser")
+        reset_button.setFixedHeight(35)
+        reset_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 70, 70, 150);
+                border: 1px solid rgba(255, 100, 100, 200);
+                border-radius: 6px;
+                padding: 6px;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 100, 100, 200);
+            }
+        """)
+        reset_button.clicked.connect(lambda: (confirm_dialog.accept(), self.reset_all_shortcuts()))
+        
+        buttons_layout.addWidget(cancel_button)
+        buttons_layout.addWidget(reset_button)
+        layout.addLayout(buttons_layout)
+        
+        dialog_layout = QVBoxLayout(confirm_dialog)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        dialog_layout.addWidget(content)
+        
+        confirm_dialog.exec()
+    
     def reset_all_shortcuts(self):
         """Réinitialise tous les raccourcis"""
         self.shortcuts = {}
         self.save_shortcuts()
         # Recharger la fenêtre
         self.close()
-        new_window = KeyboardShortcutsManager(self.app_instance, self.parent(), self.nb_icons_menu)
+        new_window = KeyboardShortcutsManager(self.app_instance, self.parent(), self.nb_icons_menu, self.dialog_parent)
         new_window.show()
     
     def load_clips(self):

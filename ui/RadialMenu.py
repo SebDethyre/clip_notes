@@ -134,9 +134,9 @@ class RadialMenu(QWidget):
         # self.hover_close_timer.setSingleShot(True)
         # self.hover_close_timer.timeout.connect(self.check_hover_submenu_close)
         self.special_buttons_by_numbers = {
-            5 : ["➖", "⌨️", "⚙️", "🔧", "➕"],
-            6 : ["➖", "📦", "⌨️", "⚙️", "🔧", "➕"],
-            7 : ["➖", "📋", "💾", "⌨️", "⚙️", "🔧", "➕"]
+            5 : ["➖", "⚙️", "🔧", "➕"],
+            6 : ["➖", "💾", "⚙️", "🔧", "➕"],
+            7 : ["➖", "💾", "⚙️", "🔧", "➕"]
         }
         # === ANIMATION BOUTONS SPÉCIAUX (hover sur ➕) ===
         self.special_buttons_revealed = False  # Les boutons spéciaux sont-ils complètement révélés ?
@@ -173,7 +173,6 @@ class RadialMenu(QWidget):
                 "➕": "Ajouter",
                 "🔧": "Modifier",
                 "⚙️": "Configurer",
-                "⌨️": "Raccourcis",
                 "➖": "Supprimer, Stocker, Stock"
             }
         elif self.nb_icons_menu == 6:
@@ -181,7 +180,6 @@ class RadialMenu(QWidget):
                 "➕": "Ajouter",
                 "🔧": "Modifier",
                 "⚙️": "Configurer",
-                "⌨️": "Raccourcis",
                 "➖": "Supprimer",
                 "📦": "Stocker, Stock"
             }
@@ -190,9 +188,7 @@ class RadialMenu(QWidget):
                 "➕": "Ajouter",
                 "🔧": "Modifier",
                 "⚙️": "Configurer",
-                "⌨️": "Raccourcis",
-                "💾": "Stocker",
-                "📋": "Stock",
+                "💾": "Stocker, Stock",
                 "➖": "Supprimer",
             }
         if buttons:
@@ -310,12 +306,12 @@ class RadialMenu(QWidget):
                         btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
                 elif self.nb_icons_menu == 6:   
                     # Cas spécial : le bouton 📦 ouvre le sous-menu de stockage
-                    if label == "📦":
-                        self.storage_button_index = i
-                        # Le clic ouvre aussi le sous-menu (pour la navigation clavier)
-                        btn.clicked.connect(lambda checked=False, b=btn: self.show_storage_submenu(b))
-                    else:
-                        btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
+                    # if label == "💾":
+                    #     self.storage_button_index = i
+                    #     # Le clic ouvre aussi le sous-menu (pour la navigation clavier)
+                    #     btn.clicked.connect(lambda checked=False, b=btn: self.show_storage_submenu(b))
+                    # else:
+                    btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
                 elif self.nb_icons_menu == 7:   
                     btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
                 
@@ -851,31 +847,29 @@ class RadialMenu(QWidget):
         
         # Créer les boutons du sous-menu
         x, y = self.x, self.y
-        if self.nb_icons_menu == 5:
-            submenu_buttons = [
-                ("💾", lambda: self.storage_action_store(x, y), "Stocker"),
-                ("🗑️", lambda: self.storage_action_delete(x, y), "Supprimer"),
-                ("📋", lambda: self.storage_action_clips(x, y), "Clips stockés"),
-            ]
-        elif self.nb_icons_menu == 6:
-            submenu_buttons = [
-                ("💾", lambda: self.storage_action_store(x, y), "Stocker"),
-                ("📋", lambda: self.storage_action_clips(x, y), "Clips stockés"),
-            ]
+        # if self.nb_icons_menu == 5:
+        #     submenu_buttons = [
+        #         ("💾", lambda: self.storage_action_store(x, y), "Stocker"),
+        #         ("🗑️", lambda: self.storage_action_delete(x, y), "Supprimer"),
+        #     ]
+        # elif self.nb_icons_menu == 6:
+        submenu_buttons = [
+            ("💾", lambda: self.storage_action_store(x, y), "Stocker"),
+        ]
         
         # Créer la barre horizontale avec self comme parent (nécessaire pour Wayland)
         # Le bord gauche de la barre est positionné sur le centre du bouton
-        self.hover_submenu = StorageBar(
-            btn_center_global.x(),
-            btn_center_global.y(),
-            submenu_buttons,
-            parent_menu=self,
-            app_instance=self.app_instance,
-            menu_background_color=self.menu_background_color,
-            menu_opacity=self.widget_opacity
-        )
-        self.hover_submenu.show()
-        self.hover_submenu.animate_open()
+        # self.hover_submenu = StorageBar(
+        #     btn_center_global.x(),
+        #     btn_center_global.y(),
+        #     submenu_buttons,
+        #     parent_menu=self,
+        #     app_instance=self.app_instance,
+        #     menu_background_color=self.menu_background_color,
+        #     menu_opacity=self.widget_opacity
+        # )
+        # self.hover_submenu.show()
+        # self.hover_submenu.animate_open()
     
     def storage_action_delete(self, x, y):
         """Action pour passer en mode delete"""
@@ -1990,7 +1984,7 @@ class RadialMenu(QWidget):
         # === OMBRE pour effet de volume (seulement la partie visible) ===
         if self.shadow_enabled and self.shadow_offset > 0:
             # Calculer le décalage X/Y selon l'angle (0=droite, 90=bas, 180=gauche, 270=haut)
-            angle_rad = math.radians(self.shadow_angle)
+            angle_rad = math.radians(self.shadow_angle - 90)
             shadow_offset_x = int(self.shadow_offset * math.cos(angle_rad) * self.scale_factor)
             shadow_offset_y = int(self.shadow_offset * math.sin(angle_rad) * self.scale_factor)
             
@@ -2702,6 +2696,9 @@ class RadialMenu(QWidget):
     def show_store_confirmation_from_drag(self, alias, value, action):
         """Affiche une fenêtre de confirmation pour stocker un clip (depuis le drag au centre)"""
         
+        # Vérifier si c'est une image
+        is_image = "/" in alias and os.path.exists(alias)
+        
         dialog = QDialog(self.tracker if self.tracker else self)
         dialog.setWindowTitle("🔧 Modifier / 💾 Stocker")
         dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
@@ -2717,7 +2714,7 @@ class RadialMenu(QWidget):
         palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
         dialog.setPalette(palette)
         
-        dialog.setFixedSize(450, 180)
+        dialog.setFixedSize(450, 250 if is_image else 180)
         dialog.move(self.x - dialog.width() // 2, self.y - dialog.height() // 2)
         
         content = QWidget()
@@ -2743,9 +2740,26 @@ class RadialMenu(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
         
-        # Message de confirmation
-        display_alias = alias if len(alias) <= 30 else alias[:27] + "..."
-        message_label = QLabel(f"Voulez-vous modifier / stocker ce clip ?\n\n{display_alias}")
+        # Afficher l'image si c'est un chemin d'image
+        if is_image:
+            image_label = QLabel()
+            image_label.setFixedSize(64, 64)
+            image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            pixmap = image_pixmap(alias, 64)
+            image_label.setPixmap(pixmap)
+            image_label.setScaledContents(True)
+            
+            image_container = QHBoxLayout()
+            image_container.addStretch()
+            image_container.addWidget(image_label)
+            image_container.addStretch()
+            layout.addLayout(image_container)
+            
+            message_label = QLabel("Voulez-vous modifier / stocker ce clip ?")
+        else:
+            display_alias = alias if len(alias) <= 30 else alias[:27] + "..."
+            message_label = QLabel(f"Voulez-vous modifier / stocker ce clip ?\n\n{display_alias}")
+        
         message_label.setWordWrap(True)
         message_label.setStyleSheet("color: white; font-size: 14px;")
         message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -2854,6 +2868,9 @@ class RadialMenu(QWidget):
     def show_delete_confirmation_from_drag(self, alias, value):
         """Affiche une fenêtre de confirmation pour supprimer un clip (depuis le drag en dehors)"""
         
+        # Vérifier si c'est une image
+        is_image = "/" in alias and os.path.exists(alias)
+        
         dialog = QDialog(self.tracker if self.tracker else self)
         dialog.setWindowTitle("🗑️ Supprimer")
         dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
@@ -2869,7 +2886,7 @@ class RadialMenu(QWidget):
         palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
         dialog.setPalette(palette)
         
-        dialog.setFixedSize(350, 180)
+        dialog.setFixedSize(350, 250 if is_image else 180)
         dialog.move(self.x - dialog.width() // 2, self.y - dialog.height() // 2)
         
         content = QWidget()
@@ -2895,9 +2912,26 @@ class RadialMenu(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
         
-        # Message de confirmation
-        display_alias = alias if len(alias) <= 30 else alias[:27] + "..."
-        message_label = QLabel(f"Voulez-vous vraiment supprimer ?\n\n{display_alias}")
+        # Afficher l'image si c'est un chemin d'image
+        if is_image:
+            image_label = QLabel()
+            image_label.setFixedSize(64, 64)
+            image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            pixmap = image_pixmap(alias, 64)
+            image_label.setPixmap(pixmap)
+            image_label.setScaledContents(True)
+            
+            image_container = QHBoxLayout()
+            image_container.addStretch()
+            image_container.addWidget(image_label)
+            image_container.addStretch()
+            layout.addLayout(image_container)
+            
+            message_label = QLabel("Voulez-vous vraiment supprimer ce clip ?")
+        else:
+            display_alias = alias if len(alias) <= 30 else alias[:27] + "..."
+            message_label = QLabel(f"Voulez-vous vraiment supprimer ?\n\n{display_alias}")
+        
         message_label.setWordWrap(True)
         message_label.setStyleSheet("color: white; font-size: 14px;")
         message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -2972,6 +3006,9 @@ class RadialMenu(QWidget):
     def show_store_confirmation_from_drag_child(self, child_alias, child_string, child_action, group_alias):
         """Affiche une fenêtre de confirmation pour stocker un enfant de groupe (depuis le drag au centre)"""
         
+        # Vérifier si c'est une image
+        is_image = "/" in child_alias and os.path.exists(child_alias)
+        
         dialog = QDialog(self.tracker if self.tracker else self)
         dialog.setWindowTitle("💾 Stocker")
         dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
@@ -2987,7 +3024,7 @@ class RadialMenu(QWidget):
         palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
         dialog.setPalette(palette)
         
-        dialog.setFixedSize(350, 180)
+        dialog.setFixedSize(350, 250 if is_image else 180)
         dialog.move(self.x - dialog.width() // 2, self.y - dialog.height() // 2)
         
         content = QWidget()
@@ -3013,9 +3050,26 @@ class RadialMenu(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
         
-        # Message de confirmation
-        display_alias = child_alias if len(child_alias) <= 30 else child_alias[:27] + "..."
-        message_label = QLabel(f"Stocker ce clip du groupe ?\n\n{display_alias}")
+        # Afficher l'image si c'est un chemin d'image
+        if is_image:
+            image_label = QLabel()
+            image_label.setFixedSize(64, 64)
+            image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            pixmap = image_pixmap(child_alias, 64)
+            image_label.setPixmap(pixmap)
+            image_label.setScaledContents(True)
+            
+            image_container = QHBoxLayout()
+            image_container.addStretch()
+            image_container.addWidget(image_label)
+            image_container.addStretch()
+            layout.addLayout(image_container)
+            
+            message_label = QLabel("Stocker ce clip du groupe ?")
+        else:
+            display_alias = child_alias if len(child_alias) <= 30 else child_alias[:27] + "..."
+            message_label = QLabel(f"Stocker ce clip du groupe ?\n\n{display_alias}")
+        
         message_label.setWordWrap(True)
         message_label.setStyleSheet("color: white; font-size: 14px;")
         message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -3088,6 +3142,9 @@ class RadialMenu(QWidget):
     def show_delete_confirmation_from_drag_child(self, child_alias, child_string, group_alias):
         """Affiche une fenêtre de confirmation pour supprimer un enfant de groupe (depuis le drag en dehors)"""
         
+        # Vérifier si c'est une image
+        is_image = "/" in child_alias and os.path.exists(child_alias)
+        
         dialog = QDialog(self.tracker if self.tracker else self)
         dialog.setWindowTitle("🗑️ Supprimer")
         dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
@@ -3103,7 +3160,7 @@ class RadialMenu(QWidget):
         palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
         dialog.setPalette(palette)
         
-        dialog.setFixedSize(350, 180)
+        dialog.setFixedSize(350, 250 if is_image else 180)
         dialog.move(self.x - dialog.width() // 2, self.y - dialog.height() // 2)
         
         content = QWidget()
@@ -3129,9 +3186,26 @@ class RadialMenu(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
         
-        # Message de confirmation
-        display_alias = child_alias if len(child_alias) <= 30 else child_alias[:27] + "..."
-        message_label = QLabel(f"Supprimer ce clip du groupe ?\n\n{display_alias}")
+        # Afficher l'image si c'est un chemin d'image
+        if is_image:
+            image_label = QLabel()
+            image_label.setFixedSize(64, 64)
+            image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            pixmap = image_pixmap(child_alias, 64)
+            image_label.setPixmap(pixmap)
+            image_label.setScaledContents(True)
+            
+            image_container = QHBoxLayout()
+            image_container.addStretch()
+            image_container.addWidget(image_label)
+            image_container.addStretch()
+            layout.addLayout(image_container)
+            
+            message_label = QLabel("Supprimer ce clip du groupe ?")
+        else:
+            display_alias = child_alias if len(child_alias) <= 30 else child_alias[:27] + "..."
+            message_label = QLabel(f"Supprimer ce clip du groupe ?\n\n{display_alias}")
+        
         message_label.setWordWrap(True)
         message_label.setStyleSheet("color: white; font-size: 14px;")
         message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)

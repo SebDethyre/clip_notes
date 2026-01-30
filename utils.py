@@ -185,10 +185,10 @@ def text_pixmap(text, size=32):
     qt_img = QImage.fromData(data.getvalue(), "PNG")
     return QPixmap.fromImage(qt_img)
 
-def sort_actions_map(actions_map, json_order=None):
+def sort_actions_map(actions_map, json_order=None, custom_action_order=None):
     """
     Trie le dictionnaire d'actions selon :
-    1. L'action (None d'abord, puis copy, term, exec)
+    1. L'action (None d'abord, puis selon custom_action_order ou copy, term, exec par défaut)
     2. L'ordre du JSON si fourni, sinon alphabétiquement par alias
     
     Retourne une liste d'items triés : [(alias, (action_data, value, action)), ...]
@@ -196,14 +196,20 @@ def sort_actions_map(actions_map, json_order=None):
     Args:
         actions_map: Le dictionnaire d'actions
         json_order: Dictionnaire optionnel {alias: index} pour l'ordre personnalisé
+        custom_action_order: Liste optionnelle définissant l'ordre des actions ["copy", "term", "exec"]
     """
     # Définir l'ordre de priorité des actions
-    action_order = {
-        None: 0,    # Boutons d'action (➕, 📝, 🗑️) en premier
-        "copy": 1,
-        "term": 2,
-        "exec": 3
-    }
+    if custom_action_order:
+        action_order = {None: 0}
+        for i, action in enumerate(custom_action_order):
+            action_order[action] = i + 1
+    else:
+        action_order = {
+            None: 0,    # Boutons d'action (➕, 📝, 🗑️) en premier
+            "copy": 1,
+            "term": 2,
+            "exec": 3
+        }
     
     # Convertir le dictionnaire en liste d'items
     items = list(actions_map.items())
