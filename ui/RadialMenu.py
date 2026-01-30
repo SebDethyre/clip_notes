@@ -134,9 +134,7 @@ class RadialMenu(QWidget):
         # self.hover_close_timer.setSingleShot(True)
         # self.hover_close_timer.timeout.connect(self.check_hover_submenu_close)
         self.special_buttons_by_numbers = {
-            5 : ["➖", "⚙️", "🔧", "➕"],
-            6 : ["➕", "🔧", "⚙️", "💾", "➖"],
-            7 : ["➕", "🔧", "⚙️", "💾", "➖"]
+            5 : ["➕", "🔧", "⚙️", "💾", "➖"]
         }
         
         # === ANIMATION BOUTONS SPÉCIAUX (hover sur ➕) ===
@@ -169,29 +167,30 @@ class RadialMenu(QWidget):
             for action, rgb in self.action_zone_colors.items()
         }
         # Tooltips pour les boutons spéciaux
-        if self.nb_icons_menu == 5:
-            special_tooltips = {
-                "➕": "Ajouter",
-                "🔧": "Modifier",
-                "⚙️": "Configurer",
-                "➖": "Supprimer, Stocker, Stock"
-            }
-        elif self.nb_icons_menu == 6:
-            special_tooltips = {
-                "➕": "Ajouter",
-                "🔧": "Modifier",
-                "⚙️": "Configurer",
-                "➖": "Supprimer",
-                "📦": "Stocker, Stock"
-            }
-        elif self.nb_icons_menu == 7:
-            special_tooltips = {
-                "➕": "Ajouter",
-                "🔧": "Modifier",
-                "⚙️": "Configurer",
-                "💾": "Stocker, Stock",
-                "➖": "Supprimer",
-            }
+        # if self.nb_icons_menu == 5:
+        special_tooltips = {
+            "➕": "Ajouter",
+            "🔧": "Modifier",
+            "⚙️": "Configurer",
+            "💾": "Stocker",
+            "➖": "Supprimer"
+        }
+        # elif self.nb_icons_menu == 6:
+        #     special_tooltips = {
+        #         "➕": "Ajouter",
+        #         "🔧": "Modifier",
+        #         "⚙️": "Configurer",
+        #         "➖": "Supprimer",
+        #         "📦": "Stocker, Stock"
+        #     }
+        # elif self.nb_icons_menu == 7:
+        #     special_tooltips = {
+        #         "➕": "Ajouter",
+        #         "🔧": "Modifier",
+        #         "⚙️": "Configurer",
+        #         "💾": "Stocker, Stock",
+        #         "➖": "Supprimer",
+        #     }
         if buttons:
             angle_step = 360 / len(buttons)
             for i, button in enumerate(buttons):
@@ -298,23 +297,23 @@ class RadialMenu(QWidget):
                 btn.setFixedSize(self.btn_size, self.btn_size)
                 btn.move(int(bx), int(by))
                 btn.setVisible(False)
-                if self.nb_icons_menu == 5:
-                    if label == "➖":
-                        self.storage_button_index = i
-                        # Le clic ouvre aussi le sous-menu (pour la navigation clavier)
-                        btn.clicked.connect(lambda checked=False, b=btn: self.show_storage_submenu(b))
-                    else:
-                        btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
-                elif self.nb_icons_menu == 6:   
-                    # Cas spécial : le bouton 📦 ouvre le sous-menu de stockage
-                    # if label == "💾":
-                    #     self.storage_button_index = i
-                    #     # Le clic ouvre aussi le sous-menu (pour la navigation clavier)
-                    #     btn.clicked.connect(lambda checked=False, b=btn: self.show_storage_submenu(b))
-                    # else:
-                    btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
-                elif self.nb_icons_menu == 7:   
-                    btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
+                # if self.nb_icons_menu == 5:
+                #     if label == "➖":
+                #         self.storage_button_index = i
+                #         # Le clic ouvre aussi le sous-menu (pour la navigation clavier)
+                #         btn.clicked.connect(lambda checked=False, b=btn: self.show_storage_submenu(b))
+                #     else:
+                #         btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
+                # elif self.nb_icons_menu == 6:   
+                #     # Cas spécial : le bouton 📦 ouvre le sous-menu de stockage
+                #     # if label == "💾":
+                #     #     self.storage_button_index = i
+                #     #     # Le clic ouvre aussi le sous-menu (pour la navigation clavier)
+                #     #     btn.clicked.connect(lambda checked=False, b=btn: self.show_storage_submenu(b))
+                #     # else:
+                #     btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
+                # elif self.nb_icons_menu == 7:   
+                btn.clicked.connect(self.make_click_handler(callback, label, tooltip, action))
                 
                 # Installer l'eventFilter pour tous les boutons (pour tooltips et badges)
                 btn.installEventFilter(self)
@@ -2552,12 +2551,12 @@ class RadialMenu(QWidget):
             self.hover_submenu = None
         
         # Si on est en mode modification, suppression, stockage ou réordonnancement, revenir au menu de base
-        if self.nb_icons_menu == 5:
-            button_mumber = 3
-        elif self.nb_icons_menu == 6:
-            button_mumber = 2
-        elif self.nb_icons_menu == 7:
-            button_mumber = 1
+        # if self.nb_icons_menu == 5:
+        button_mumber = 3
+        # elif self.nb_icons_menu == 6:
+        #     button_mumber = 2
+        # elif self.nb_icons_menu == 7:
+        #     button_mumber = 1
         # if self.app_instance and (self.app_instance.update_mode or self.app_instance.delete_mode or self.app_instance.store_mode or self.app_instance.reorder_mode):
         if self.app_instance and (self.app_instance.update_mode or self.app_instance.delete_mode or self.app_instance.store_mode):
             self.app_instance.update_mode = False

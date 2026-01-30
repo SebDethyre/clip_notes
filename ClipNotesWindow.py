@@ -96,32 +96,30 @@ class ClipNotesWindow(QMainWindow):
             }
         """
         self.special_buttons_by_number = {
-            5 : ["➖", "⚙️", "🔧", "➕"],
-            6 : ["➕", "🔧", "⚙️", "💾", "➖"],
-            7 : ["➕", "🔧", "⚙️", "💾", "➖"]
+            5 : ["➕", "🔧", "⚙️", "💾", "➖"]
         }
         # Attribution des fonctions aux boutons de menus "fixes"
         self.buttons_actions_by_number = {
+            # 5 : {
+            #         "➕": [(self.new_clip,    [0,0], {}), "Ajouter", None],
+            #         "🔧": [(self.update_clip, [0,0], {}), "Modifier", None],
+            #         "⚙️": [(self.show_config_dialog, [0,0], {}), "Configurer", None],
+            #         "➖": [(self.show_storage_menu, [0,0], {}), "Supprimer", None],
+            #     },
             5 : {
-                    "➕": [(self.new_clip,    [0,0], {}), "Ajouter", None],
-                    "🔧": [(self.update_clip, [0,0], {}), "Modifier", None],
-                    "⚙️": [(self.show_config_dialog, [0,0], {}), "Configurer", None],
-                    "➖": [(self.show_storage_menu, [0,0], {}), "Supprimer", None],
-                },
-            6 : {
-                    "➕": [(self.new_clip,    [0,0], {}), "Ajouter", None],
-                    "🔧": [(self.update_clip, [0,0], {}), "Modifier", None],
-                    "⚙️": [(self.show_config_dialog, [0,0], {}), "Configurer", None],
-                    "💾": [(self.store_clip_mode, [0,0], {}), "Stocker", None],
-                    "➖": [(self.delete_clip, [0,0], {}), "Supprimer", None],
-                },
-            7 : {
                     "➕": [(self.new_clip,    [0,0], {}), "Ajouter", None],
                     "🔧": [(self.update_clip, [0,0], {}), "Modifier", None],
                     "⚙️": [(self.show_config_dialog, [0,0], {}), "Configurer", None],
                     "💾": [(self.store_clip_mode, [0,0], {}), "Stocker", None],
                     "➖": [(self.delete_clip, [0,0], {}), "Supprimer", None],
                 }
+            # 7 : {
+            #         "➕": [(self.new_clip,    [0,0], {}), "Ajouter", None],
+            #         "🔧": [(self.update_clip, [0,0], {}), "Modifier", None],
+            #         "⚙️": [(self.show_config_dialog, [0,0], {}), "Configurer", None],
+            #         "💾": [(self.store_clip_mode, [0,0], {}), "Stocker", None],
+            #         "➖": [(self.delete_clip, [0,0], {}), "Supprimer", None],
+            #     }
         }
         # self.buttons_actions_by_number = {
         #     5 : {
