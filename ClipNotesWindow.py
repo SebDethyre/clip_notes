@@ -2982,18 +2982,43 @@ class ClipNotesWindow(QMainWindow):
             for i in range(tabs.count()):
                 if "Clips stockés" in tabs.tabText(i):
                     old_widget = tabs.widget(i)
-                    # Créer le nouveau contenu
-                    new_content = self.create_stored_clips_widget(parent_dialog, x, y)
-                    # Remplacer le layout de l'onglet
                     old_layout = old_widget.layout()
                     if old_layout:
-                        # Supprimer l'ancien contenu
-                        while old_layout.count():
-                            child = old_layout.takeAt(0)
-                            if child.widget():
-                                child.widget().deleteLater()
-                        # Ajouter le nouveau contenu
-                        old_layout.addWidget(new_content)
+                        # Trouver et supprimer uniquement le widget des clips stockés (premier widget)
+                        # en conservant le layout des boutons (Fermer, etc.)
+                        old_scroll = old_widget.findChild(QScrollArea, "stored_clips_scroll")
+                        if old_scroll:
+                            # Trouver le widget parent contenant le scroll (c'est le container retourné par create_stored_clips_widget)
+                            old_container = old_scroll.parent()
+                            if old_container and old_container != old_widget:
+                                # Trouver l'index de l'ancien container dans le layout
+                                idx = old_layout.indexOf(old_container)
+                                if idx >= 0:
+                                    # Retirer proprement du layout
+                                    old_layout.takeAt(idx)
+                                old_container.setParent(None)
+                                old_container.deleteLater()
+                                # Créer le nouveau contenu
+                                new_content = self.create_stored_clips_widget(parent_dialog, x, y)
+                                # Insérer au début du layout (avant le bouton Fermer)
+                                old_layout.insertWidget(0, new_content)
+                            else:
+                                # Fallback: supprimer seulement le premier item
+                                child = old_layout.takeAt(0)
+                                if child and child.widget():
+                                    child.widget().setParent(None)
+                                    child.widget().deleteLater()
+                                new_content = self.create_stored_clips_widget(parent_dialog, x, y)
+                                old_layout.insertWidget(0, new_content)
+                        else:
+                            # Fallback si pas de scroll trouvé: supprimer seulement le premier item
+                            if old_layout.count() > 0:
+                                child = old_layout.takeAt(0)
+                                if child and child.widget():
+                                    child.widget().setParent(None)
+                                    child.widget().deleteLater()
+                            new_content = self.create_stored_clips_widget(parent_dialog, x, y)
+                            old_layout.insertWidget(0, new_content)
                     break
 
     def show_stored_clips_dialog(self, x, y):
@@ -4978,8 +5003,8 @@ class ClipNotesWindow(QMainWindow):
                         return
                 
                 if new_name != old_name:
-                    # Seulement si on vient du menu radial
-                    if context == "from_radial":
+                    # Seulement si on vient du menu radial (mode update ou drag au centre)
+                    if context in ("from_radial", "from_drag_center"):
                         self.actions_map_sub.pop(old_name, None)
                         # Supprimer l'ancien alias du JSON
                         delete_from_json(self.clip_notes_file_json, old_name)
@@ -5023,6 +5048,9 @@ class ClipNotesWindow(QMainWindow):
                 if context == "from_radial":
                     # Rester en mode modification au lieu de revenir au menu principal
                     self.update_clip(x, y, context)
+                elif context == "from_drag_center":
+                    # Retourner au menu normal (pas en mode update)
+                    self.refresh_menu()
                 elif context == "from_storage":
                     # Rouvrir immédiatement la fenêtre de stockage
                     self.show_stored_clips_dialog(x, y)

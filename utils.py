@@ -1140,23 +1140,31 @@ def extract_clip_from_group_to_position(file_path, group_alias, clip_alias, targ
     # === 2. Gérer la dissolution du groupe si nécessaire ===
     remaining_children = group_data.get('children', [])
     group_was_dissolved = False
+    replacement_alias = None  # Alias du clip qui remplace le groupe
     
     if len(remaining_children) <= 1:
         group_was_dissolved = True
         if len(remaining_children) == 1:
             # Remettre le dernier clip au niveau principal (remplace le groupe)
             last_clip = remaining_children[0]
+            replacement_alias = last_clip.get('alias')
             data[group_index] = last_clip
-            print(f"[Info] Groupe '{group_alias}' dissous, clip '{last_clip.get('alias')}' restauré")
+            print(f"[Info] Groupe '{group_alias}' dissous, clip '{replacement_alias}' restauré")
         else:
             # Groupe vide, le supprimer
             del data[group_index]
             print(f"[Info] Groupe '{group_alias}' supprimé (vide)")
     
     # === 3. Trouver la position cible ===
+    # Si la cible était le groupe qui a été dissous, utiliser le clip de remplacement
+    actual_target = target_alias
+    if group_was_dissolved and target_alias == group_alias and replacement_alias:
+        actual_target = replacement_alias
+        print(f"[Info] Cible '{target_alias}' remplacée par '{actual_target}' (groupe dissous)")
+    
     target_index = None
     for i, item in enumerate(data):
-        if item.get('alias') == target_alias:
+        if item.get('alias') == actual_target:
             target_index = i
             break
     
@@ -1176,7 +1184,7 @@ def extract_clip_from_group_to_position(file_path, group_alias, clip_alias, targ
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
     
-    print(f"[Info] Clip '{clip_alias}' extrait du groupe et placé {'avant' if insert_before else 'après'} '{target_alias}'")
+    print(f"[Info] Clip '{clip_alias}' extrait du groupe et placé {'avant' if insert_before else 'après'} '{actual_target}'")
     return True
 
 

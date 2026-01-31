@@ -2847,7 +2847,8 @@ class RadialMenu(QWidget):
                 # Récupérer le HTML depuis le fichier JSON
                 dialog.accept()
                 slider_value, string, html_string = self.app_instance.get_clip_data_from_json(alias)
-                self.app_instance.edit_clip(alias, string, self.x, self.y, slider_value, html_string)
+                # Utiliser un contexte spécifique pour le drag au centre (pas de retour en mode update)
+                self.app_instance.edit_clip(alias, string, self.x, self.y, slider_value, context="from_drag_center", html_string=html_string)
                 
         # clip_slider_value, clip_html = self.get_clip_data_from_json(name)
         # self.edit_clip(name, value, x, y, slider_value, html_string=html_string)
