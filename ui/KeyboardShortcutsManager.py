@@ -348,9 +348,9 @@ class KeyboardShortcutsManager(QWidget):
                 border: 1px solid rgba(255, 255, 255, 15);
             }
         """)
-        container_layout = QVBoxLayout(container)
+        self.container_layout = QVBoxLayout(container)
         # container_layout.setContentsMargins(20, 20, 20, 20)
-        container_layout.setSpacing(16)
+        self.container_layout.setSpacing(16)
         
         # # Titre
         # title_layout = QHBoxLayout()
@@ -397,12 +397,12 @@ class KeyboardShortcutsManager(QWidget):
             }
         """)
         info_label.setWordWrap(True)
-        container_layout.addWidget(info_label)
+        self.container_layout.addWidget(info_label)
         
         # Zone de scroll pour le tableau
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet("""
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setStyleSheet("""
             QScrollArea {
                 background: transparent;
                 border: none;
@@ -423,48 +423,21 @@ class KeyboardShortcutsManager(QWidget):
         """)
         
         # Widget conteneur pour le tableau
-        table_container = QWidget()
-        table_container.setStyleSheet("background: transparent;")
-        table_layout = QVBoxLayout(table_container)
-        table_layout.setContentsMargins(0, 0, 0, 0)
-        table_layout.setSpacing(4)
+        self.table_container = QWidget()
+        self.table_container.setStyleSheet("background: transparent;")
+        self.table_layout = QVBoxLayout(self.table_container)
+        self.table_layout.setContentsMargins(0, 0, 0, 0)
+        self.table_layout.setSpacing(4)
         
         # En-têtes
-        header_layout = QHBoxLayout()
-        header_layout.setSpacing(8)
-        
-        headers = [("Icône", 80), ("Action", 180), ("Valeur", 200), ("Raccourci", 150), ("Action", 100)]
-        for text, width in headers:
-            header = QLabel(text)
-            header.setFixedWidth(width)
-            header.setStyleSheet("""
-                QLabel {
-                    color: rgba(255, 255, 255, 150);
-                    font-size: 13px;
-                    font-weight: bold;
-                    background: transparent;
-                    border: none;
-                    padding: 8px;
-                }
-            """)
-            header_layout.addWidget(header)
-        header_layout.addStretch()
-        table_layout.addLayout(header_layout)
-        
-        # Séparateur
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        # separator.setStyleSheet("background-color: rgba(255, 255, 255, 20);")
-        separator.setStyleSheet("background-color: rgba(255, 255, 255, 20);")
-        separator.setFixedHeight(1)
-        table_layout.addWidget(separator)
+        self._add_headers()
         
         # Ajouter les lignes
-        self.populate_table(table_layout)
+        self.populate_table(self.table_layout)
         
-        table_layout.addStretch()
-        scroll_area.setWidget(table_container)
-        container_layout.addWidget(scroll_area)
+        self.table_layout.addStretch()
+        self.scroll_area.setWidget(self.table_container)
+        self.container_layout.addWidget(self.scroll_area)
         
         # Boutons du bas
         buttons_layout = QHBoxLayout()
@@ -505,12 +478,70 @@ class KeyboardShortcutsManager(QWidget):
         close_btn.clicked.connect(self.close_parent_dialog)
         buttons_layout.addWidget(close_btn)
         
-        container_layout.addLayout(buttons_layout)
+        self.container_layout.addLayout(buttons_layout)
         main_layout.addWidget(container, 1)
         # if isinstance(self.parent(), QTabWidget):
         #     # Prendre toute la taille de l'onglet
         #     self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         #     self.resize(self.parent().width(), self.parent().height())
+    
+    def _add_headers(self):
+        """Ajoute les en-têtes du tableau"""
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(8)
+        
+        headers = [("Icône", 80), ("Action", 180), ("Valeur", 200), ("Raccourci", 150), ("Action", 100)]
+        for text, width in headers:
+            header = QLabel(text)
+            header.setFixedWidth(width)
+            header.setStyleSheet("""
+                QLabel {
+                    color: rgba(255, 255, 255, 150);
+                    font-size: 13px;
+                    font-weight: bold;
+                    background: transparent;
+                    border: none;
+                    padding: 8px;
+                }
+            """)
+            header_layout.addWidget(header)
+        header_layout.addStretch()
+        self.table_layout.addLayout(header_layout)
+        
+        # Séparateur
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setStyleSheet("background-color: rgba(255, 255, 255, 20);")
+        separator.setFixedHeight(1)
+        self.table_layout.addWidget(separator)
+    
+    def refresh_clips_order(self):
+        """Rafraîchit l'affichage des clips avec le nouvel ordre des actions"""
+        # Supprimer l'ancien contenu du table_layout
+        while self.table_layout.count():
+            child = self.table_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+            elif child.layout():
+                # Supprimer récursivement les sous-layouts
+                self._clear_layout(child.layout())
+        
+        # Recréer les en-têtes
+        self._add_headers()
+        
+        # Repeupler le tableau
+        self.populate_table(self.table_layout)
+        
+        self.table_layout.addStretch()
+    
+    def _clear_layout(self, layout):
+        """Supprime récursivement tous les éléments d'un layout"""
+        while layout.count():
+            child = layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+            elif child.layout():
+                self._clear_layout(child.layout())
     
     def populate_table(self, layout):
         """Remplit le tableau avec les boutons fixes et les clips"""

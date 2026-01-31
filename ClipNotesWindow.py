@@ -1,7 +1,7 @@
 import sys, os, time, json, subprocess, signal,fcntl
 
 from PyQt6.QtGui import QPainter, QColor, QIcon, QPalette, QPixmap, QPainterPath
-from PyQt6.QtCore import Qt, QSize, QTimer, QEvent
+from PyQt6.QtCore import Qt, QSize, QTimer, QEvent, QVariantAnimation
 from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QMainWindow, QVBoxLayout, QHBoxLayout, QSlider, QDialog, QLineEdit, QGridLayout, QSizePolicy
 from PyQt6.QtWidgets import QTextEdit, QTextBrowser, QLabel, QFileDialog, QCheckBox, QScrollArea, QListWidgetItem, QAbstractItemView, QTabWidget
 
@@ -70,6 +70,16 @@ class ClipNotesWindow(QMainWindow):
         
         # Ordre des actions (modifiable par l'utilisateur via drag & drop)
         self.action_order = ["copy", "term", "exec"]
+        
+        # Pagination du menu radial
+        self.clips_per_page = 20  # Nombre max de clips par page
+        self.page_flip_direction = "horizontal"  # "horizontal" ou "vertical"
+        self.current_page = 0  # Page actuelle (0-indexed)
+        self.all_clips_data = []  # Tous les clips (pour la pagination)
+        self.all_clips_by_link = []  # Tous les clips_by_link (pour la pagination)
+        self.total_pages = 1  # Nombre total de pages
+        self.page_selector = None  # Widget sélecteur de pages
+        self.is_changing_page = False  # Flag pour éviter les conflits pendant le changement de page
         
         self.dialog_style = """
             QWidget {
@@ -235,6 +245,10 @@ class ClipNotesWindow(QMainWindow):
             else:
                 self.action_order = ["copy", "term", "exec"]
             
+            # Charger les paramètres de pagination
+            self.clips_per_page = config.get('clips_per_page', self.clips_per_page)
+            self.page_flip_direction = config.get('page_flip_direction', self.page_flip_direction)
+            
             print(f"[Config] Configuration chargée: {config}")
         except Exception as e:
             print(f"[Erreur] Impossible de charger la configuration: {e}")
@@ -257,7 +271,9 @@ class ClipNotesWindow(QMainWindow):
             'shadow_offset': self.shadow_offset,
             'shadow_color': self.shadow_color,
             'shadow_enabled': self.shadow_enabled,
-            'shadow_angle': self.shadow_angle
+            'shadow_angle': self.shadow_angle,
+            'clips_per_page': self.clips_per_page,
+            'page_flip_direction': self.page_flip_direction
         }
         
         try:
@@ -429,6 +445,12 @@ class ClipNotesWindow(QMainWindow):
         if not self.current_popup:
             return
         
+        # Fermer le sélecteur de pages s'il existe
+        self.close_page_selector()
+        
+        # Réinitialiser la page à 0 (car le nombre de clips par page peut avoir changé)
+        self.current_page = 0
+        
         # Réinitialiser le state
         self.current_popup.set_central_text("")
         self.current_popup.set_neon_color(self.neon_color)
@@ -453,6 +475,29 @@ class ClipNotesWindow(QMainWindow):
         # Trier seulement les clips (pas les boutons spéciaux)
         sorted_clips = sort_actions_map(clips_to_sort, json_order, self.action_order)
         
+        # ===== PAGINATION : Stocker tous les clips pour navigation entre pages =====
+        all_clips_buttons = []
+        all_clips_by_link = []
+        
+        for name, (action_data, value, action) in sorted_clips:
+            tooltip = value.replace(r'\n', '\n')
+            _, clip_html = get_clip_data_from_data(json_data, name)
+            all_clips_buttons.append((name, self.make_handler_sub(name, value, x, y), tooltip, action, clip_html))
+            
+            func, children, meta = action_data
+            if isinstance(meta, dict) and meta.get("is_group"):
+                all_clips_by_link.append(len(children))
+            else:
+                all_clips_by_link.append(1)
+        
+        # Stocker pour la navigation entre pages
+        self.all_clips_data = all_clips_buttons
+        self.all_clips_by_link = all_clips_by_link
+        
+        # Calculer le nombre de pages
+        total_clips = len(all_clips_buttons)
+        self.total_pages = max(1, (total_clips + self.clips_per_page - 1) // self.clips_per_page)
+        
         # Ajouter d'abord les boutons spéciaux dans l'ordre fixe
         for name in special_buttons:
             if name in self.actions_map_sub:
@@ -460,26 +505,21 @@ class ClipNotesWindow(QMainWindow):
                 tooltip = value.replace(r'\n', '\n')
                 self.buttons_sub.append((name, self.make_handler_sub(name, value, self.x, self.y), tooltip, action))
         
-        # Puis ajouter les clips triés (avec le HTML pour les tooltips)
-        for name, (action_data, value, action) in sorted_clips:
-            tooltip = value.replace(r'\n', '\n')
-            # Récupérer le HTML du clip (données déjà chargées)
-            _, clip_html = get_clip_data_from_data(json_data, name)
-            self.buttons_sub.append((name, self.make_handler_sub(name, value, self.x, self.y), tooltip, action, clip_html))
+        # Extraire les clips de la page actuelle (page 0)
+        start_idx = self.current_page * self.clips_per_page
+        end_idx = min(start_idx + self.clips_per_page, total_clips)
+        page_clips = all_clips_buttons[start_idx:end_idx]
+        page_clips_by_link = all_clips_by_link[start_idx:end_idx]
         
-        # Construire clips_by_link dans le même ordre que buttons_sub
+        # Ajouter les clips de la page
+        self.buttons_sub.extend(page_clips)
+        
+        # Construire clips_by_link pour la page
         clips_by_link = []
-        # D'abord les boutons spéciaux (toujours 1)
         for name in special_buttons:
             if name in self.actions_map_sub:
                 clips_by_link.append(1)
-        # Puis les clips triés
-        for name, (action_data, value, action) in sorted_clips:
-            func, children, meta = action_data
-            if isinstance(meta, dict) and meta.get("is_group"):
-                clips_by_link.append(len(children))
-            else:
-                clips_by_link.append(1)
+        clips_by_link.extend(page_clips_by_link)
         
         # CRITIQUE: Propager nb_icons_menu et autres paramètres au popup AVANT update_buttons
         # Sinon l'escamotage des icônes fixes ne correspondra pas à la nouvelle configuration
@@ -508,6 +548,10 @@ class ClipNotesWindow(QMainWindow):
             self.current_popup.timer.start(self.neon_speed)
         # CRITIQUE: Forcer le mouse tracking après le refresh
         self.current_popup.setMouseTracking(True)
+        
+        # Créer le sélecteur de pages si nécessaire
+        if self.total_pages > 1:
+            self.create_page_selector(x, y)
 
     def update_clip(self, x, y, context = "from_radial"):
         if self.tracker:
@@ -1679,6 +1723,11 @@ class ClipNotesWindow(QMainWindow):
 
     def close_popup(self):
         """Méthode helper pour fermer le popup"""
+        # Fermer le sélecteur de pages
+        self.close_page_selector()
+        # Réinitialiser la page à 0 pour la prochaine ouverture
+        self.current_page = 0
+        
         if self.tracker:
             self.tracker.close()
         if self.current_popup:
@@ -3685,6 +3734,8 @@ class ClipNotesWindow(QMainWindow):
             'shadow_offset': self.shadow_offset,
             'shadow_angle': self.shadow_angle,
             'shadow_color': self.shadow_color,
+            'clips_per_page': self.clips_per_page,
+            'page_flip_direction': self.page_flip_direction,
         }
         
         # Stocker l'ordre actuel pour détecter les changements
@@ -3739,6 +3790,8 @@ class ClipNotesWindow(QMainWindow):
             self.shadow_offset = initial_state['shadow_offset']
             self.shadow_angle = initial_state['shadow_angle']
             self.shadow_color = initial_state['shadow_color']
+            self.clips_per_page = initial_state['clips_per_page']
+            self.page_flip_direction = initial_state['page_flip_direction']
             # Rafraîchir le menu pour restaurer l'ordre initial
             self.refresh_menu()
         
@@ -4474,6 +4527,115 @@ class ClipNotesWindow(QMainWindow):
         # Initialisation de la taille
         update_dialog_size()
 
+        # --- Pagination ---
+        pagination_section = QWidget()
+        pagination_layout = QHBoxLayout(pagination_section)
+        pagination_layout.setContentsMargins(0, 10, 0, 0)
+        pagination_layout.setSpacing(20)
+        
+        # Clips par page
+        clips_per_page_layout = QVBoxLayout()
+        clips_per_page_label = QLabel(f"📄 Clips par page: <b>{self.clips_per_page}</b>")
+        clips_per_page_label.setStyleSheet("color: white; font-size: 12px;")
+        clips_per_page_slider = QSlider(Qt.Orientation.Horizontal)
+        clips_per_page_slider.setMinimum(5)
+        clips_per_page_slider.setMaximum(50)
+        clips_per_page_slider.setValue(self.clips_per_page)
+        clips_per_page_slider.setFixedWidth(150)
+        
+        def on_clips_per_page_changed(val):
+            self.clips_per_page = val
+            clips_per_page_label.setText(f"📄 Clips par page: <b>{val}</b>")
+            # Rafraîchir le menu pour mettre à jour la pagination
+            self.refresh_menu()
+        
+        clips_per_page_slider.valueChanged.connect(on_clips_per_page_changed)
+        clips_per_page_layout.addWidget(clips_per_page_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        clips_per_page_layout.addWidget(clips_per_page_slider, alignment=Qt.AlignmentFlag.AlignCenter)
+        pagination_layout.addLayout(clips_per_page_layout)
+        
+        # Direction du flip
+        flip_direction_layout = QVBoxLayout()
+        flip_direction_label = QLabel("🔄 Direction flip:")
+        flip_direction_label.setStyleSheet("color: white; font-size: 12px;")
+        
+        flip_buttons_layout = QHBoxLayout()
+        flip_h_btn = QPushButton("↔️ Horizontal")
+        flip_v_btn = QPushButton("↕️ Vertical")
+        
+        def update_flip_buttons():
+            if self.page_flip_direction == "horizontal":
+                flip_h_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: rgba(100, 180, 255, 150);
+                        border: 1px solid rgba(100, 180, 255, 200);
+                        border-radius: 6px;
+                        padding: 5px 10px;
+                        color: white;
+                        font-size: 11px;
+                    }
+                """)
+                flip_v_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: rgba(255, 255, 255, 30);
+                        border: 1px solid rgba(255, 255, 255, 60);
+                        border-radius: 6px;
+                        padding: 5px 10px;
+                        color: rgba(255, 255, 255, 150);
+                        font-size: 11px;
+                    }
+                    QPushButton:hover {
+                        background-color: rgba(255, 255, 255, 60);
+                        color: white;
+                    }
+                """)
+            else:
+                flip_v_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: rgba(100, 180, 255, 150);
+                        border: 1px solid rgba(100, 180, 255, 200);
+                        border-radius: 6px;
+                        padding: 5px 10px;
+                        color: white;
+                        font-size: 11px;
+                    }
+                """)
+                flip_h_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: rgba(255, 255, 255, 30);
+                        border: 1px solid rgba(255, 255, 255, 60);
+                        border-radius: 6px;
+                        padding: 5px 10px;
+                        color: rgba(255, 255, 255, 150);
+                        font-size: 11px;
+                    }
+                    QPushButton:hover {
+                        background-color: rgba(255, 255, 255, 60);
+                        color: white;
+                    }
+                """)
+        
+        def set_flip_horizontal():
+            self.page_flip_direction = "horizontal"
+            update_flip_buttons()
+        
+        def set_flip_vertical():
+            self.page_flip_direction = "vertical"
+            update_flip_buttons()
+        
+        flip_h_btn.clicked.connect(set_flip_horizontal)
+        flip_v_btn.clicked.connect(set_flip_vertical)
+        update_flip_buttons()
+        
+        flip_buttons_layout.addWidget(flip_h_btn)
+        flip_buttons_layout.addWidget(flip_v_btn)
+        flip_direction_layout.addWidget(flip_direction_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        flip_direction_layout.addLayout(flip_buttons_layout)
+        pagination_layout.addLayout(flip_direction_layout)
+        
+        pagination_layout.addStretch()
+        config_layout.addWidget(pagination_section)
+
         # Boutons Sauvegarder et Annuler
         config_layout.addStretch()
         buttons_layout = QHBoxLayout()
@@ -4688,6 +4850,93 @@ class ClipNotesWindow(QMainWindow):
             on_submit_callback=handle_submit
         )
 
+    def quick_paste_clip(self):
+        """
+        Crée rapidement un clip à partir du presse-papiers.
+        Utilisé quand l'utilisateur fait Ctrl+V sur le menu radial.
+        Génère un alias automatique avec un emoji et un numéro incrémenté.
+        Préserve le formatage HTML riche si présent.
+        """
+        from PyQt6.QtWidgets import QApplication, QTextEdit
+        
+        # Récupérer le contenu du presse-papiers
+        clipboard = QApplication.clipboard()
+        mime_data = clipboard.mimeData()
+        clipboard_text = clipboard.text()
+        
+        if not clipboard_text or not clipboard_text.strip():
+            # Presse-papiers vide ou que des espaces
+            if hasattr(self, 'current_popup') and self.current_popup:
+                if hasattr(self.current_popup, 'tooltip_window') and self.current_popup.tooltip_window:
+                    self.current_popup.tooltip_window.show_message("📋 Presse-papiers vide", 1500)
+                    self.current_popup.update_tooltip_position()
+            return False
+        
+        # Nettoyer la valeur
+        value = clipboard_text.strip().replace('\n', '\\n')
+        
+        # Récupérer le HTML du presse-papiers via un QTextEdit temporaire
+        # Cela normalise le HTML dans le format attendu par has_rich_formatting()
+        html_to_save = None
+        if mime_data.hasHtml():
+            temp_edit = QTextEdit()
+            temp_edit.setAcceptRichText(True)
+            # Coller le contenu du presse-papiers dans le QTextEdit temporaire
+            temp_edit.insertFromMimeData(mime_data)
+            # Récupérer le HTML normalisé
+            html_content = temp_edit.toHtml()
+            # Vérifier si le HTML contient du vrai formatage riche
+            if has_rich_formatting(html_content):
+                html_to_save = html_content
+        
+        # Générer un alias unique avec emoji 📋 + numéro
+        base_emoji = "📋"
+        
+        # Charger les clips existants pour trouver le prochain numéro
+        existing_aliases = set()
+        try:
+            if os.path.exists(self.clip_notes_file_json):
+                with open(self.clip_notes_file_json, 'r', encoding='utf-8') as f:
+                    clips = json.load(f)
+                    for clip in clips:
+                        existing_aliases.add(clip.get('alias', ''))
+        except Exception as e:
+            print(f"Erreur lecture clips: {e}")
+        
+        # Trouver le prochain numéro disponible
+        counter = 0
+        # while f"{base_emoji}{counter}" in existing_aliases:
+        #     counter += 1
+        
+        # alias = f"{base_emoji}{counter}"
+        while f"{counter}" in existing_aliases:
+            counter += 1
+        
+        alias = f"{counter}"
+        action = "copy"  # Par défaut, action "copy"
+        
+        # Ajouter le clip
+        self.actions_map_sub[alias] = [(paperclip_copy, [value], {}), value, action]
+        append_to_actions_file_json(self.clip_notes_file_json, alias, value, action, html_to_save)
+        
+        # Rafraîchir le menu
+        self.refresh_menu()
+        
+        # Afficher un message de confirmation
+        if hasattr(self, 'current_popup') and self.current_popup:
+            if hasattr(self.current_popup, 'tooltip_window') and self.current_popup.tooltip_window:
+                # Aperçu court de la valeur
+                preview = clipboard_text[:30].replace('\n', ' ')
+                if len(clipboard_text) > 30:
+                    preview += "..."
+                msg = f"✅ {alias} créé"
+                if html_to_save:
+                    msg += " (HTML)"
+                self.current_popup.tooltip_window.show_message(msg, 1500)
+                self.current_popup.update_tooltip_position()
+        
+        return True
+
     def edit_clip_from_storage(self, name, value, x, y, slider_value, storage_dialog, html_string=None):
         """Édite un clip depuis le dialogue de stockage"""
         # Fermer le dialogue de stockage
@@ -4837,35 +5086,57 @@ class ClipNotesWindow(QMainWindow):
         # Trier seulement les clips (pas les boutons spéciaux)
         sorted_clips = sort_actions_map(clips_to_sort, json_order, self.action_order)
         
-        # Ajouter d'abord les boutons spéciaux dans l'ordre fixe
+        # ===== PAGINATION : Stocker tous les clips pour navigation entre pages =====
+        # Construire les données pour TOUS les clips
+        all_clips_buttons = []
+        all_clips_by_link = []
+        
+        for name, (action_data, value, action) in sorted_clips:
+            tooltip = value.replace(r'\n', '\n')
+            _, clip_html = get_clip_data_from_data(json_data, name)
+            all_clips_buttons.append((name, self.make_handler_sub(name, value, x, y), tooltip, action, clip_html))
+            
+            func, children, meta = action_data
+            if isinstance(meta, dict) and meta.get("is_group"):
+                all_clips_by_link.append(len(children))
+            else:
+                all_clips_by_link.append(1)
+        
+        # Stocker pour la navigation entre pages
+        self.all_clips_data = all_clips_buttons
+        self.all_clips_by_link = all_clips_by_link
+        
+        # Calculer le nombre de pages
+        total_clips = len(all_clips_buttons)
+        self.total_pages = max(1, (total_clips + self.clips_per_page - 1) // self.clips_per_page)
+        
+        # S'assurer que la page actuelle est valide
+        if self.current_page >= self.total_pages:
+            self.current_page = 0
+        
+        # ===== Construire les boutons pour la page actuelle =====
+        # Ajouter d'abord les boutons spéciaux
         for name in special_buttons:
             if name in self.actions_map_sub:
                 action_data, value, action = self.actions_map_sub[name]
                 tooltip = value.replace(r'\n', '\n')
                 self.buttons_sub.append((name, self.make_handler_sub(name, value, x, y), tooltip, action))
         
-        # Puis ajouter les clips triés (avec le HTML pour les tooltips)
-        for name, (action_data, value, action) in sorted_clips:
-            tooltip = value.replace(r'\n', '\n')
-            # Récupérer le HTML du clip (données déjà chargées)
-            _, clip_html = get_clip_data_from_data(json_data, name)
-            self.buttons_sub.append((name, self.make_handler_sub(name, value, x, y), tooltip, action, clip_html))
+        # Extraire les clips de la page actuelle
+        start_idx = self.current_page * self.clips_per_page
+        end_idx = min(start_idx + self.clips_per_page, total_clips)
+        page_clips = all_clips_buttons[start_idx:end_idx]
+        page_clips_by_link = all_clips_by_link[start_idx:end_idx]
         
-        menu_dict=self.actions_map_sub
+        # Ajouter les clips de la page
+        self.buttons_sub.extend(page_clips)
+        
+        # Construire clips_by_link pour la page
         clips_by_link = []
-
-        # D'abord les boutons spéciaux (toujours 1)
         for name in special_buttons:
             if name in self.actions_map_sub:
                 clips_by_link.append(1)
-        
-        # Puis les clips triés
-        for name, (action_data, value, action) in sorted_clips:
-            func, children, meta = action_data
-            if isinstance(meta, dict) and meta.get("is_group"):
-                clips_by_link.append(len(children))
-            else:
-                clips_by_link.append(1)
+        clips_by_link.extend(page_clips_by_link)
 
         self.current_popup = RadialMenu(x, y, self.buttons_sub, parent=self.tracker, sub=True, tracker=self.tracker, app_instance=self, neon_color=self.neon_color, action_zone_colors=self.action_zone_colors, nb_icons_menu=self.nb_icons_menu, show_central_icon=self.show_central_icon, menu_background_color=self.menu_background_color, zone_basic_opacity=self.zone_basic_opacity, zone_hover_opacity=self.zone_hover_opacity, clips_by_link=clips_by_link, shadow_offset=self.shadow_offset, shadow_color=self.shadow_color, shadow_enabled=self.shadow_enabled, shadow_angle=self.shadow_angle)
         self.current_popup.show()
@@ -4877,6 +5148,314 @@ class ClipNotesWindow(QMainWindow):
         # Activer le néon bleu clignotant dès l'ouverture
         self.current_popup.toggle_neon(self.central_neon)
         self.current_popup.timer.start(self.neon_speed)
+        
+        # ===== Créer le sélecteur de pages si nécessaire =====
+        if self.total_pages > 1:
+            self.create_page_selector(x, y)
+
+    def create_page_selector(self, x, y):
+        """Crée le sélecteur de pages au-dessus du menu radial"""
+        from PyQt6.QtWidgets import QGraphicsOpacityEffect
+        from PyQt6.QtCore import QPropertyAnimation
+        
+        # Fermer l'ancien sélecteur s'il existe
+        if hasattr(self, 'page_selector') and self.page_selector:
+            try:
+                self.page_selector.close()
+                self.page_selector.deleteLater()
+            except RuntimeError:
+                pass
+        
+        # Créer le widget sélecteur (avec tracker comme parent pour Wayland)
+        parent_widget = self.tracker if self.tracker else None
+        self.page_selector = QWidget(parent_widget)
+        self.page_selector.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint | 
+            Qt.WindowType.WindowStaysOnTopHint | 
+            Qt.WindowType.ToolTip
+        )
+        self.page_selector.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.page_selector.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        
+        # Layout horizontal pour les numéros de pages
+        layout = QHBoxLayout(self.page_selector)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(4)
+        
+        # Style du conteneur
+        self.page_selector.setStyleSheet("""
+            QWidget {
+                background-color: rgba(30, 30, 35, 180);
+                border-radius: 12px;
+            }
+        """)
+        
+        # Créer les boutons de page
+        for page_num in range(self.total_pages):
+            btn = QPushButton(str(page_num + 1))
+            btn.setFixedSize(28, 28)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            
+            # Style différent pour la page actuelle
+            if page_num == self.current_page:
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: rgba(100, 180, 255, 200);
+                        border: none;
+                        border-radius: 14px;
+                        color: white;
+                        font-size: 12px;
+                        font-weight: bold;
+                    }
+                """)
+            else:
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: rgba(255, 255, 255, 30);
+                        border: none;
+                        border-radius: 14px;
+                        color: rgba(255, 255, 255, 150);
+                        font-size: 12px;
+                    }
+                    QPushButton:hover {
+                        background-color: rgba(255, 255, 255, 80);
+                        color: white;
+                    }
+                """)
+            
+            # Connecter le clic
+            btn.clicked.connect(lambda checked, p=page_num: self.go_to_page(p))
+            layout.addWidget(btn)
+        
+        # Calculer la position (en dessous du menu radial et des tooltips)
+        selector_width = self.total_pages * 32 + 16  # 28 par bouton + spacing + margins
+        selector_height = 36
+        
+        # Positionner en dessous du menu (et sous les tooltips)
+        if self.current_popup:
+            menu_geometry = self.current_popup.geometry()
+            menu_bottom = menu_geometry.y() + menu_geometry.height()
+            selector_x = x - selector_width // 2
+            # Ajouter un offset pour être sous le tooltip (environ 80px pour le tooltip)
+            selector_y = menu_bottom + 80
+        else:
+            selector_x = x - selector_width // 2
+            selector_y = y + 200
+        
+        self.page_selector.move(int(selector_x), int(selector_y))
+        self.page_selector.adjustSize()
+        
+        # Opacité initiale basse
+        self.page_selector.setWindowOpacity(0.4)
+        
+        # Événements pour changer l'opacité au hover
+        def on_enter(event):
+            self.page_selector.setWindowOpacity(1.0)
+        
+        def on_leave(event):
+            self.page_selector.setWindowOpacity(0.4)
+        
+        self.page_selector.enterEvent = on_enter
+        self.page_selector.leaveEvent = on_leave
+        
+        self.page_selector.show()
+
+    def go_to_page(self, page_number):
+        """Navigue vers une page spécifique avec animation flip"""
+        if page_number == self.current_page:
+            return
+        
+        if page_number < 0 or page_number >= self.total_pages:
+            return
+        
+        # Éviter les conflits pendant le changement de page
+        if self.is_changing_page:
+            return
+        
+        self.is_changing_page = True
+        
+        # Stocker les coordonnées avant de fermer le menu
+        x = self.x
+        y = self.y
+        
+        # Déterminer la direction du flip
+        direction = self.page_flip_direction
+        going_forward = page_number > self.current_page
+        
+        # Animer la fermeture avec flip
+        if self.current_popup:
+            self.animate_page_flip(going_forward, direction, lambda: self._complete_page_change(page_number, x, y))
+        else:
+            self._complete_page_change(page_number, x, y)
+
+    def animate_page_flip(self, going_forward, direction, on_complete):
+        """Anime le flip de page sur le menu radial"""
+        if not self.current_popup:
+            on_complete()
+            return
+        
+        # Animation de scale pour simuler le flip
+        from PyQt6.QtCore import QPropertyAnimation, QEasingCurve
+        
+        # Créer une animation de "flip" en réduisant la taille
+        self.flip_animation = QVariantAnimation()
+        self.flip_animation.setDuration(150)
+        self.flip_animation.setStartValue(1.0)
+        self.flip_animation.setEndValue(0.0)
+        self.flip_animation.setEasingCurve(QEasingCurve.Type.InQuad)
+        
+        original_geometry = self.current_popup.geometry()
+        center_x = original_geometry.center().x()
+        center_y = original_geometry.center().y()
+        
+        def update_flip(value):
+            if not self.current_popup:
+                return
+            
+            if direction == "horizontal":
+                # Flip horizontal : réduire la largeur
+                new_width = int(original_geometry.width() * value)
+                new_x = center_x - new_width // 2
+                self.current_popup.setGeometry(
+                    new_x, original_geometry.y(),
+                    new_width, original_geometry.height()
+                )
+            else:
+                # Flip vertical : réduire la hauteur
+                new_height = int(original_geometry.height() * value)
+                new_y = center_y - new_height // 2
+                self.current_popup.setGeometry(
+                    original_geometry.x(), new_y,
+                    original_geometry.width(), new_height
+                )
+        
+        self.flip_animation.valueChanged.connect(update_flip)
+        self.flip_animation.finished.connect(on_complete)
+        self.flip_animation.start()
+
+    def _complete_page_change(self, page_number, x, y):
+        """Termine le changement de page après l'animation"""
+        # Mettre à jour la page actuelle
+        self.current_page = page_number
+        
+        # Fermer l'ancien sélecteur
+        if hasattr(self, 'page_selector') and self.page_selector:
+            try:
+                self.page_selector.close()
+                self.page_selector.deleteLater()
+            except RuntimeError:
+                pass
+            self.page_selector = None
+        
+        # Fermer l'ancien menu proprement (sans animation, sans callbacks)
+        if self.current_popup:
+            try:
+                # Désactiver le néon
+                self.current_popup.neon_enabled = False
+                self.current_popup.timer.stop()
+                
+                # Fermer le sous-menu hover s'il existe
+                if hasattr(self.current_popup, 'hover_submenu') and self.current_popup.hover_submenu:
+                    try:
+                        self.current_popup.hover_submenu.close()
+                    except RuntimeError:
+                        pass
+                    self.current_popup.hover_submenu = None
+                
+                # Fermer le tooltip
+                if hasattr(self.current_popup, 'tooltip_window'):
+                    try:
+                        self.current_popup.tooltip_window.hide()
+                    except RuntimeError:
+                        pass
+                
+                # Désinstaller le listener clavier
+                if hasattr(self.current_popup, 'keyboard_listener'):
+                    try:
+                        QApplication.instance().removeEventFilter(self.current_popup.keyboard_listener)
+                    except RuntimeError:
+                        pass
+                
+                # Fermer sans déclencher on_close_finished
+                self.current_popup.hide()
+                self.current_popup.deleteLater()
+            except RuntimeError:
+                pass
+            self.current_popup = None
+        
+        # Reconstruire le menu avec la nouvelle page (sans recharger les données)
+        self._show_current_page(x, y)
+
+    def _show_current_page(self, x, y):
+        """Affiche la page actuelle du menu (utilise les données déjà chargées)"""
+        special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
+        
+        # Reconstruire buttons_sub
+        self.buttons_sub = []
+        
+        # Ajouter les boutons spéciaux
+        for name in special_buttons:
+            if name in self.actions_map_sub:
+                action_data, value, action = self.actions_map_sub[name]
+                tooltip = value.replace(r'\n', '\n')
+                self.buttons_sub.append((name, self.make_handler_sub(name, value, x, y), tooltip, action))
+        
+        # Extraire les clips de la page actuelle
+        total_clips = len(self.all_clips_data)
+        start_idx = self.current_page * self.clips_per_page
+        end_idx = min(start_idx + self.clips_per_page, total_clips)
+        page_clips = self.all_clips_data[start_idx:end_idx]
+        page_clips_by_link = self.all_clips_by_link[start_idx:end_idx]
+        
+        # Ajouter les clips de la page
+        self.buttons_sub.extend(page_clips)
+        
+        # Construire clips_by_link
+        clips_by_link = []
+        for name in special_buttons:
+            if name in self.actions_map_sub:
+                clips_by_link.append(1)
+        clips_by_link.extend(page_clips_by_link)
+        
+        # Créer le nouveau menu
+        self.current_popup = RadialMenu(
+            x, y, self.buttons_sub, parent=self.tracker, sub=True, 
+            tracker=self.tracker, app_instance=self, 
+            neon_color=self.neon_color, action_zone_colors=self.action_zone_colors,
+            nb_icons_menu=self.nb_icons_menu, show_central_icon=self.show_central_icon,
+            menu_background_color=self.menu_background_color,
+            zone_basic_opacity=self.zone_basic_opacity, zone_hover_opacity=self.zone_hover_opacity,
+            clips_by_link=clips_by_link, shadow_offset=self.shadow_offset,
+            shadow_color=self.shadow_color, shadow_enabled=self.shadow_enabled,
+            shadow_angle=self.shadow_angle
+        )
+        
+        self.current_popup.show()
+        self.current_popup.animate_open()
+        
+        # Appliquer l'opacité configurée
+        self.current_popup.set_widget_opacity(self.menu_opacity / 100.0)
+        
+        # Activer le néon
+        self.current_popup.toggle_neon(self.central_neon)
+        self.current_popup.timer.start(self.neon_speed)
+        
+        # Recréer le sélecteur de pages
+        if self.total_pages > 1:
+            self.create_page_selector(x, y)
+        
+        # Fin du changement de page
+        self.is_changing_page = False
+
+    def close_page_selector(self):
+        """Ferme le sélecteur de pages"""
+        if hasattr(self, 'page_selector') and self.page_selector:
+            try:
+                self.page_selector.close()
+                self.page_selector.deleteLater()
+            except RuntimeError:
+                pass
+            self.page_selector = None
 
     
 # APRÈS:

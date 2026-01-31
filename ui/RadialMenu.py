@@ -967,11 +967,14 @@ class RadialMenu(QWidget):
             child_alias = child.get('alias', '')
             child_string = child.get('string', '')
             child_action = child.get('action', 'copy')
+            child_html = child.get('html_string') or child.get('html')  # Récupérer le HTML
             
             # Créer le handler pour ce clip enfant (passer group_alias pour les modes update/delete/store)
             handler = self.make_group_child_click_handler(child_alias, child_string, child_action, group_alias)
             
-            tooltip = child_string.replace(r'\n', '\n')
+            tooltip_text = child_string.replace(r'\n', '\n')
+            # Passer un tuple (tooltip_text, tooltip_html) pour supporter le linting
+            tooltip = (tooltip_text, child_html) if child_html else tooltip_text
             submenu_buttons.append((child_alias, handler, tooltip))
         
         # Créer le sous-menu
@@ -3278,6 +3281,10 @@ class RadialMenu(QWidget):
         self.setMouseTracking(True)
     
     def close_with_animation(self):
+        # Vérifier si on est en train de changer de page (ne pas fermer dans ce cas)
+        if self.app_instance and hasattr(self.app_instance, 'is_changing_page') and self.app_instance.is_changing_page:
+            return
+        
         self.neon_enabled = False
         
         # Fermer le sous-menu hover s'il existe
@@ -3314,6 +3321,11 @@ class RadialMenu(QWidget):
         
         # Fermer la fenêtre tooltip
         self.tooltip_window.close()
+        
+        # Fermer le sélecteur de pages s'il existe
+        if self.app_instance and hasattr(self.app_instance, 'close_page_selector'):
+            self.app_instance.close_page_selector()
+        
         if self.tracker:
             self.tracker.close()
         self.close()

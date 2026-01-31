@@ -47,6 +47,11 @@ class CursorTracker(QWidget):
 
     def update_pos(self):
         pos = QCursor.pos()
+        raw_x = pos.x()
+        raw_y = pos.y()
+            # 🚫 Filtre Wayland : valeur invalide
+        if raw_x == 0 and raw_y == 0:
+            return 
         
         x_ratio = pos.x() / self.screen_width if self.screen_width > 0 else 0
         y_ratio = pos.y() / self.screen_height if self.screen_height > 0 else 0

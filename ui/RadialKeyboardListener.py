@@ -229,7 +229,24 @@ class RadialKeyboardListener(QObject):
             return False
         if event.type() == QEvent.Type.KeyPress:
             key = event.key()
-                       # Vérifier si un sous-menu hover est ouvert (et s'il existe encore)
+            
+            # === Ctrl+V : création rapide de clip depuis le presse-papiers ===
+            if key == Qt.Key.Key_V and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                # Vérifier qu'on n'est pas en mode spécial
+                if self.radial_menu and self.radial_menu.app_instance:
+                    app_inst = self.radial_menu.app_instance
+                    # Vérifier les modes spéciaux
+                    in_special_mode = (
+                        app_inst.get_update_mode() or 
+                        app_inst.get_delete_mode() or 
+                        app_inst.get_store_mode()
+                    )
+                    if not in_special_mode:
+                        # Créer le clip depuis le presse-papiers
+                        if app_inst.quick_paste_clip():
+                            return True
+            
+            # Vérifier si un sous-menu hover est ouvert (et s'il existe encore)
             submenu = None
             if hasattr(self.radial_menu, 'hover_submenu') and self.radial_menu.hover_submenu is not None:
                 try:
