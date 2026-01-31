@@ -2703,7 +2703,7 @@ class RadialMenu(QWidget):
         is_image = "/" in alias and os.path.exists(alias)
         
         dialog = QDialog(self.tracker if self.tracker else self)
-        dialog.setWindowTitle("🔧 Modifier / 💾 Stocker")
+        dialog.setWindowTitle("🔧 Modifier - 💾 Stocker")
         dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
@@ -2758,10 +2758,10 @@ class RadialMenu(QWidget):
             image_container.addStretch()
             layout.addLayout(image_container)
             
-            message_label = QLabel("Voulez-vous modifier / stocker ce clip ?")
+            message_label = QLabel("Voulez-vous modifier ou stocker ce clip ?")
         else:
             display_alias = alias if len(alias) <= 30 else alias[:27] + "..."
-            message_label = QLabel(f"Voulez-vous modifier / stocker ce clip ?\n\n{display_alias}")
+            message_label = QLabel(f"Voulez-vous modifier ou stocker ce clip ?\n\n{display_alias}")
         
         message_label.setWordWrap(True)
         message_label.setStyleSheet("color: white; font-size: 14px;")

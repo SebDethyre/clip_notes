@@ -283,6 +283,50 @@ class ClipNotesWindow(QMainWindow):
         except Exception as e:
             print(f"[Erreur] Impossible de sauvegarder la configuration: {e}")
 
+    def reload_pagination_data(self):
+        """Recharge all_clips_data et all_clips_by_link depuis le JSON pour la pagination"""
+        # Recharger le JSON
+        json_data = load_clip_notes_data(self.clip_notes_file_json)
+        # Mettre à jour actions_map_sub
+        special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
+        self.actions_map_sub = self.buttons_actions_by_number[self.nb_icons_menu].copy()
+        populate_actions_map_from_data(json_data, self.actions_map_sub, execute_command)
+        
+        # Filtrer et trier les clips
+        clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
+        json_order = get_json_order_from_data(json_data)
+        sorted_clips = sort_actions_map(clips_to_sort, json_order, self.action_order)
+        
+        # Reconstruire all_clips_data et all_clips_by_link
+        all_clips_buttons = []
+        all_clips_by_link = []
+        
+        # Utiliser les coordonnées stockées
+        # x, y = getattr(self, 'x', 0), getattr(self, 'y', 0)
+        # self._complete_page_change(self.current_page, x, y)
+        for name, (action_data, value, action) in sorted_clips:
+            tooltip = value.replace(r'\n', '\n')
+            _, clip_html = get_clip_data_from_data(json_data, name)
+            all_clips_buttons.append((name, self.make_handler_sub(name, value, x, y), tooltip, action, clip_html))
+            
+            func, children, meta = action_data
+            if isinstance(meta, dict) and meta.get("is_group"):
+                all_clips_by_link.append(len(children))
+            else:
+                all_clips_by_link.append(1)
+        
+        self.all_clips_data = all_clips_buttons
+        self.all_clips_by_link = all_clips_by_link
+        
+        # Recalculer le nombre de pages
+        total_clips = len(all_clips_buttons)
+        self.total_pages = max(1, (total_clips + self.clips_per_page - 1) // self.clips_per_page)
+        
+        # S'assurer que la page actuelle est valide
+        if self.current_page >= self.total_pages:
+            self.current_page = max(0, self.total_pages - 1)
+        self.refresh_menu()
+
     # ===== GESTION DES CLIPS STOCKÉS =====
     def load_stored_clips(self):
         """Charge les clips stockés depuis le fichier JSON"""
@@ -448,8 +492,8 @@ class ClipNotesWindow(QMainWindow):
         # Fermer le sélecteur de pages s'il existe
         self.close_page_selector()
         
-        # Réinitialiser la page à 0 (car le nombre de clips par page peut avoir changé)
-        self.current_page = 0
+        # Conserver la page actuelle (sera ajustée si nécessaire après calcul du nombre de pages)
+        saved_page = self.current_page
         
         # Réinitialiser le state
         self.current_popup.set_central_text("")
@@ -498,6 +542,12 @@ class ClipNotesWindow(QMainWindow):
         total_clips = len(all_clips_buttons)
         self.total_pages = max(1, (total_clips + self.clips_per_page - 1) // self.clips_per_page)
         
+        # Restaurer la page sauvegardée si elle est valide, sinon aller à la dernière page valide
+        if saved_page < self.total_pages:
+            self.current_page = saved_page
+        else:
+            self.current_page = max(0, self.total_pages - 1)
+        
         # Ajouter d'abord les boutons spéciaux dans l'ordre fixe
         for name in special_buttons:
             if name in self.actions_map_sub:
@@ -505,7 +555,7 @@ class ClipNotesWindow(QMainWindow):
                 tooltip = value.replace(r'\n', '\n')
                 self.buttons_sub.append((name, self.make_handler_sub(name, value, self.x, self.y), tooltip, action))
         
-        # Extraire les clips de la page actuelle (page 0)
+        # Extraire les clips de la page actuelle
         start_idx = self.current_page * self.clips_per_page
         end_idx = min(start_idx + self.clips_per_page, total_clips)
         page_clips = all_clips_buttons[start_idx:end_idx]
@@ -562,20 +612,31 @@ class ClipNotesWindow(QMainWindow):
         if context == "from_radial":
             self.update_mode = True
         
-        # Filtrer les clips (sans les boutons d'action)
-        special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
-        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
+        # Utiliser les clips de la page actuelle (déjà triés dans all_clips_data)
+        total_clips = len(self.all_clips_data)
         
-        # Récupérer l'ordre du JSON pour le tri personnalisé
-        json_order = get_json_order(self.clip_notes_file_json)
+        # S'assurer que la page actuelle est valide (au cas où elle serait devenue vide)
+        if total_clips > 0:
+            max_valid_page = (total_clips - 1) // self.clips_per_page
+            if self.current_page > max_valid_page:
+                self.current_page = max_valid_page
+        elif self.current_page > 0:
+            self.current_page = 0
         
-        # Trier les clips en respectant l'ordre du JSON
-        sorted_clips = sort_actions_map(clips_only, json_order, self.action_order)
+        start_idx = self.current_page * self.clips_per_page
+        end_idx = min(start_idx + self.clips_per_page, total_clips)
+        page_clips = self.all_clips_data[start_idx:end_idx]
+        page_clips_by_link = self.all_clips_by_link[start_idx:end_idx]
         
         self.buttons_sub = []
-        for name, (action_data, value, action) in sorted_clips:
+        for clip_tuple in page_clips:
+            name = clip_tuple[0]
+            action = clip_tuple[3]
+            clip_html = clip_tuple[4] if len(clip_tuple) > 4 else None
+            
             # Lire l'action ET le HTML depuis le JSON pour ce clip
-            clip_slider_value, clip, clip_html = self.get_clip_data_from_json(name)
+            clip_slider_value, clip, _ = self.get_clip_data_from_json(name)
+            value = self.actions_map_sub.get(name, (None, "", None))[1]
             tooltip = value.replace(r'\n', '\n')
             self.buttons_sub.append(
                 (
@@ -586,13 +647,9 @@ class ClipNotesWindow(QMainWindow):
                     clip_html  # 5ème élément : HTML pour le tooltip
                 )
             )
-        clips_by_link = []
-        for name, (action_data, value, action) in sorted_clips:
-            func, children, meta = action_data
-            if isinstance(meta, dict) and meta.get("is_group"):
-                clips_by_link.append(len(children))
-            else:
-                clips_by_link.append(1)
+        
+        clips_by_link = list(page_clips_by_link)
+        
         if self.current_popup:
             self.current_popup.update_buttons(self.buttons_sub)
             self.current_popup.set_central_text("🔧")
@@ -622,21 +679,31 @@ class ClipNotesWindow(QMainWindow):
         
         # Activer le mode suppression
         self.delete_mode = True
-        # Filtrer les clips (sans les boutons d'action)
-        special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
-        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
-        # Récupérer l'ordre du JSON pour le tri personnalisé
-        json_order = get_json_order(self.clip_notes_file_json)
+        # Utiliser les clips de la page actuelle (déjà triés dans all_clips_data)
+        total_clips = len(self.all_clips_data)
         
-        # Trier les clips en respectant l'ordre du JSON
-        sorted_clips = sort_actions_map(clips_only, json_order, self.action_order)
+        # S'assurer que la page actuelle est valide (au cas où elle serait devenue vide)
+        if total_clips > 0:
+            max_valid_page = (total_clips - 1) // self.clips_per_page
+            if self.current_page > max_valid_page:
+                self.current_page = max_valid_page
+        elif self.current_page > 0:
+            self.current_page = 0
+        
+        start_idx = self.current_page * self.clips_per_page
+        end_idx = min(start_idx + self.clips_per_page, total_clips)
+        page_clips = self.all_clips_data[start_idx:end_idx]
+        page_clips_by_link = self.all_clips_by_link[start_idx:end_idx]
         
         self.buttons_sub = []
-        for name, (action_data, value, action) in sorted_clips:
+        for clip_tuple in page_clips:
+            name = clip_tuple[0]
+            action = clip_tuple[3]
+            clip_html = clip_tuple[4] if len(clip_tuple) > 4 else None
+            
+            value = self.actions_map_sub.get(name, (None, "", None))[1]
             tooltip = value.replace(r'\n', '\n')
-            # Récupérer le HTML pour le tooltip
-            _, clip, clip_html = self.get_clip_data_from_json(name)
             self.buttons_sub.append(
                 (
                     name, 
@@ -646,13 +713,9 @@ class ClipNotesWindow(QMainWindow):
                     clip_html  # 5ème élément : HTML pour le tooltip
                 )
             )
-        clips_by_link = []
-        for name, (action_data, value, action) in sorted_clips:
-            func, children, meta = action_data
-            if isinstance(meta, dict) and meta.get("is_group"):
-                clips_by_link.append(len(children))
-            else:
-                clips_by_link.append(1)
+        
+        clips_by_link = list(page_clips_by_link)
+        
         if self.current_popup:
             self.current_popup.update_buttons(self.buttons_sub)
             self.current_popup.set_central_text("➖")
@@ -839,7 +902,8 @@ class ClipNotesWindow(QMainWindow):
             
             self.actions_map_sub.pop(name, None)
             dialog.accept()
-            # Rester en mode suppression au lieu de revenir au menu principal
+            # Recharger les données de pagination avant de rester en mode suppression
+            self.reload_pagination_data()
             self.delete_clip(x, y)
         
         delete_button.clicked.connect(confirm_delete)
@@ -2468,21 +2532,31 @@ class ClipNotesWindow(QMainWindow):
         
         # Activer le mode stockage
         self.store_mode = True
-        special_buttons = self.special_buttons_by_number[self.nb_icons_menu]
-        # Filtrer les clips (sans les boutons d'action)
-        clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
-        # Récupérer l'ordre du JSON pour le tri personnalisé
-        json_order = get_json_order(self.clip_notes_file_json)
+        # Utiliser les clips de la page actuelle (déjà triés dans all_clips_data)
+        total_clips = len(self.all_clips_data)
         
-        # Trier les clips en respectant l'ordre du JSON
-        sorted_clips = sort_actions_map(clips_only, json_order, self.action_order)
+        # S'assurer que la page actuelle est valide (au cas où elle serait devenue vide)
+        if total_clips > 0:
+            max_valid_page = (total_clips - 1) // self.clips_per_page
+            if self.current_page > max_valid_page:
+                self.current_page = max_valid_page
+        elif self.current_page > 0:
+            self.current_page = 0
+        
+        start_idx = self.current_page * self.clips_per_page
+        end_idx = min(start_idx + self.clips_per_page, total_clips)
+        page_clips = self.all_clips_data[start_idx:end_idx]
+        page_clips_by_link = self.all_clips_by_link[start_idx:end_idx]
         
         self.buttons_sub = []
-        for name, (action_data, value, action) in sorted_clips:
+        for clip_tuple in page_clips:
+            name = clip_tuple[0]
+            action = clip_tuple[3]
+            clip_html = clip_tuple[4] if len(clip_tuple) > 4 else None
+            
+            value = self.actions_map_sub.get(name, (None, "", None))[1]
             tooltip = value.replace(r'\n', '\n')
-            # Récupérer le HTML pour le tooltip
-            _, clip, clip_html = self.get_clip_data_from_json(name)
             self.buttons_sub.append(
                 (
                     name, 
@@ -2492,13 +2566,9 @@ class ClipNotesWindow(QMainWindow):
                     clip_html  # 5ème élément : HTML pour le tooltip
                 )
             )
-        clips_by_link = []
-        for name, (action_data, value, action) in sorted_clips:
-            func, children, meta = action_data
-            if isinstance(meta, dict) and meta.get("is_group"):
-                clips_by_link.append(len(children))
-            else:
-                clips_by_link.append(1)
+        
+        clips_by_link = list(page_clips_by_link)
+        
         if self.current_popup:
             self.current_popup.update_buttons(self.buttons_sub)
             self.current_popup.set_central_text("💾")
@@ -2552,7 +2622,8 @@ class ClipNotesWindow(QMainWindow):
                     self.current_popup.set_central_text("✓")
                     QTimer.singleShot(500, lambda: self.current_popup.set_central_text("💾"))
             
-            # Rester en mode stockage et rafraîchir
+            # Recharger les données de pagination et rester en mode stockage
+            self.reload_pagination_data()
             self.store_clip_mode(x, y)
             
         return handler
@@ -5046,7 +5117,8 @@ class ClipNotesWindow(QMainWindow):
                 dialog.accept()
                 
                 if context == "from_radial":
-                    # Rester en mode modification au lieu de revenir au menu principal
+                    # Recharger les données de pagination et rester en mode modification
+                    self.reload_pagination_data()
                     self.update_clip(x, y, context)
                 elif context == "from_drag_center":
                     # Retourner au menu normal (pas en mode update)
@@ -5140,7 +5212,7 @@ class ClipNotesWindow(QMainWindow):
         
         # S'assurer que la page actuelle est valide
         if self.current_page >= self.total_pages:
-            self.current_page = 0
+            self.current_page = max(0, self.total_pages - 1)
         
         # ===== Construire les boutons pour la page actuelle =====
         # Ajouter d'abord les boutons spéciaux
