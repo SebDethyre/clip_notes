@@ -23,7 +23,7 @@ PID_FILE="/tmp/clipnotes.pid"
             # Envoyer signal de fermeture propre
             kill -SIGUSR1 "$OLD_PID" 2>/dev/null
             # Attendre un peu que le process se ferme
-            sleep 0.1
+            # sleep 0.1
         fi
     fi
 # fi
