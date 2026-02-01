@@ -71,6 +71,9 @@ class ClipNotesWindow(QMainWindow):
         # Ordre des actions (modifiable par l'utilisateur via drag & drop)
         self.action_order = ["copy", "term", "exec"]
         
+        # Mode de tri des clips : "custom", "alpha", "date", "group"
+        self.sort_mode = "group"  # Par défaut, tri par groupe (comportement actuel)
+        
         # Pagination du menu radial
         self.clips_per_page = 20  # Nombre max de clips par page
         self.page_flip_direction = "horizontal"  # "horizontal" ou "vertical"
@@ -249,6 +252,13 @@ class ClipNotesWindow(QMainWindow):
             else:
                 self.action_order = ["copy", "term", "exec"]
             
+            # Charger le mode de tri
+            loaded_sort_mode = config.get('sort_mode', self.sort_mode)
+            if loaded_sort_mode in ("custom", "alpha", "date", "group"):
+                self.sort_mode = loaded_sort_mode
+            else:
+                self.sort_mode = "group"
+            
             # Charger les paramètres de pagination
             self.clips_per_page = config.get('clips_per_page', self.clips_per_page)
             self.page_flip_direction = config.get('page_flip_direction', self.page_flip_direction)
@@ -268,6 +278,7 @@ class ClipNotesWindow(QMainWindow):
             'auto_apply_icon': self.auto_apply_icon,
             'action_zone_colors': self.action_zone_colors,
             'action_order': self.action_order,
+            'sort_mode': self.sort_mode,
             'menu_opacity': self.menu_opacity,
             'menu_background_color': self.menu_background_color,
             'neon_color': self.neon_color,
@@ -299,7 +310,7 @@ class ClipNotesWindow(QMainWindow):
         # Filtrer et trier les clips
         clips_to_sort = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         json_order = get_json_order_from_data(json_data)
-        sorted_clips = sort_actions_map(clips_to_sort, json_order, self.action_order)
+        sorted_clips = sort_actions_map(clips_to_sort, json_order, self.action_order, self.sort_mode, json_data)
         
         # Reconstruire all_clips_data et all_clips_by_link
         all_clips_buttons = []
@@ -552,7 +563,7 @@ class ClipNotesWindow(QMainWindow):
         json_order = get_json_order_from_data(json_data)
         
         # Trier seulement les clips (pas les boutons spéciaux)
-        sorted_clips = sort_actions_map(clips_to_sort, json_order, self.action_order)
+        sorted_clips = sort_actions_map(clips_to_sort, json_order, self.action_order, self.sort_mode, json_data)
         
         # ===== PAGINATION : Stocker tous les clips pour navigation entre pages =====
         all_clips_buttons = []
@@ -775,16 +786,17 @@ class ClipNotesWindow(QMainWindow):
         self.actions_map_sub = self.buttons_actions_by_number[self.nb_icons_menu].copy()
         
         # Recharger les clips depuis le JSON (avec leurs nouvelles actions)
-        populate_actions_map_from_file(self.clip_notes_file_json, self.actions_map_sub, execute_command)
+        json_data = load_clip_notes_data(self.clip_notes_file_json)
+        populate_actions_map_from_data(json_data, self.actions_map_sub, execute_command)
         
         # Filtrer les clips (sans les boutons d'action)
         clips_only = {k: v for k, v in self.actions_map_sub.items() if k not in special_buttons}
         
         # Récupérer l'ordre du JSON pour le tri personnalisé
-        json_order = get_json_order(self.clip_notes_file_json)
+        json_order = get_json_order_from_data(json_data)
         
         # Trier les clips en respectant l'ordre du JSON
-        sorted_clips = sort_actions_map(clips_only, json_order, self.action_order)
+        sorted_clips = sort_actions_map(clips_only, json_order, self.action_order, self.sort_mode, json_data)
         
         self.buttons_sub = []
         for name, (action_data, value, action) in sorted_clips:
@@ -4122,12 +4134,14 @@ class ClipNotesWindow(QMainWindow):
                 self.parent_container = parent_container
                 self.setAcceptDrops(True)
                 self.drop_position = None  # 'left' ou 'right'
+                self.drag_enabled = True  # Peut être désactivé si tri != group
                 
                 layout = QVBoxLayout(self)
                 layout.setContentsMargins(5, 5, 5, 5)
                 layout.setSpacing(4)
                 
-                # Label draggable
+                # Label draggable (avec ou sans indicateur selon drag_enabled)
+                self.base_title = title
                 self.title_label = QLabel(f"⠿ {title}")
                 self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.title_label.setCursor(Qt.CursorShape.OpenHandCursor)
@@ -4148,9 +4162,19 @@ class ClipNotesWindow(QMainWindow):
                 
                 layout.addWidget(self.title_label, alignment=Qt.AlignmentFlag.AlignCenter)
                 layout.addWidget(self.picker, alignment=Qt.AlignmentFlag.AlignCenter)
+            
+            def setDragEnabled(self, enabled):
+                """Active ou désactive le drag pour ce widget"""
+                self.drag_enabled = enabled
+                if enabled:
+                    self.title_label.setText(f"⠿ {self.base_title}")
+                    self.title_label.setCursor(Qt.CursorShape.OpenHandCursor)
+                else:
+                    self.title_label.setText(self.base_title)
+                    self.title_label.setCursor(Qt.CursorShape.ArrowCursor)
                 
             def mousePressEvent(self, event):
-                if event.button() == Qt.MouseButton.LeftButton:
+                if event.button() == Qt.MouseButton.LeftButton and self.drag_enabled:
                     # Vérifier si on clique sur le label
                     label_rect = self.title_label.geometry()
                     if label_rect.contains(event.pos()):
@@ -4501,6 +4525,13 @@ class ClipNotesWindow(QMainWindow):
                 self.app_instance.action_order = order
                 self.rebuild_pickers()
                 self.apply_callback()
+            
+            def setDragEnabled(self, enabled):
+                """Active ou désactive le drag pour tous les pickers"""
+                for widget in self.picker_widgets.values():
+                    widget.setDragEnabled(enabled)
+                # Désactiver aussi l'acceptation des drops sur le container
+                self.setAcceptDrops(enabled)
 
         # Layout horizontal pour Générale + les actions
         colors_layout = QHBoxLayout()
@@ -4529,8 +4560,10 @@ class ClipNotesWindow(QMainWindow):
         colors_layout.addSpacing(30)
         
         # Conteneur pour les actions (drag & drop) - prend tout l'espace restant
-        self.action_pickers_container = ActionPickersContainer(self, apply_live)
-        colors_layout.addWidget(self.action_pickers_container, 1)  # stretch factor = 1
+        action_pickers_container = ActionPickersContainer(self, apply_live)
+        # Activer le drag seulement si mode de tri = group
+        action_pickers_container.setDragEnabled(self.sort_mode == "group")
+        colors_layout.addWidget(action_pickers_container, 1)  # stretch factor = 1
         
         config_layout.addLayout(colors_layout)
 
@@ -4600,6 +4633,73 @@ class ClipNotesWindow(QMainWindow):
         options_label = QLabel("🛠️ Options")
         options_label.setStyleSheet("font-weight: bold; color: white; margin-top: 10px;")
         config_layout.addWidget(options_label)
+        
+        # --- Tri des clips ---
+        from PyQt6.QtWidgets import QComboBox
+        
+        sort_section = QWidget()
+        sort_layout = QHBoxLayout(sort_section)
+        sort_layout.setContentsMargins(20, 5, 20, 5)
+        sort_layout.setSpacing(15)
+        
+        sort_label = QLabel("Tri des clips")
+        sort_label.setStyleSheet("color: white; font-size: 14px;")
+        
+        sort_combo = QComboBox()
+        sort_combo.addItem("📁 Par zone d'action", "group")
+        sort_combo.addItem("🔤 Alphabétique", "alpha")
+        sort_combo.addItem("🕐 Par date de création", "date")
+        sort_combo.addItem("✋ Ordre personnalisé", "custom")
+        sort_combo.setStyleSheet("""
+            QComboBox {
+                background-color: rgba(255, 255, 255, 30);
+                border: 1px solid rgba(255, 255, 255, 60);
+                border-radius: 6px;
+                padding: 6px 10px;
+                color: white;
+                min-width: 180px;
+            }
+            QComboBox:hover {
+                background-color: rgba(255, 255, 255, 50);
+            }
+            QComboBox::drop-down {
+                border: none;
+                padding-right: 10px;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 6px solid white;
+                margin-right: 5px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: rgb(50, 50, 50);
+                color: white;
+                selection-background-color: rgba(255, 255, 255, 50);
+                border: 1px solid rgba(255, 255, 255, 60);
+            }
+        """)
+        
+        # Sélectionner la valeur actuelle
+        for i in range(sort_combo.count()):
+            if sort_combo.itemData(i) == self.sort_mode:
+                sort_combo.setCurrentIndex(i)
+                break
+        
+        def on_sort_mode_changed(index):
+            new_mode = sort_combo.itemData(index)
+            self.sort_mode = new_mode
+            # Activer/désactiver le drag des couleurs selon le mode
+            action_pickers_container.setDragEnabled(new_mode == "group")
+            self.refresh_menu()
+        
+        sort_combo.currentIndexChanged.connect(on_sort_mode_changed)
+        
+        sort_layout.addWidget(sort_label)
+        sort_layout.addWidget(sort_combo)
+        sort_layout.addStretch(1)
+        config_layout.addWidget(sort_section)
 
         # Slider pour le nombre d'icones "fixes" du menu
         # slider_container = QWidget()
@@ -5502,7 +5602,7 @@ class ClipNotesWindow(QMainWindow):
         json_order = get_json_order_from_data(json_data)
         
         # Trier seulement les clips (pas les boutons spéciaux)
-        sorted_clips = sort_actions_map(clips_to_sort, json_order, self.action_order)
+        sorted_clips = sort_actions_map(clips_to_sort, json_order, self.action_order, self.sort_mode, json_data)
         
         # ===== PAGINATION : Stocker tous les clips pour navigation entre pages =====
         # Construire les données pour TOUS les clips

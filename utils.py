@@ -1,4 +1,5 @@
 import pyperclip, subprocess, io, json, os, hashlib
+from datetime import datetime
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -185,54 +186,66 @@ def text_pixmap(text, size=32):
     qt_img = QImage.fromData(data.getvalue(), "PNG")
     return QPixmap.fromImage(qt_img)
 
-def sort_actions_map(actions_map, json_order=None, custom_action_order=None):
+def sort_actions_map(actions_map, json_order=None, custom_action_order=None, sort_mode="group", json_data=None):
     """
-    Trie le dictionnaire d'actions selon :
-    1. L'action (None d'abord, puis selon custom_action_order ou copy, term, exec par défaut)
-    2. L'ordre du JSON si fourni, sinon alphabétiquement par alias
+    Trie le dictionnaire d'actions selon le mode spécifié.
+    
+    Modes disponibles:
+    - "group": Tri par action (zones), puis par ordre JSON (comportement par défaut)
+    - "alpha": Tri alphabétique par alias (sans regroupement par action)
+    - "date": Tri par date de création via id (sans regroupement par action)
+    - "custom": Ordre du JSON tel quel (sans regroupement par action)
     
     Retourne une liste d'items triés : [(alias, (action_data, value, action)), ...]
-    
-    Args:
-        actions_map: Le dictionnaire d'actions
-        json_order: Dictionnaire optionnel {alias: index} pour l'ordre personnalisé
-        custom_action_order: Liste optionnelle définissant l'ordre des actions ["copy", "term", "exec"]
     """
-    # Définir l'ordre de priorité des actions
-    if custom_action_order:
-        action_order = {None: 0}
-        for i, action in enumerate(custom_action_order):
-            action_order[action] = i + 1
-    else:
-        action_order = {
-            None: 0,    # Boutons d'action (➕, 📝, 🗑️) en premier
-            "copy": 1,
-            "term": 2,
-            "exec": 3
-        }
-    
-    # Convertir le dictionnaire en liste d'items
     items = list(actions_map.items())
-    # Fonction de tri personnalisée
-    def sort_key(item):
-        alias, (action_data, value, action) = item
-        # Première clé : priorité de l'action
-        action_priority = action_order.get(action, 999)
-        # Deuxième clé : ordre du JSON si disponible, sinon alphabétique
-        # IMPORTANT: Utiliser un tuple (has_order, order_value) pour éviter
-        # la comparaison entre int et string
-        if json_order and alias in json_order:
-            # (0, index, "") - les clips avec ordre JSON viennent en premier
-            order_key = (0, json_order[alias], "")
-        else:
-            # (1, 0, alias) - les clips sans ordre JSON viennent après, triés alphabétiquement
-            order_key = (1, 0, alias.lower())
-        return (action_priority, order_key)
     
-    # Trier
-    sorted_items = sorted(items, key=sort_key)
-    return sorted_items
-
+    # Séparer boutons spéciaux (action=None) des clips
+    special_buttons = [(k, v) for k, v in items if v[2] is None]
+    clips = [(k, v) for k, v in items if v[2] is not None]
+    
+    if sort_mode == "group":
+        # Regrouper par action (comportement original)
+        if custom_action_order:
+            action_order = {act: i for i, act in enumerate(custom_action_order)}
+        else:
+            action_order = {"copy": 0, "term": 1, "exec": 2}
+        
+        def sort_key(item):
+            alias, (action_data, value, action) = item
+            action_priority = action_order.get(action, 999)
+            if json_order and alias in json_order:
+                order_key = (0, json_order[alias])
+            else:
+                order_key = (1, alias.lower())
+            return (action_priority, order_key)
+        
+        sorted_clips = sorted(clips, key=sort_key)
+    
+    elif sort_mode == "alpha":
+        # Tri alphabétique simple
+        sorted_clips = sorted(clips, key=lambda item: item[0].lower())
+    
+    elif sort_mode == "date":
+        # Tri par id (proxy de date de création)
+        alias_to_id = {}
+        if json_data:
+            for item in json_data:
+                alias = item.get('alias')
+                clip_id = item.get('id', 999999)
+                if alias:
+                    alias_to_id[alias] = clip_id
+        
+        sorted_clips = sorted(clips, key=lambda item: alias_to_id.get(item[0], 999999))
+    
+    else:  # "custom" - ordre du JSON tel quel
+        if json_order:
+            sorted_clips = sorted(clips, key=lambda item: json_order.get(item[0], 999999))
+        else:
+            sorted_clips = clips  # Pas de tri
+    
+    # Boutons spéciaux toujours en premier
+    return special_buttons + sorted_clips
 
 def get_json_order(file_path):
     """
@@ -354,7 +367,7 @@ def reorder_json_clips(file_path, action, new_order):
         json.dump(new_data, f, indent=4, ensure_ascii=False)
 
 
-def move_clip_in_json(file_path, source_alias, target_position_alias, insert_before=True, new_action=None):
+def move_clip_in_json(file_path, source_alias, target_position_alias, insert_before=True, new_action=None, context=None):
     """
     Déplace un clip ou un groupe vers une nouvelle position dans le fichier JSON.
     Peut aussi changer l'action du clip/groupe si new_action est spécifié.
@@ -399,14 +412,14 @@ def move_clip_in_json(file_path, source_alias, target_position_alias, insert_bef
     
     if target_index is None:
         return False
-    
+    if context != "custom":
     # Changer l'action du clip si demandé
-    if new_action is not None:
-        source_clip['action'] = new_action
-        # Si c'est un groupe, mettre à jour tous les enfants aussi
-        if source_clip.get('type') == 'group':
-            for child in source_clip.get('children', []):
-                child['action'] = new_action
+        if new_action is not None:
+            source_clip['action'] = new_action
+            # Si c'est un groupe, mettre à jour tous les enfants aussi
+            if source_clip.get('type') == 'group':
+                for child in source_clip.get('children', []):
+                    child['action'] = new_action
     
     # Retirer le clip source de sa position actuelle
     data.pop(source_index)
@@ -431,9 +444,10 @@ def move_clip_in_json(file_path, source_alias, target_position_alias, insert_bef
     # Reconstruire la liste dans l'ordre correct
     new_data = clips_by_action["copy"] + clips_by_action["term"] + clips_by_action["exec"]
     
+    data_sent = new_data if context != "custom" else data
     # Sauvegarder
     with open(file_path, 'w', encoding='utf-8') as f:
-        json.dump(new_data, f, indent=4, ensure_ascii=False)
+        json.dump(data_sent, f, indent=4, ensure_ascii=False)
     
     return True
 
@@ -515,6 +529,28 @@ def append_to_actions_file(file_path, key, value):
         f.write(f"{key}:{value}\n")
         # print(f"[Info] La clé '{key}' a été ajoutée au fichier.")
 
+def get_next_clip_id(data):
+    """
+    Retourne le prochain ID disponible pour un clip.
+    Parcourt les données existantes et retourne max(id) + 1, ou 0 si aucun clip.
+    
+    Args:
+        data: Liste des clips existants
+    
+    Returns:
+        int: Prochain ID disponible
+    """
+    if not data:
+        return 0
+    
+    max_id = -1
+    for item in data:
+        clip_id = item.get("id")
+        if clip_id is not None and isinstance(clip_id, int):
+            max_id = max(max_id, clip_id)
+    
+    return max_id + 1
+
 def append_to_actions_file_json(file_path, alias, string, action="copy", html_string=None):
     """
     Ajoute une entrée dans le fichier JSON d'actions.
@@ -546,8 +582,14 @@ def append_to_actions_file_json(file_path, alias, string, action="copy", html_st
             print(f"[Info] L'alias '{alias}' existe déjà.")
             return
     
+    # Calculer le prochain ID et le timestamp
+    next_id = get_next_clip_id(data)
+    created_at = datetime.now().isoformat()
+    
     # Ajouter la nouvelle entrée
     new_entry = {
+        "id": next_id,
+        "created_at": created_at,
         "alias": alias,
         "action": action,
         "string": string
@@ -638,7 +680,7 @@ def replace_or_append_json(file_path, alias, string, action="copy", html_string=
     found = False
     for item in data:
         if item.get("alias") == alias:
-            # Remplacer les valeurs
+            # Remplacer les valeurs (mais garder id et created_at existants)
             item["string"] = string
             item["action"] = action
             # Gérer le HTML : l'ajouter, le mettre à jour, ou le supprimer
@@ -650,9 +692,14 @@ def replace_or_append_json(file_path, alias, string, action="copy", html_string=
             print(f"[Info] L'alias '{alias}' a été mis à jour.")
             break
     
-    # Si l'alias n'existe pas, l'ajouter
+    # Si l'alias n'existe pas, l'ajouter avec id et created_at
     if not found:
+        next_id = get_next_clip_id(data)
+        created_at = datetime.now().isoformat()
+        
         new_entry = {
+            "id": next_id,
+            "created_at": created_at,
             "alias": alias,
             "action": action,
             "string": string
@@ -858,8 +905,14 @@ def create_group_in_json(file_path, clip1_alias, clip2_alias, group_alias="📁"
     # Déterminer l'action commune (celle du premier clip)
     common_action = clip1_data.get('action', 'copy')
     
+    # Calculer l'ID et le timestamp pour le groupe
+    next_id = get_next_clip_id(data)
+    created_at = datetime.now().isoformat()
+    
     # Créer le groupe
     group = {
+        'id': next_id,
+        'created_at': created_at,
         'alias': final_alias,
         'type': 'group',
         'action': common_action,
@@ -1077,7 +1130,7 @@ def store_clip_from_group(file_path, group_alias, clip_alias):
 
     return clip_data
 
-def extract_clip_from_group_to_position(file_path, group_alias, clip_alias, target_alias, insert_before=True, new_action=None):
+def extract_clip_from_group_to_position(file_path, group_alias, clip_alias, target_alias, insert_before=True, new_action=None, context = ""):
     """
     Extrait un clip d'un groupe et le place à une position spécifique en une seule opération.
     Évite les problèmes de décalage d'indices liés à deux opérations séparées.

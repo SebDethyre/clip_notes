@@ -1273,20 +1273,25 @@ class RadialMenu(QWidget):
                     
                     # drop_target_info contient (target_index, insert_before, target_action)
                     target_index, insert_before, target_action = self.drop_target_info
-                    
+                    print(self.drop_target_info)
+                    print(self.dragging_child_data["action"])
                     child_alias = self.dragging_child_data.get('alias', '')
                     group_alias = self.dragging_child_group_alias
                     target_alias = self.button_labels[target_index] if target_index < len(self.button_labels) else None
                     
                     if child_alias and group_alias and target_alias and self.app_instance:
                         # Extraire le clip du groupe et le placer à la position cible en une seule opération
+                        # Ne changer l'action que si le tri est par groupe
+                        sort_mode = getattr(self.app_instance, 'sort_mode', 'group')
+                        print(sort_mode)
+                        action_to_set = target_action if sort_mode == "group" else None
                         success = extract_clip_from_group_to_position(
                             self.app_instance.clip_notes_file_json,
                             group_alias,
                             child_alias,
                             target_alias,
                             insert_before,
-                            new_action=target_action
+                            new_action=action_to_set
                         )
                         
                         if success:
@@ -1350,12 +1355,19 @@ class RadialMenu(QWidget):
                 if source_alias and target_alias and source_alias != target_alias:
                     # Effectuer le déplacement via l'app_instance
                     if self.app_instance:
+                        print(self.button_actions[self.dragged_button_index])
+                        print(target_action)
+                        # Ne changer l'action que si le tri est par groupe
+                        sort_mode = getattr(self.app_instance, 'sort_mode', 'group')
+                        print(sort_mode)
+                        action_to_set = target_action if sort_mode == "group" else None
                         success = move_clip_in_json(
                             self.app_instance.clip_notes_file_json,
                             source_alias,
                             target_alias,
                             insert_before,
-                            new_action=target_action  # Passer la nouvelle action
+                            new_action=action_to_set,  # Passer la nouvelle action seulement si tri par groupe
+                            context=sort_mode
                         )
                         if success:
                             self._reset_drag_state()
@@ -1754,12 +1766,12 @@ class RadialMenu(QWidget):
             elif diff < -180:
                 diff += 360
             
-            if curr_action == next_action:
-                # Même zone : une seule position au milieu
+            if curr_action == next_action or (self.app_instance and getattr(self.app_instance, 'sort_mode', 'group') != "group"):
+                # Même zone OU pas de regroupement par zone : une seule position au milieu
                 indicator_angle = (curr_angle + diff / 2) % 360
                 drop_positions.append((indicator_angle, next_btn_index, True, curr_action))
             else:
-                # Zones différentes : deux positions distinctes
+                # Zones différentes ET mode group : deux positions distinctes
                 # Position pour "fin de zone courante" (1/3 de l'espace)
                 indicator_end_curr = (curr_angle + diff / 3) % 360
                 drop_positions.append((indicator_end_curr, curr_btn_index, False, curr_action))
