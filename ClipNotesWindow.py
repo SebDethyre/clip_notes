@@ -1,7 +1,7 @@
-import sys, os, time, json, subprocess, signal,fcntl
+import sys, os, time, json, subprocess, signal,fcntl, tempfile
 
-from PyQt6.QtGui import QPainter, QColor, QIcon, QPalette, QPixmap, QPainterPath
-from PyQt6.QtCore import Qt, QSize, QTimer, QEvent, QVariantAnimation
+from PyQt6.QtGui import QPainter, QColor, QIcon, QPalette, QPixmap, QPainterPath, QDesktopServices, QDrag
+from PyQt6.QtCore import Qt, QSize, QTimer, QEvent, QVariantAnimation, QUrl, QMimeData, QPoint
 from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QMainWindow, QVBoxLayout, QHBoxLayout, QSlider, QDialog, QLineEdit, QGridLayout, QSizePolicy
 from PyQt6.QtWidgets import QTextEdit, QTextBrowser, QLabel, QFileDialog, QCheckBox, QScrollArea, QListWidgetItem, QAbstractItemView, QTabWidget
 
@@ -80,6 +80,10 @@ class ClipNotesWindow(QMainWindow):
         self.total_pages = 1  # Nombre total de pages
         self.page_selector = None  # Widget sélecteur de pages
         self.is_changing_page = False  # Flag pour éviter les conflits pendant le changement de page
+        
+        # Tri des clips stockés
+        self.stored_clips_sort_column = None  # None = ordre naturel, "alias", "action", "string"
+        self.stored_clips_sort_ascending = True
         
         self.dialog_style = """
             QWidget {
@@ -372,6 +376,37 @@ class ClipNotesWindow(QMainWindow):
         clips = [clip for clip in clips if clip.get('alias') != alias]
         self.save_stored_clips(clips)
         return clips
+
+    def sort_stored_clips(self, clips, column, ascending=True):
+        """Trie les clips stockés par colonne"""
+        if column is None:
+            return clips  # Ordre naturel
+        
+        def get_sort_key(clip):
+            value = clip.get(column, '')
+            if value is None:
+                value = ''
+            return str(value).lower()
+        
+        return sorted(clips, key=get_sort_key, reverse=not ascending)
+    
+    def toggle_stored_clips_sort(self, column, parent_dialog, x, y):
+        """Toggle le tri sur une colonne"""
+        if self.stored_clips_sort_column == column:
+            # Même colonne : inverser l'ordre
+            self.stored_clips_sort_ascending = not self.stored_clips_sort_ascending
+        else:
+            # Nouvelle colonne : tri ascendant
+            self.stored_clips_sort_column = column
+            self.stored_clips_sort_ascending = True
+        
+        self.refresh_stored_clips_tab(parent_dialog, x, y)
+    
+    def reset_stored_clips_sort(self, parent_dialog, x, y):
+        """Réinitialise le tri à l'ordre naturel"""
+        self.stored_clips_sort_column = None
+        self.stored_clips_sort_ascending = True
+        self.refresh_stored_clips_tab(parent_dialog, x, y)
 
     def eventFilter(self, watched, event):
         """Gère les événements de hover et de clic sur les widgets du dialogue"""
@@ -2703,24 +2738,76 @@ class ClipNotesWindow(QMainWindow):
             empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             scroll_layout.addWidget(empty_label)
         else:
-            # En-tête
+            # Appliquer le tri
+            sorted_clips = self.sort_stored_clips(stored_clips, self.stored_clips_sort_column, self.stored_clips_sort_ascending)
+            
+            # Indicateur de tri
+            def get_sort_indicator(column):
+                if self.stored_clips_sort_column == column:
+                    return " ↑" if self.stored_clips_sort_ascending else " ↓"
+                return ""
+            
+            # Style commun pour les boutons d'en-tête (apparence de header)
+            header_btn_style = """
+                QPushButton {
+                    font-weight: bold;
+                    color: white;
+                    background-color: transparent;
+                    border: none;
+                    padding: 4px 0px;
+                    text-align: left;
+                }
+                QPushButton:hover {
+                    color: rgba(200, 200, 255, 255);
+                }
+            """
+            
+            # En-tête avec boutons cliquables
             header_layout = QHBoxLayout()
             
-            alias_header = QLabel("Alias")
-            alias_header.setStyleSheet("font-weight: bold; color: white;")
+            alias_header = QPushButton(f"Alias{get_sort_indicator('alias')}")
+            alias_header.setStyleSheet(header_btn_style)
             alias_header.setFixedWidth(50)
+            alias_header.setCursor(Qt.CursorShape.PointingHandCursor)
+            alias_header.clicked.connect(lambda: self.toggle_stored_clips_sort('alias', parent_dialog, x, y))
             
-            action_header = QLabel("Action")
-            action_header.setStyleSheet("font-weight: bold; color: white;")
+            action_header = QPushButton(f"Action{get_sort_indicator('action')}")
+            action_header.setStyleSheet(header_btn_style)
             action_header.setFixedWidth(80)
+            action_header.setCursor(Qt.CursorShape.PointingHandCursor)
+            action_header.clicked.connect(lambda: self.toggle_stored_clips_sort('action', parent_dialog, x, y))
             
-            value_header = QLabel("Valeur")
-            value_header.setStyleSheet("font-weight: bold; color: white;")
+            value_header = QPushButton(f"Valeur{get_sort_indicator('string')}")
+            value_header.setStyleSheet(header_btn_style)
+            value_header.setCursor(Qt.CursorShape.PointingHandCursor)
+            value_header.clicked.connect(lambda: self.toggle_stored_clips_sort('string', parent_dialog, x, y))
+            
+            # Bouton de réinitialisation (visible seulement si tri actif)
+            reset_btn = QPushButton("⟳")
+            reset_btn.setFixedSize(30, 26)
+            reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            reset_btn.setProperty("help_text", "Réinitialiser l'ordre")
+            reset_btn.installEventFilter(self)
+            reset_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: rgba(100, 150, 200, 100);
+                    border: 1px solid rgba(100, 150, 200, 150);
+                    border-radius: 4px;
+                    font-size: 14px;
+                    color: white;
+                }
+                QPushButton:hover {
+                    background-color: rgba(100, 150, 200, 180);
+                }
+            """)
+            reset_btn.clicked.connect(lambda: self.reset_stored_clips_sort(parent_dialog, x, y))
+            reset_btn.setVisible(self.stored_clips_sort_column is not None)
             
             header_layout.addWidget(alias_header)
             header_layout.addWidget(action_header)
             header_layout.addWidget(value_header)
             header_layout.addStretch()
+            header_layout.addWidget(reset_btn)
             
             scroll_layout.addLayout(header_layout)
             
@@ -2730,8 +2817,8 @@ class ClipNotesWindow(QMainWindow):
             separator.setStyleSheet("background-color: rgba(100, 100, 100, 150);")
             scroll_layout.addWidget(separator)
             
-            # Liste des clips
-            for clip_data in stored_clips:
+            # Liste des clips (triés)
+            for clip_data in sorted_clips:
                 clip_layout = QHBoxLayout()
                 
                 alias = clip_data.get('alias', '')
@@ -2833,7 +2920,7 @@ class ClipNotesWindow(QMainWindow):
                     }
                 """)
                 edit_btn.clicked.connect(lambda checked, a=alias, s=string, sv=slider_value, d=parent_dialog, hs=html_string: self.edit_clip_from_storage_tab(a, s, x, y, sv, d, hs))
-                
+
                 # Bouton supprimer
                 delete_btn = QPushButton("🗑️")
                 delete_btn.setFixedSize(30, 30)
@@ -2841,7 +2928,7 @@ class ClipNotesWindow(QMainWindow):
                 delete_btn.installEventFilter(self)
                 delete_btn.setStyleSheet("""
                     QPushButton {
-                        background-color: rgba(255, 255, 150, 100);
+                        background-color: rgba(255, 100, 100, 100);
                         border: 1px solid rgba(255, 100, 100, 150);
                         border-radius: 10px;
                     }
@@ -2850,6 +2937,64 @@ class ClipNotesWindow(QMainWindow):
                     }
                 """)
                 delete_btn.clicked.connect(lambda checked, a=alias, d=parent_dialog: self.delete_stored_clip_and_refresh_tab(a, d, x, y))
+
+                # Bouton Copier
+                copy_btn = QPushButton("✂️")
+                copy_btn.setFixedSize(30, 30)
+                copy_btn.setProperty("help_text", "Copier dans le presse-papier")
+                copy_btn.installEventFilter(self)
+                r, g, b = self.action_zone_colors.get("copy", (98, 160, 234))
+                copy_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: rgba({r}, {g}, {b}, 100);
+                        border: 1px solid rgba({r}, {g}, {b}, 150);
+                        border-radius: 10px;
+                        Padding-left: 10px;
+                    }}
+                    QPushButton:hover {{
+                        background-color: rgba({r}, {g}, {b}, 150);
+                    }}
+                """)
+                copy_btn.clicked.connect(lambda checked, s=string: paperclip_copy(s))
+
+                # Bouton Lancer
+                term_btn = QPushButton("💻")
+                term_btn.setFixedSize(30, 30)
+                term_btn.setProperty("help_text", "Lancer dans un terminal")
+                term_btn.installEventFilter(self)
+                r, g, b = self.action_zone_colors.get("term", (248, 228, 92))
+                term_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: rgba({r}, {g}, {b}, 100);
+                        border: 1px solid rgba({r}, {g}, {b}, 150);
+                        border-radius: 10px;
+                        Padding-left: 10px;
+                    }}
+                    QPushButton:hover {{
+                        background-color: rgba({r}, {g}, {b}, 150);
+                    }}
+                """)
+                term_btn.clicked.connect(lambda checked, s=string: execute_terminal(s))
+
+                # Bouton Lancer dans un terminal
+                exec_btn = QPushButton("🚀")
+                exec_btn.setFixedSize(30, 30)
+                exec_btn.setProperty("help_text", "Lancer")
+                exec_btn.installEventFilter(self)
+                r, g, b = self.action_zone_colors.get("exec", (224, 27, 36))
+                exec_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: rgba({r}, {g}, {b}, 100);
+                        border: 1px solid rgba({r}, {g}, {b}, 150);
+                        border-radius: 10px;
+                        Padding-left: 10px;
+                    }}
+                    QPushButton:hover {{
+                        background-color: rgba({r}, {g}, {b}, 150);
+                    }}
+                """)
+
+                exec_btn.clicked.connect(lambda checked, s=string: execute_command(s))
                 
                 clip_layout.addWidget(alias_label)
                 clip_layout.addWidget(action_label)
@@ -2857,7 +3002,12 @@ class ClipNotesWindow(QMainWindow):
                 clip_layout.addStretch()
                 clip_layout.addWidget(restore_btn)
                 clip_layout.addWidget(edit_btn)
+                # clip_layout.addWidget(edit_sys_btn)
                 clip_layout.addWidget(delete_btn)
+                clip_layout.addSpacing(10)
+                clip_layout.addWidget(copy_btn)
+                clip_layout.addWidget(term_btn)
+                clip_layout.addWidget(exec_btn)
                 
                 scroll_layout.addLayout(clip_layout)
         
@@ -3604,7 +3754,7 @@ class ClipNotesWindow(QMainWindow):
         palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
         dialog.setPalette(palette)
         dialog.setStyleSheet("background-color: rgba(40, 40, 40, 150);")
-        dialog.setFixedSize(500, 760)
+        dialog.setFixedSize(500, 730)
         dialog.move(x - 250, y - 300)
         
         main_layout = QVBoxLayout(dialog)
@@ -3895,11 +4045,11 @@ class ClipNotesWindow(QMainWindow):
         dialog.setWindowTitle("⚙️ Configurer")
         dialog.setWindowFlags(Qt.WindowType.Dialog)
         dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        dialog.setFixedSize(800, 670) 
+        dialog.setFixedSize(800, 730) 
         
         # dialog.setFixedSize(400, 700)
         tabs = QTabWidget(dialog)
-        tabs.setGeometry(0, 0, 800, 670)  # ou layout si tu préfères
+        tabs.setGeometry(0, 0, 800, 730)  # ou layout si tu préfères
 
         # ⚡ 1. QTabWidget transparent
         tabs.setStyleSheet("""
@@ -3940,10 +4090,6 @@ class ClipNotesWindow(QMainWindow):
         config_layout.setContentsMargins(20, 20, 20, 20)
         config_layout.addWidget(QLabel("🎨 Couleurs", styleSheet="font-weight:bold;"))
 
-        # Imports nécessaires pour le drag & drop
-        from PyQt6.QtGui import QDrag
-        from PyQt6.QtCore import QMimeData
-
         # --- Widget indicateur de drop (ligne verticale) ---
         # class DropIndicator(QWidget):
         #     """Ligne verticale qui apparaît pendant le drag pour indiquer où l'élément sera déposé"""
@@ -3960,20 +4106,11 @@ class ClipNotesWindow(QMainWindow):
         #                 stop:1 transparent);
         #             border-radius: 2px;
         #         """)
-        class DropIndicator(QWidget):
+        class DropIndicator(QLabel):
+            """Indicateur de drop qui affiche le mimic du bloc en cours de drag"""
             def __init__(self, parent=None):
                 super().__init__(parent)
-
-                self.setFixedWidth(4)
-                self.setMinimumHeight(80)
-
-                # 🔑 INDISPENSABLE avec WA_TranslucentBackground
-                self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-
-                self.setStyleSheet("""
-                    background-color: rgb(255, 255, 255);
-                """)
-
+                self.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.hide()
    
         # --- Widget draggable pour les pickers d'action ---
@@ -3991,7 +4128,7 @@ class ClipNotesWindow(QMainWindow):
                 layout.setSpacing(4)
                 
                 # Label draggable
-                self.title_label = QLabel(title)
+                self.title_label = QLabel(f"⠿ {title}")
                 self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.title_label.setCursor(Qt.CursorShape.OpenHandCursor)
                 self.title_label.setStyleSheet("""
@@ -4017,21 +4154,44 @@ class ClipNotesWindow(QMainWindow):
                     # Vérifier si on clique sur le label
                     label_rect = self.title_label.geometry()
                     if label_rect.contains(event.pos()):
-                        self.title_label.setCursor(Qt.CursorShape.ClosedHandCursor)
-                        self.parent_container.start_drag(self.action_key)
+                        
+                        # Créer le pixmap du bloc (label + picker)
+                        label_pixmap = self.title_label.grab()
+                        picker_pixmap = self.picker.grab()
+                        
+                        padding = 10
+                        spacing = 4
+                        total_width = max(label_pixmap.width(), picker_pixmap.width()) + padding * 2
+                        total_height = label_pixmap.height() + picker_pixmap.height() + spacing + padding * 2
+                        
+                        final_pixmap = QPixmap(total_width, total_height)
+                        final_pixmap.fill(QColor(45, 45, 45, 230))
+                        
+                        painter = QPainter(final_pixmap)
+                        label_x = (total_width - label_pixmap.width()) // 2
+                        painter.drawPixmap(label_x, padding, label_pixmap)
+                        picker_x = (total_width - picker_pixmap.width()) // 2
+                        picker_y = padding + label_pixmap.height() + spacing
+                        painter.drawPixmap(picker_x, picker_y, picker_pixmap)
+                        painter.end()
+                        
+                        # Passer le pixmap au container
+                        self.parent_container.start_drag(self.action_key, final_pixmap)
                         
                         drag = QDrag(self)
                         mime_data = QMimeData()
                         mime_data.setText(self.action_key)
                         drag.setMimeData(mime_data)
                         
-                        # Créer un pixmap du label pour le drag
-                        pixmap = self.title_label.grab()
-                        drag.setPixmap(pixmap)
-                        drag.setHotSpot(event.pos() - self.title_label.pos())
+                        drag.setPixmap(final_pixmap)
+                        drag.setHotSpot(QPoint(total_width // 2, padding + label_pixmap.height() // 2))
+                        
+                        # Changer le curseur pendant le drag
+                        QApplication.setOverrideCursor(Qt.CursorShape.ClosedHandCursor)
                         
                         result = drag.exec(Qt.DropAction.MoveAction)
-                        self.title_label.setCursor(Qt.CursorShape.OpenHandCursor)
+                        
+                        QApplication.restoreOverrideCursor()
                         self.parent_container.end_drag()
                     else:
                         super().mousePressEvent(event)
@@ -4085,6 +4245,10 @@ class ClipNotesWindow(QMainWindow):
                 self.drop_indicators = {}
                 self.dragging = False
                 self.drag_source = None
+                self.drag_pixmap = None
+                self.current_drop_target = None  # (action, position)
+                
+                self.setAcceptDrops(True)  # Accepter les drops sur tout le container
                 
                 self.main_layout = QHBoxLayout(self)
                 self.main_layout.setSpacing(0)
@@ -4108,6 +4272,9 @@ class ClipNotesWindow(QMainWindow):
                     "term": ("💻 Terminal", self.app_instance.action_zone_colors["term"]),
                     "exec": ("🚀 Exécuter", self.app_instance.action_zone_colors["exec"])
                 }
+                
+                # Stretch initial pour répartition uniforme
+                self.main_layout.addStretch(1)
                 
                 # Créer les pickers dans l'ordre de action_order avec indicateurs entre eux
                 for i, action in enumerate(self.app_instance.action_order):
@@ -4138,16 +4305,22 @@ class ClipNotesWindow(QMainWindow):
                     indicator = DropIndicator()
                     self.drop_indicators[f"after_{action}"] = indicator
                     self.main_layout.addWidget(indicator)
+                    
+                    # Stretch entre les pickers pour répartition uniforme
+                    self.main_layout.addStretch(1)
             
-            def start_drag(self, action_key):
+            def start_drag(self, action_key, pixmap=None):
                 """Appelé quand un drag commence"""
                 self.dragging = True
                 self.drag_source = action_key
+                self.drag_pixmap = pixmap
             
             def end_drag(self):
                 """Appelé quand un drag se termine"""
                 self.dragging = False
                 self.drag_source = None
+                self.drag_pixmap = None
+                self.current_drop_target = None
                 self.hide_drop_indicator()
             
             def show_drop_indicator(self, target_action, position):
@@ -4163,12 +4336,147 @@ class ClipNotesWindow(QMainWindow):
                     key = f"after_{target_action}"
                 
                 if key in self.drop_indicators:
-                    self.drop_indicators[key].show()
+                    indicator = self.drop_indicators[key]
+                    if self.drag_pixmap:
+                        indicator.setPixmap(self.drag_pixmap)
+                    indicator.show()
             
             def hide_drop_indicator(self):
                 """Cache tous les indicateurs de drop"""
                 for indicator in self.drop_indicators.values():
                     indicator.hide()
+            
+            def find_drop_target(self, x):
+                """Trouve l'action cible et la position (left/right) en fonction de la position X"""
+                # Récupérer les positions des pickers (sauf celui qu'on drag)
+                picker_positions = []
+                for action in self.app_instance.action_order:
+                    if action != self.drag_source and action in self.picker_widgets:
+                        widget = self.picker_widgets[action]
+                        geom = widget.geometry()
+                        center_x = geom.x() + geom.width() // 2
+                        picker_positions.append((action, center_x))
+                
+                if not picker_positions:
+                    return None, None
+                
+                # Trouver le picker dont le centre est le plus proche de x
+                closest_action = None
+                closest_center = None
+                min_distance = float('inf')
+                
+                for action, center in picker_positions:
+                    distance = abs(x - center)
+                    if distance < min_distance:
+                        min_distance = distance
+                        closest_action = action
+                        closest_center = center
+                
+                # Déterminer si on est à gauche ou à droite du centre
+                if x < closest_center:
+                    return closest_action, 'left'
+                else:
+                    return closest_action, 'right'
+              
+            # def find_drop_target(self, x):
+            #     """Trouve l'action cible et la position (left/right) en fonction de la position X"""
+            #     # Récupérer les positions des pickers
+            #     picker_positions = []
+            #     for action in self.app_instance.action_order:
+            #         if action in self.picker_widgets:
+            #             widget = self.picker_widgets[action]
+            #             geom = widget.geometry()
+            #             center_x = geom.x() + geom.width() // 2
+            #             picker_positions.append((action, geom.x(), center_x, geom.x() + geom.width()))
+            #     indicator_width = 100
+            #     if not picker_positions:
+            #         return None, None
+            #     x_left = x - indicator_width // 2
+            #     x_right = x + indicator_width // 2
+            #     # Trouver le picker le plus proche
+            #     for action, left, center, right in picker_positions:
+            #         if x_left < center:
+            #             return action, 'left'
+            #         elif x_right < right:
+            #             return action, 'right'
+                
+            #     # Si on est après le dernier, retourner le dernier à droite
+            #     last_action = picker_positions[-1][0]
+            #     return last_action, 'right'
+            # def find_drop_target(self, x):
+            #     """Trouve l'action cible et la position (left/right) en fonction de la position X"""
+            #     picker_positions = []
+            #     for action in self.app_instance.action_order:
+            #         if action in self.picker_widgets:
+            #             widget = self.picker_widgets[action]
+            #             geom = widget.geometry()
+            #             center_x = geom.x() + geom.width() // 2
+            #             picker_positions.append((action, geom.x(), center_x, geom.x() + geom.width()))
+                
+            #     indicator_width = 80
+            #     drop_margin = 40  # marge pour élargir la zone de drop
+
+            #     if not picker_positions:
+            #         return None, None
+
+            #     # Bords de l'indicateur
+            #     x_left = x - indicator_width // 2
+            #     x_right = x + indicator_width // 2
+
+            #     for action, left, center, right in picker_positions:
+            #         # Définir la zone de drop étendue
+            #         zone_left = left - drop_margin
+            #         zone_right = right + drop_margin
+
+            #         # On calcule la distance relative à gauche et droite
+            #         dist_left = abs(x_left - left)
+            #         dist_right = abs(x_right - right)
+
+            #         # Si l'indicateur recouvre la zone du picker
+            #         if x_right >= zone_left and x_left <= zone_right:
+            #             # Choisir left ou right selon la moitié dans laquelle le centre tombe
+            #             if x < center:
+            #                 return action, 'left'
+            #             else:
+            #                 return action, 'right'
+
+            #     # Si on est après le dernier picker
+            #     last_action = picker_positions[-1][0]
+            #     return last_action, 'right'
+            
+            def dragEnterEvent(self, event):
+                if event.mimeData().hasText():
+                    source_action = event.mimeData().text()
+                    if source_action in self.app_instance.action_order:
+                        event.acceptProposedAction()
+            
+            def dragMoveEvent(self, event):
+                if event.mimeData().hasText():
+                    source_action = event.mimeData().text()
+                    if source_action in self.app_instance.action_order:
+                        event.acceptProposedAction()
+                        x = event.position().x()
+                        target_action, position = self.find_drop_target(x)
+                        if target_action and target_action != source_action:
+                            self.current_drop_target = (target_action, position)
+                            self.show_drop_indicator(target_action, position)
+                        else:
+                            self.current_drop_target = None
+                            self.hide_drop_indicator()
+            
+            def dragLeaveEvent(self, event):
+                self.current_drop_target = None
+                self.hide_drop_indicator()
+            
+            def dropEvent(self, event):
+                if event.mimeData().hasText() and self.current_drop_target:
+                    source_action = event.mimeData().text()
+                    target_action, position = self.current_drop_target
+                    if source_action != target_action:
+                        self.move_action(source_action, target_action, position)
+                        event.acceptProposedAction()
+                self.current_drop_target = None
+                self.hide_drop_indicator()
             
             def move_action(self, source_action, target_action, position):
                 """Déplace une action vers une nouvelle position"""
@@ -4204,7 +4512,7 @@ class ClipNotesWindow(QMainWindow):
         general_layout.setContentsMargins(5, 5, 5, 5)
         general_layout.setSpacing(4)
         
-        general_label = QLabel("🔘 Générale")
+        general_label = QLabel("🔘 Menu")
         general_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         general_picker = CircularColorPicker(self.menu_background_color, radius=38)
         general_picker.colorChanged.connect(lambda rgb: (
@@ -4217,11 +4525,13 @@ class ClipNotesWindow(QMainWindow):
         
         colors_layout.addWidget(general_widget)
         
-        # Conteneur pour les actions (drag & drop)
-        self.action_pickers_container = ActionPickersContainer(self, apply_live)
-        colors_layout.addWidget(self.action_pickers_container)
+        # Espacement entre Menu et les actions
+        colors_layout.addSpacing(30)
         
-        colors_layout.addStretch()
+        # Conteneur pour les actions (drag & drop) - prend tout l'espace restant
+        self.action_pickers_container = ActionPickersContainer(self, apply_live)
+        colors_layout.addWidget(self.action_pickers_container, 1)  # stretch factor = 1
+        
         config_layout.addLayout(colors_layout)
 
         # --- Opacités ---
@@ -4231,14 +4541,14 @@ class ClipNotesWindow(QMainWindow):
         
         # Slider pour opacité du menu
         menu_opacity_layout = QVBoxLayout()
-        menu_opacity_label = QLabel(f"Générale ➤ <b>{self.menu_opacity}</b>")
+        menu_opacity_label = QLabel(f"Menu ➤ <b>{self.menu_opacity}</b>")
         menu_opacity_slider = QSlider(Qt.Orientation.Horizontal)
         menu_opacity_slider.setMinimum(0)
         menu_opacity_slider.setMaximum(100)
         menu_opacity_slider.setValue(self.menu_opacity)
         
         def on_menu_opacity_changed(v):
-            menu_opacity_label.setText(f"Générale ➤ <b>{v}</b>")
+            menu_opacity_label.setText(f"Menu ➤ <b>{v}</b>")
             self.menu_opacity = v
             apply_live()
         
@@ -4377,6 +4687,120 @@ class ClipNotesWindow(QMainWindow):
         # slider_layout.addLayout(slider_h_layout)
         # config_layout.addWidget(slider_container)
         
+        # --- Pagination ---
+        pagination_section = QWidget()
+        pagination_layout = QHBoxLayout(pagination_section)
+        pagination_layout.setContentsMargins(20, 0, 20, 0)
+        pagination_layout.setSpacing(10)
+        
+        # Clips par page
+        clips_per_page_layout = QVBoxLayout()
+        clips_per_page_label = QLabel(f"Clips par page ➤ <b>{self.clips_per_page}</b>")
+        clips_per_page_label.setStyleSheet("color: white; font-size: 14px;")
+        clips_per_page_slider = QSlider(Qt.Orientation.Horizontal)
+        clips_per_page_slider.setMinimum(1)
+        clips_per_page_slider.setMaximum(50)
+        clips_per_page_slider.setValue(self.clips_per_page)
+        clips_per_page_slider.setFixedWidth(150)
+        
+        def on_clips_per_page_changed(val):
+            self.clips_per_page = val
+            clips_per_page_label.setText(f"Clips par page ➤ <b>{val}</b>")
+            # Rafraîchir le menu pour mettre à jour la pagination
+            self.refresh_menu()
+        
+        clips_per_page_slider.valueChanged.connect(on_clips_per_page_changed)
+        clips_per_page_layout.addWidget(clips_per_page_label)
+        clips_per_page_layout.addWidget(clips_per_page_slider, alignment=Qt.AlignmentFlag.AlignCenter)
+        
+        # Ajouter avec distribution uniforme
+        pagination_layout.addLayout(clips_per_page_layout)
+        pagination_layout.addStretch(1)
+        
+        # Direction du flip
+        flip_direction_layout = QVBoxLayout()
+        flip_direction_label = QLabel("🔄 Transition entre pages")
+        flip_direction_label.setStyleSheet("color: white; font-size: 14px;")
+        
+        flip_buttons_layout = QHBoxLayout()
+        flip_h_btn = QPushButton("↔️ Horizontale")
+        flip_v_btn = QPushButton("↕️ Verticale")
+        
+        def update_flip_buttons():
+            if self.page_flip_direction == "horizontal":
+                flip_h_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: rgba(100, 180, 255, 150);
+                        border: 1px solid rgba(100, 180, 255, 200);
+                        border-radius: 6px;
+                        padding: 5px 10px;
+                        color: white;
+                        font-size: 12px;
+                    }
+                """)
+                flip_v_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: rgba(255, 255, 255, 30);
+                        border: 1px solid rgba(255, 255, 255, 60);
+                        border-radius: 6px;
+                        padding: 5px 10px;
+                        color: rgba(255, 255, 255, 150);
+                        font-size: 12px;
+                    }
+                    QPushButton:hover {
+                        background-color: rgba(255, 255, 255, 60);
+                        color: white;
+                    }
+                """)
+            else:
+                flip_v_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: rgba(100, 180, 255, 150);
+                        border: 1px solid rgba(100, 180, 255, 200);
+                        border-radius: 6px;
+                        padding: 5px 10px;
+                        color: white;
+                        font-size: 12px;
+                    }
+                """)
+                flip_h_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: rgba(255, 255, 255, 30);
+                        border: 1px solid rgba(255, 255, 255, 60);
+                        border-radius: 6px;
+                        padding: 5px 10px;
+                        color: rgba(255, 255, 255, 150);
+                        font-size: 12px;
+                    }
+                    QPushButton:hover {
+                        background-color: rgba(255, 255, 255, 60);
+                        color: white;
+                    }
+                """)
+        
+        def set_flip_horizontal():
+            self.page_flip_direction = "horizontal"
+            update_flip_buttons()
+        
+        def set_flip_vertical():
+            self.page_flip_direction = "vertical"
+            update_flip_buttons()
+        
+        flip_h_btn.clicked.connect(set_flip_horizontal)
+        flip_v_btn.clicked.connect(set_flip_vertical)
+        update_flip_buttons()
+        
+        flip_buttons_layout.addWidget(flip_h_btn)
+        flip_buttons_layout.addWidget(flip_v_btn)
+        flip_direction_layout.addWidget(flip_direction_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        flip_direction_layout.addLayout(flip_buttons_layout)
+        pagination_layout.addLayout(flip_direction_layout)
+        pagination_layout.addStretch(1)
+        
+        config_layout.addWidget(pagination_section)
+
+        # Boutons Sauvegarder et Annuler
+        config_layout.addStretch()
         # Checkbox pour l'icône centrale
         central_icon_checkbox = QCheckBox("Icône centrale au survol")
         central_icon_checkbox.setChecked(self.show_central_icon)
@@ -4399,6 +4823,123 @@ class ClipNotesWindow(QMainWindow):
         
         central_icon_checkbox.stateChanged.connect(on_central_icon_changed)
         config_layout.addWidget(central_icon_checkbox)
+        
+
+
+        # --- Ombre ---
+        # Checkbox pour activer l'ombre
+        shadow_checkbox = QCheckBox("Ombre")
+        shadow_checkbox.setChecked(self.shadow_enabled)
+        shadow_checkbox.setStyleSheet("""
+            QCheckBox::indicator {
+                background-color: white;
+                border: 1px solid black;
+                width: 14px;
+                height: 14px;
+                margin-left: 20px;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #ff8c00;
+            }
+            """)
+        
+        # Checkbox pour activer l'ombre
+        def on_shadow_enabled_changed(state):
+            self.shadow_enabled = (state == Qt.CheckState.Checked.value)
+            apply_live()
+
+        shadow_checkbox.stateChanged.connect(on_shadow_enabled_changed)
+        config_layout.addWidget(shadow_checkbox)
+
+        # --- Ligne 1 : Couleur et angle ---
+        shadow_top_layout = QHBoxLayout()
+
+        # Bloc Couleur (label + picker dans un widget)
+        shadow_color_widget = QWidget()
+        shadow_color_inner = QHBoxLayout(shadow_color_widget)
+        shadow_color_inner.setContentsMargins(0, 0, 0, 0)
+        shadow_color_inner.setSpacing(10)
+        
+        shadow_color_label = QLabel("Couleur")
+        shadow_picker = CircularColorPicker(
+            self.shadow_color,
+            radius=40
+        )
+        shadow_picker.colorChanged.connect(
+            lambda rgb: (
+                setattr(self, "shadow_color", rgb),
+                apply_live()
+            )
+        )
+        shadow_color_inner.addWidget(shadow_color_label)
+        shadow_color_inner.addWidget(shadow_picker)
+
+        # Bloc Angle (label + slider dans un widget)
+        shadow_angle_widget = QWidget()
+        shadow_angle_inner = QHBoxLayout(shadow_angle_widget)
+        shadow_angle_inner.setContentsMargins(0, 0, 0, 0)
+        shadow_angle_inner.setSpacing(10)
+        
+        shadow_angle_label = QLabel(f"Angle ➤ <b>{self.shadow_angle}</b>°")
+        shadow_angle_slider = CircularSlider(radius=50)
+        shadow_angle_slider.setValue(self.shadow_angle)
+        def on_shadow_angle_changed(v):
+            shadow_angle_label.setText(f"Angle ➤ <b>{v}</b>°")
+            self.shadow_angle = v
+            apply_live()
+        shadow_angle_slider.valueChanged.connect(on_shadow_angle_changed)
+        shadow_angle_inner.addWidget(shadow_angle_label)
+        shadow_angle_inner.addWidget(shadow_angle_slider)
+
+        # Ajouter au layout horizontal avec distribution uniforme
+        shadow_top_layout.setContentsMargins(45, 0, 30, 0)
+        shadow_top_layout.addWidget(shadow_color_widget)
+        shadow_top_layout.addStretch(1)
+        shadow_top_layout.addWidget(shadow_angle_widget)
+        shadow_top_layout.addStretch(1)
+
+        config_layout.addLayout(shadow_top_layout)
+
+        # --- Ligne 2 : Slider offset ---
+        shadow_offset_layout = QVBoxLayout()
+        shadow_offset_label = QLabel(f"Épaisseur ➤ <b>{self.shadow_offset}</b> px")
+        shadow_offset_slider = QSlider(Qt.Orientation.Horizontal)
+        shadow_offset_slider.setMinimum(0)
+        shadow_offset_slider.setMaximum(15)
+        shadow_offset_slider.setValue(self.shadow_offset)
+
+        def on_shadow_offset_changed(v):
+            shadow_offset_label.setText(f"Épaisseur ➤ <b>{v}</b> px")
+            self.shadow_offset = v
+            apply_live()
+
+        shadow_offset_slider.valueChanged.connect(on_shadow_offset_changed)
+        shadow_offset_layout.addWidget(shadow_offset_label)
+        shadow_offset_layout.addWidget(shadow_offset_slider)
+        shadow_offset_layout.setContentsMargins(45, 0, 30, 0)
+
+        config_layout.addLayout(shadow_offset_layout)
+
+        # --- Widgets à cacher/montrer selon checkbox ---
+        shadow_widgets = (
+            shadow_offset_label,
+            shadow_offset_slider,
+            shadow_color_widget,
+            shadow_angle_widget,
+        )
+
+        def update_shadow_config_visibility():
+            enabled = shadow_checkbox.isChecked()
+            for widget in shadow_widgets:
+                widget.setVisible(enabled)
+
+            # La taille du dialog est gérée par update_dialog_size()
+
+        # Initialisation
+        update_shadow_config_visibility()
+
+        # Connexion
+        shadow_checkbox.stateChanged.connect(update_shadow_config_visibility)
         
         # Checkbox pour le néon central
         neon_checkbox = QCheckBox("Néon central")
@@ -4463,7 +5004,7 @@ class ClipNotesWindow(QMainWindow):
         neon_speed_slider.valueChanged.connect(on_neon_speed_changed)
         neon_speed_layout.addWidget(neon_speed_label)
         neon_speed_layout.addWidget(neon_speed_slider)
-        neon_speed_layout.setContentsMargins(45, 0, 30, 0)
+        neon_speed_layout.setContentsMargins(45, 0, 30, 10)
         config_layout.addLayout(neon_speed_layout)
 
         neon_widgets = (
@@ -4484,135 +5025,23 @@ class ClipNotesWindow(QMainWindow):
 
         # Connexion
         neon_checkbox.stateChanged.connect(update_neon_config_visibility)
-
-        # --- Ombre ---
-        # Checkbox pour activer l'ombre
-        shadow_checkbox = QCheckBox("Ombre")
-        shadow_checkbox.setChecked(self.shadow_enabled)
-        shadow_checkbox.setStyleSheet("""
-            QCheckBox::indicator {
-                background-color: white;
-                border: 1px solid black;
-                width: 14px;
-                height: 14px;
-                margin-left: 20px;
-            }
-            QCheckBox::indicator:checked {
-                background-color: #ff8c00;
-            }
-            """)
-        
-        # Checkbox pour activer l'ombre
-        def on_shadow_enabled_changed(state):
-            self.shadow_enabled = (state == Qt.CheckState.Checked.value)
-            apply_live()
-
-        shadow_checkbox.stateChanged.connect(on_shadow_enabled_changed)
-        config_layout.addWidget(shadow_checkbox)
-
-        # --- Ligne 1 : Couleur et angle ---
-        shadow_top_layout = QHBoxLayout()
-
-        # Label couleur
-        shadow_color_label = QLabel("Couleur")
-        shadow_color_label.setFixedWidth(80)
-
-        # Picker couleur
-        shadow_picker = CircularColorPicker(
-            self.shadow_color,
-            radius=40 # plus petit que les autres
-        )
-        shadow_picker.colorChanged.connect(
-            lambda rgb: (
-                setattr(self, "shadow_color", rgb),
-                apply_live()
-            )
-        )
-
-        # Label angle
-        shadow_angle_label = QLabel(f"Angle ➤ <b>{self.shadow_angle}</b>°")
-        shadow_angle_label.setFixedWidth(100)
-
-        # Slider/cercle angle
-        shadow_angle_slider = CircularSlider(radius=50)
-        shadow_angle_slider.setValue(self.shadow_angle)
-        def on_shadow_angle_changed(v):
-            shadow_angle_label.setText(f"Angle ➤ <b>{v}</b>°")
-            self.shadow_angle = v
-            apply_live()
-        shadow_angle_slider.valueChanged.connect(on_shadow_angle_changed)
-
-        # Ajouter au layout horizontal
-        shadow_top_layout.addWidget(shadow_color_label)
-        shadow_top_layout.addWidget(shadow_picker)
-        shadow_top_layout.addSpacing(20)  # espacement entre picker et label angle
-        shadow_top_layout.addWidget(shadow_angle_label)
-        shadow_top_layout.addWidget(shadow_angle_slider)
-        shadow_top_layout.addStretch()
-        shadow_top_layout.setContentsMargins(45, 0, 30, 0)
-
-        config_layout.addLayout(shadow_top_layout)
-
-        # --- Ligne 2 : Slider offset ---
-        shadow_offset_layout = QVBoxLayout()
-        shadow_offset_label = QLabel(f"Décalage ➤ <b>{self.shadow_offset}</b> px")
-        shadow_offset_slider = QSlider(Qt.Orientation.Horizontal)
-        shadow_offset_slider.setMinimum(0)
-        shadow_offset_slider.setMaximum(15)
-        shadow_offset_slider.setValue(self.shadow_offset)
-
-        def on_shadow_offset_changed(v):
-            shadow_offset_label.setText(f"Décalage ➤ <b>{v}</b> px")
-            self.shadow_offset = v
-            apply_live()
-
-        shadow_offset_slider.valueChanged.connect(on_shadow_offset_changed)
-        shadow_offset_layout.addWidget(shadow_offset_label)
-        shadow_offset_layout.addWidget(shadow_offset_slider)
-        shadow_offset_layout.setContentsMargins(45, 0, 30, 0)
-
-        config_layout.addLayout(shadow_offset_layout)
-
-        # --- Widgets à cacher/montrer selon checkbox ---
-        shadow_widgets = (
-            shadow_offset_label,
-            shadow_offset_slider,
-            shadow_angle_label,
-            shadow_angle_slider,
-            shadow_color_label,
-            shadow_picker,
-        )
-
-        def update_shadow_config_visibility():
-            enabled = shadow_checkbox.isChecked()
-            for widget in shadow_widgets:
-                widget.setVisible(enabled)
-
-            # La taille du dialog est gérée par update_dialog_size()
-
-        # Initialisation
-        update_shadow_config_visibility()
-
-        # Connexion
-        shadow_checkbox.stateChanged.connect(update_shadow_config_visibility)
-
         # Fonction commune pour adapter la taille du dialog
         def update_dialog_size():
             neon_enabled = neon_checkbox.isChecked()
             shadow_enabled = shadow_checkbox.isChecked()
             
             # Hauteur de base (sans néon ni ombre)
-            base_height = 670
-            # Hauteur supplémentaire pour le néon
-            neon_height = 150
+            base_height = 730
             # Hauteur supplémentaire pour l'ombre
-            shadow_height = 200
+            shadow_height = 210
+            # Hauteur supplémentaire pour le néon
+            neon_height = 160
             
             total_height = base_height
-            if neon_enabled:
-                total_height += neon_height
             if shadow_enabled:
                 total_height += shadow_height
+            if neon_enabled:
+                total_height += neon_height
             
             dialog.setFixedSize(800, total_height)
         
@@ -4623,117 +5052,6 @@ class ClipNotesWindow(QMainWindow):
         # Initialisation de la taille
         update_dialog_size()
 
-        # --- Pagination ---
-        pagination_section = QWidget()
-        pagination_layout = QHBoxLayout(pagination_section)
-        pagination_layout.setContentsMargins(0, 10, 0, 0)
-        pagination_layout.setSpacing(20)
-        
-        # Clips par page
-        clips_per_page_layout = QVBoxLayout()
-        clips_per_page_label = QLabel(f"📄 Clips par page: <b>{self.clips_per_page}</b>")
-        clips_per_page_label.setStyleSheet("color: white; font-size: 12px;")
-        clips_per_page_slider = QSlider(Qt.Orientation.Horizontal)
-        clips_per_page_slider.setMinimum(5)
-        clips_per_page_slider.setMaximum(50)
-        clips_per_page_slider.setValue(self.clips_per_page)
-        clips_per_page_slider.setFixedWidth(150)
-        
-        def on_clips_per_page_changed(val):
-            self.clips_per_page = val
-            clips_per_page_label.setText(f"📄 Clips par page: <b>{val}</b>")
-            # Rafraîchir le menu pour mettre à jour la pagination
-            self.refresh_menu()
-        
-        clips_per_page_slider.valueChanged.connect(on_clips_per_page_changed)
-        clips_per_page_layout.addWidget(clips_per_page_label, alignment=Qt.AlignmentFlag.AlignCenter)
-        clips_per_page_layout.addWidget(clips_per_page_slider, alignment=Qt.AlignmentFlag.AlignCenter)
-        pagination_layout.addLayout(clips_per_page_layout)
-        
-        # Direction du flip
-        flip_direction_layout = QVBoxLayout()
-        flip_direction_label = QLabel("🔄 Direction flip:")
-        flip_direction_label.setStyleSheet("color: white; font-size: 12px;")
-        
-        flip_buttons_layout = QHBoxLayout()
-        flip_h_btn = QPushButton("↔️ Horizontal")
-        flip_v_btn = QPushButton("↕️ Vertical")
-        
-        def update_flip_buttons():
-            if self.page_flip_direction == "horizontal":
-                flip_h_btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: rgba(100, 180, 255, 150);
-                        border: 1px solid rgba(100, 180, 255, 200);
-                        border-radius: 6px;
-                        padding: 5px 10px;
-                        color: white;
-                        font-size: 11px;
-                    }
-                """)
-                flip_v_btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: rgba(255, 255, 255, 30);
-                        border: 1px solid rgba(255, 255, 255, 60);
-                        border-radius: 6px;
-                        padding: 5px 10px;
-                        color: rgba(255, 255, 255, 150);
-                        font-size: 11px;
-                    }
-                    QPushButton:hover {
-                        background-color: rgba(255, 255, 255, 60);
-                        color: white;
-                    }
-                """)
-            else:
-                flip_v_btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: rgba(100, 180, 255, 150);
-                        border: 1px solid rgba(100, 180, 255, 200);
-                        border-radius: 6px;
-                        padding: 5px 10px;
-                        color: white;
-                        font-size: 11px;
-                    }
-                """)
-                flip_h_btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: rgba(255, 255, 255, 30);
-                        border: 1px solid rgba(255, 255, 255, 60);
-                        border-radius: 6px;
-                        padding: 5px 10px;
-                        color: rgba(255, 255, 255, 150);
-                        font-size: 11px;
-                    }
-                    QPushButton:hover {
-                        background-color: rgba(255, 255, 255, 60);
-                        color: white;
-                    }
-                """)
-        
-        def set_flip_horizontal():
-            self.page_flip_direction = "horizontal"
-            update_flip_buttons()
-        
-        def set_flip_vertical():
-            self.page_flip_direction = "vertical"
-            update_flip_buttons()
-        
-        flip_h_btn.clicked.connect(set_flip_horizontal)
-        flip_v_btn.clicked.connect(set_flip_vertical)
-        update_flip_buttons()
-        
-        flip_buttons_layout.addWidget(flip_h_btn)
-        flip_buttons_layout.addWidget(flip_v_btn)
-        flip_direction_layout.addWidget(flip_direction_label, alignment=Qt.AlignmentFlag.AlignCenter)
-        flip_direction_layout.addLayout(flip_buttons_layout)
-        pagination_layout.addLayout(flip_direction_layout)
-        
-        pagination_layout.addStretch()
-        config_layout.addWidget(pagination_section)
-
-        # Boutons Sauvegarder et Annuler
-        config_layout.addStretch()
         buttons_layout = QHBoxLayout()
         
         # Bouton Annuler
