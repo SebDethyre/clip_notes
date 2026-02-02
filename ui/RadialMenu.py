@@ -2845,13 +2845,10 @@ class RadialMenu(QWidget):
                     # Supprimer le groupe
                     delete_group_from_json(self.app_instance.clip_notes_file_json, alias)
                 else:
-                    # Stocker un clip normal
+                    # Stocker un clip normal (met stored=True dans le JSON unifié)
                     self.app_instance.add_stored_clip(alias, action if action else "copy", value, html_string)
-                    
-                    # Supprimer du menu radial
-                    delete_from_json(self.app_instance.clip_notes_file_json, alias)
                 
-                # Mettre à jour actions_map_sub
+                # Mettre à jour actions_map_sub (retirer du menu mais le clip reste dans le JSON)
                 self.app_instance.actions_map_sub.pop(alias, None)
                 
                 dialog.accept()
@@ -3027,13 +3024,13 @@ class RadialMenu(QWidget):
         self.setMouseTracking(True)
     
     def show_store_confirmation_from_drag_child(self, child_alias, child_string, child_action, group_alias):
-        """Affiche une fenêtre de confirmation pour stocker un enfant de groupe (depuis le drag au centre)"""
+        """Affiche une fenêtre de confirmation pour modifier ou stocker un enfant de groupe (depuis le drag au centre)"""
         
         # Vérifier si c'est une image
         is_image = "/" in child_alias and os.path.exists(child_alias)
         
         dialog = QDialog(self.tracker if self.tracker else self)
-        dialog.setWindowTitle("💾 Stocker")
+        dialog.setWindowTitle("🔧 Modifier - 💾 Stocker")
         dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
@@ -3047,7 +3044,7 @@ class RadialMenu(QWidget):
         palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
         dialog.setPalette(palette)
         
-        dialog.setFixedSize(350, 250 if is_image else 180)
+        dialog.setFixedSize(450, 250 if is_image else 180)
         dialog.move(self.x - dialog.width() // 2, self.y - dialog.height() // 2)
         
         content = QWidget()
@@ -3088,10 +3085,10 @@ class RadialMenu(QWidget):
             image_container.addStretch()
             layout.addLayout(image_container)
             
-            message_label = QLabel("Stocker ce clip du groupe ?")
+            message_label = QLabel("Voulez-vous modifier ou stocker ce clip du groupe ?")
         else:
             display_alias = child_alias if len(child_alias) <= 30 else child_alias[:27] + "..."
-            message_label = QLabel(f"Stocker ce clip du groupe ?\n\n{display_alias}")
+            message_label = QLabel(f"Voulez-vous modifier ou stocker ce clip du groupe ?\n\n{display_alias}")
         
         message_label.setWordWrap(True)
         message_label.setStyleSheet("color: white; font-size: 14px;")
@@ -3105,6 +3102,21 @@ class RadialMenu(QWidget):
         cancel_button = QPushButton("Annuler")
         cancel_button.setFixedHeight(32)
         cancel_button.clicked.connect(dialog.reject)
+        
+        edit_button = QPushButton("Modifier")
+        edit_button.setFixedHeight(32)
+        edit_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 255, 0, 150);
+                border: 1px solid rgba(255, 255, 0, 200);
+                border-radius: 6px;
+                padding: 6px;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 0, 200);
+            }
+        """)
         
         store_button = QPushButton("Stocker")
         store_button.setFixedHeight(32)
@@ -3120,6 +3132,25 @@ class RadialMenu(QWidget):
                 background-color: rgba(100, 255, 100, 200);
             }
         """)
+        
+        def confirm_edit():
+            """Ouvre l'éditeur de clip pour modifier l'enfant du groupe"""
+            dialog.accept()
+            
+            if self.app_instance:
+                # Fermer le sous-menu hover s'il existe
+                if self.hover_submenu is not None:
+                    try:
+                        self.hover_submenu.close()
+                    except RuntimeError:
+                        pass
+                    self.hover_submenu = None
+                
+                # Ouvrir l'éditeur avec la signature correcte
+                self.app_instance.edit_group_child_clip(
+                    group_alias, child_alias, child_string, child_action, 
+                    self.x, self.y
+                )
         
         def confirm_store():
             if self.app_instance:
@@ -3147,9 +3178,11 @@ class RadialMenu(QWidget):
                 self.update_tooltip_position()
                 self.app_instance.refresh_menu()
         
+        edit_button.clicked.connect(confirm_edit)
         store_button.clicked.connect(confirm_store)
         
         buttons_layout.addWidget(cancel_button)
+        buttons_layout.addWidget(edit_button)
         buttons_layout.addWidget(store_button)
         layout.addLayout(buttons_layout)
         

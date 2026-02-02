@@ -170,7 +170,8 @@ class ClipNotesWindow(QMainWindow):
         self.emojis_file = os.path.join(self.script_dir, "emojis.txt")
         self.thumbnails_dir = os.path.join(self.script_dir, "thumbnails")
         self.config_file = os.path.join(self.script_dir, "config.json")
-        self.stored_clips_file = os.path.join(self.script_dir, "stored_clips.json")
+        # OBSOLÈTE: self.stored_clips_file n'est plus utilisé
+        # Les clips stockés sont maintenant dans clip_notes.json avec stored=True
         self.color_palette = _get_color_palette()
         # Créer le dossier des miniatures s'il n'existe pas
         os.makedirs(self.thumbnails_dir, exist_ok=True)
@@ -344,49 +345,46 @@ class ClipNotesWindow(QMainWindow):
 
     # ===== GESTION DES CLIPS STOCKÉS =====
     def load_stored_clips(self):
-        """Charge les clips stockés depuis le fichier JSON"""
-        if not os.path.exists(self.stored_clips_file):
-            return []
-        
-        try:
-            with open(self.stored_clips_file, 'r', encoding='utf-8') as f:
-                clips = json.load(f)
-            print(f"[Stored Clips] {len(clips)} clips chargés")
-            return clips
-        except Exception as e:
-            print(f"[Erreur] Impossible de charger les clips stockés: {e}")
-            return []
+        """Charge les clips stockés depuis le fichier JSON unifié (stored=True)"""
+        clips = load_stored_clips_data(self.clip_notes_file_json)
+        print(f"[Stored Clips] {len(clips)} clips stockés chargés")
+        return clips
 
     def save_stored_clips(self, clips):
-        """Sauvegarde les clips stockés dans le fichier JSON"""
-        try:
-            with open(self.stored_clips_file, 'w', encoding='utf-8') as f:
-                json.dump(clips, f, indent=4, ensure_ascii=False)
-            print(f"[Stored Clips] {len(clips)} clips sauvegardés")
-        except Exception as e:
-            print(f"[Erreur] Impossible de sauvegarder les clips stockés: {e}")
+        """OBSOLÈTE - Les clips stockés sont maintenant gérés via set_clip_stored_status()"""
+        print("[Warning] save_stored_clips() est obsolète - utilisez set_clip_stored_status()")
+        pass
 
     def add_stored_clip(self, alias, action, string, html_string=None):
-        """Ajoute un clip au stockage"""
-        clips = self.load_stored_clips()
-        new_clip = {
-            'alias': alias,
-            'action': action,
-            'string': string
-        }
-        # Ajouter le HTML seulement s'il est fourni
-        if html_string:
-            new_clip['html_string'] = html_string
-        clips.append(new_clip)
-        self.save_stored_clips(clips)
-        return clips
+        """
+        Stocke un clip (met stored=True).
+        Si le clip existe déjà, change son statut.
+        Sinon (enfant de groupe), l'ajoute avec stored=True.
+        """
+        # Vérifier si le clip existe déjà dans le fichier
+        all_clips = load_all_clips_data(self.clip_notes_file_json)
+        clip_exists = any(item.get('alias') == alias for item in all_clips)
+        
+        if clip_exists:
+            # Le clip existe, on change juste son statut
+            set_clip_stored_status(self.clip_notes_file_json, alias, True)
+            print(f"[Stored Clips] Clip '{alias}' marqué comme stocké")
+        else:
+            # Le clip n'existe pas (vient d'un groupe), on l'ajoute avec stored=True
+            append_to_actions_file_json(
+                self.clip_notes_file_json, 
+                alias, 
+                action, 
+                string, 
+                html_string,
+                stored=True
+            )
+            print(f"[Stored Clips] Nouveau clip stocké ajouté: '{alias}'")
 
     def remove_stored_clip(self, alias):
-        """Supprime un clip du stockage"""
-        clips = self.load_stored_clips()
-        clips = [clip for clip in clips if clip.get('alias') != alias]
-        self.save_stored_clips(clips)
-        return clips
+        """Supprime définitivement un clip stocké du fichier JSON"""
+        delete_from_json(self.clip_notes_file_json, alias)
+        print(f"[Stored Clips] Clip '{alias}' supprimé définitivement")
 
     def sort_stored_clips(self, clips, column, ascending=True):
         """Trie les clips stockés par colonne"""
@@ -397,6 +395,9 @@ class ClipNotesWindow(QMainWindow):
             value = clip.get(column, '')
             if value is None:
                 value = ''
+            # Pour created_at, garder la valeur telle quelle pour un tri chronologique
+            if column == 'created_at':
+                return value if value else ''
             return str(value).lower()
         
         return sorted(clips, key=get_sort_key, reverse=not ascending)
@@ -2656,12 +2657,11 @@ class ClipNotesWindow(QMainWindow):
                 # Récupérer le HTML depuis le fichier JSON avant de stocker
                 _, string, html_string = self.get_clip_data_from_json(name)
                 
-                # Stocker le clip avec le HTML s'il existe
+                # Stocker le clip (met stored=True dans le JSON unifié)
                 self.add_stored_clip(name, action if action else "copy", value, html_string)
                 
-                # Supprimer le clip du menu radial
+                # Retirer du menu radial (mais le clip reste dans le JSON avec stored=True)
                 self.actions_map_sub.pop(name, None)
-                delete_from_json(self.clip_notes_file_json, name)
                 
                 # Afficher une confirmation brève
                 if self.current_popup:
@@ -2793,6 +2793,12 @@ class ClipNotesWindow(QMainWindow):
             value_header.setCursor(Qt.CursorShape.PointingHandCursor)
             value_header.clicked.connect(lambda: self.toggle_stored_clips_sort('string', parent_dialog, x, y))
             
+            date_header = QPushButton(f"Date{get_sort_indicator('created_at')}")
+            date_header.setStyleSheet(header_btn_style)
+            date_header.setFixedWidth(120)
+            date_header.setCursor(Qt.CursorShape.PointingHandCursor)
+            date_header.clicked.connect(lambda: self.toggle_stored_clips_sort('created_at', parent_dialog, x, y))
+            
             # Bouton de réinitialisation (visible seulement si tri actif)
             reset_btn = QPushButton("⟳")
             reset_btn.setFixedSize(30, 26)
@@ -2818,6 +2824,9 @@ class ClipNotesWindow(QMainWindow):
             header_layout.addWidget(action_header)
             header_layout.addWidget(value_header)
             header_layout.addStretch()
+            header_layout.addWidget(date_header)
+            # Spacer pour aligner avec les boutons des lignes (6 boutons de 30px + spacing 10px = 190px)
+            header_layout.addSpacing(190)
             header_layout.addWidget(reset_btn)
             
             scroll_layout.addLayout(header_layout)
@@ -2892,6 +2901,22 @@ class ClipNotesWindow(QMainWindow):
                 string_label.installEventFilter(self)
                 string_label.setStyleSheet("color: white;")
                 string_label.setWordWrap(True)
+                
+                # Date de création
+                created_at = clip_data.get('created_at', '')
+                if created_at:
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(created_at)
+                        date_display = dt.strftime("%d/%m/%Y %H:%M")
+                    except:
+                        date_display = created_at[:16] if len(created_at) > 16 else created_at
+                else:
+                    date_display = "-"
+                date_label = QLabel(date_display)
+                date_label.setFixedWidth(120)
+                date_label.setStyleSheet("color: rgba(180, 180, 180, 255); font-size: 11px;")
+                date_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 
                 # Convertir l'action en slider_value
                 action = clip_data.get('action', 'copy')
@@ -3011,6 +3036,7 @@ class ClipNotesWindow(QMainWindow):
                 clip_layout.addWidget(action_label)
                 clip_layout.addWidget(string_label)
                 clip_layout.addStretch()
+                clip_layout.addWidget(date_label)
                 clip_layout.addWidget(restore_btn)
                 clip_layout.addWidget(edit_btn)
                 # clip_layout.addWidget(edit_sys_btn)
@@ -3281,8 +3307,8 @@ class ClipNotesWindow(QMainWindow):
         palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
         dialog.setPalette(palette)
         
-        dialog.resize(750, 500)
-        dialog.setMinimumSize(850, 650)
+        dialog.resize(850, 500)
+        dialog.setMinimumSize(950, 650)
         
         layout = QVBoxLayout()
         layout.setContentsMargins(20, 20, 20, 20)
@@ -3682,14 +3708,13 @@ class ClipNotesWindow(QMainWindow):
         confirm_dialog.exec()
     
     def restore_clip_to_menu(self, alias, clip_data, dialog, x, y):
-        """Restaure un clip stocké vers le menu radial"""
+        """Restaure un clip stocké vers le menu radial (met stored=False)"""
         # Récupérer les données du clip
         action = clip_data.get('action', 'copy')
         string = clip_data.get('string', '')
-        html_string = clip_data.get('html_string', None)  # Récupérer le HTML s'il existe
         
-        # Ajouter au menu radial (dans le fichier JSON) avec le HTML
-        append_to_actions_file_json(self.clip_notes_file_json, alias, string, action, html_string)
+        # Marquer le clip comme non stocké (stored=False)
+        set_clip_stored_status(self.clip_notes_file_json, alias, False)
         
         # Ajouter directement dans actions_map_sub pour mise à jour immédiate
         if action == "copy":
@@ -3698,9 +3723,6 @@ class ClipNotesWindow(QMainWindow):
             self.actions_map_sub[alias] = [(execute_terminal, [string], {}), string, action]
         elif action == "exec":
             self.actions_map_sub[alias] = [(execute_command, [string], {}), string, action]
-        
-        # Supprimer du stockage
-        self.remove_stored_clip(alias)
         
         # Mettre à jour le menu radial
         self.refresh_menu()
@@ -3765,7 +3787,7 @@ class ClipNotesWindow(QMainWindow):
         palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
         dialog.setPalette(palette)
         dialog.setStyleSheet("background-color: rgba(40, 40, 40, 150);")
-        dialog.setFixedSize(500, 730)
+        dialog.setFixedSize(500, 780)
         dialog.move(x - 250, y - 300)
         
         main_layout = QVBoxLayout(dialog)
@@ -4058,11 +4080,11 @@ class ClipNotesWindow(QMainWindow):
         dialog.setWindowTitle("⚙️ Configurer")
         dialog.setWindowFlags(Qt.WindowType.Dialog)
         dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        dialog.setFixedSize(800, 730) 
+        dialog.setFixedSize(800, 780) 
         
         # dialog.setFixedSize(400, 700)
         tabs = QTabWidget(dialog)
-        tabs.setGeometry(0, 0, 800, 730)  # ou layout si tu préfères
+        tabs.setGeometry(0, 0, 800, 780)  # ou layout si tu préfères
 
         # ⚡ 1. QTabWidget transparent
         tabs.setStyleSheet("""
@@ -4100,7 +4122,7 @@ class ClipNotesWindow(QMainWindow):
 
         config_layout = QVBoxLayout(config_tab)
         config_layout.setSpacing(12)
-        config_layout.setContentsMargins(20, 20, 20, 20)
+        config_layout.setContentsMargins(40, 20, 40, 20)
         config_layout.addWidget(QLabel("🎨 Couleurs", styleSheet="font-weight:bold;"))
 
         # --- Widget indicateur de drop (ligne verticale) ---
@@ -4541,8 +4563,8 @@ class ClipNotesWindow(QMainWindow):
         # Picker "Générale" (non draggable)
         general_widget = QWidget()
         general_layout = QVBoxLayout(general_widget)
-        general_layout.setContentsMargins(5, 5, 5, 5)
-        general_layout.setSpacing(4)
+        general_layout.setContentsMargins(55, 0, 0, 0)
+        general_layout.setSpacing(0)
         
         general_label = QLabel("🔘 Menu")
         general_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -4589,7 +4611,7 @@ class ClipNotesWindow(QMainWindow):
         menu_opacity_slider.valueChanged.connect(on_menu_opacity_changed)
         menu_opacity_layout.addWidget(menu_opacity_label)
         menu_opacity_layout.addWidget(menu_opacity_slider)
-        menu_opacity_layout.setContentsMargins(20, 0, 20, 0)
+        menu_opacity_layout.setContentsMargins(40, 0, 40, 0)
         config_layout.addLayout(menu_opacity_layout)
                
         # Slider pour opacité de base
@@ -4608,7 +4630,7 @@ class ClipNotesWindow(QMainWindow):
         basic_opacity_slider.valueChanged.connect(on_basic_opacity_changed)
         basic_opacity_layout.addWidget(basic_opacity_label)
         basic_opacity_layout.addWidget(basic_opacity_slider)
-        basic_opacity_layout.setContentsMargins(20, 0, 20, 0)
+        basic_opacity_layout.setContentsMargins(40, 0, 40, 0)
         config_layout.addLayout(basic_opacity_layout)
         
         # Slider pour opacité au survol
@@ -4627,7 +4649,7 @@ class ClipNotesWindow(QMainWindow):
         hover_opacity_slider.valueChanged.connect(on_hover_opacity_changed)
         hover_opacity_layout.addWidget(hover_opacity_label)
         hover_opacity_layout.addWidget(hover_opacity_slider)
-        hover_opacity_layout.setContentsMargins(20, 0, 20, 0)
+        hover_opacity_layout.setContentsMargins(40, 0, 40, 0)
         config_layout.addLayout(hover_opacity_layout)
         
         # --- Options ---
@@ -4640,7 +4662,7 @@ class ClipNotesWindow(QMainWindow):
         
         sort_section = QWidget()
         sort_layout = QHBoxLayout(sort_section)
-        sort_layout.setContentsMargins(20, 5, 20, 5)
+        sort_layout.setContentsMargins(40, 5, 40, 5)
         sort_layout.setSpacing(15)
         
         sort_label = QLabel("Tri des clips")
@@ -4704,6 +4726,7 @@ class ClipNotesWindow(QMainWindow):
         sort_combo.currentIndexChanged.connect(on_sort_mode_changed)
         
         sort_layout.addWidget(sort_label)
+        sort_layout.addSpacing(280)
         sort_layout.addWidget(sort_combo)
         sort_layout.addStretch(1)
         config_layout.addWidget(sort_section)
@@ -4797,7 +4820,7 @@ class ClipNotesWindow(QMainWindow):
         # --- Pagination ---
         pagination_section = QWidget()
         pagination_layout = QHBoxLayout(pagination_section)
-        pagination_layout.setContentsMargins(20, 0, 20, 0)
+        pagination_layout.setContentsMargins(40, 0, 40, 0)
         pagination_layout.setSpacing(10)
         
         # Clips par page
@@ -4822,7 +4845,8 @@ class ClipNotesWindow(QMainWindow):
         
         # Ajouter avec distribution uniforme
         pagination_layout.addLayout(clips_per_page_layout)
-        pagination_layout.addStretch(1)
+        # pagination_layout.addStretch(1)
+        pagination_layout.addSpacing(220)
         
         # Direction du flip
         flip_direction_layout = QVBoxLayout()
@@ -4968,6 +4992,8 @@ class ClipNotesWindow(QMainWindow):
         shadow_color_inner.setSpacing(10)
         
         shadow_color_label = QLabel("Couleur")
+        shadow_color_label.setFixedWidth(140)
+
         shadow_picker = CircularColorPicker(
             self.shadow_color,
             radius=40
@@ -4999,14 +5025,15 @@ class ClipNotesWindow(QMainWindow):
         shadow_angle_inner.addWidget(shadow_angle_slider)
 
         # Ajouter au layout horizontal avec distribution uniforme
-        shadow_top_layout.setContentsMargins(45, 0, 30, 0)
+        shadow_top_layout.setContentsMargins(60, 0, 45, 0)
         shadow_top_layout.addWidget(shadow_color_widget)
-        shadow_top_layout.addStretch(1)
+        # shadow_top_layout.addStretch(1)
+        shadow_top_layout.addSpacing(120) 
         shadow_top_layout.addWidget(shadow_angle_widget)
         shadow_top_layout.addStretch(1)
 
         config_layout.addLayout(shadow_top_layout)
-
+        
         # --- Ligne 2 : Slider offset ---
         shadow_offset_layout = QVBoxLayout()
         shadow_offset_label = QLabel(f"Épaisseur ➤ <b>{self.shadow_offset}</b> px")
@@ -5023,7 +5050,7 @@ class ClipNotesWindow(QMainWindow):
         shadow_offset_slider.valueChanged.connect(on_shadow_offset_changed)
         shadow_offset_layout.addWidget(shadow_offset_label)
         shadow_offset_layout.addWidget(shadow_offset_slider)
-        shadow_offset_layout.setContentsMargins(45, 0, 30, 0)
+        shadow_offset_layout.setContentsMargins(60, 0, 45, 0)
 
         config_layout.addLayout(shadow_offset_layout)
 
@@ -5078,7 +5105,7 @@ class ClipNotesWindow(QMainWindow):
         
         neon_picker = CircularColorPicker(
             self.neon_color,
-            radius=28  # plus petit que les autres
+            radius=40  # plus petit que les autres
         )
         
         neon_picker.colorChanged.connect(
@@ -5091,7 +5118,7 @@ class ClipNotesWindow(QMainWindow):
         neon_color_row.addWidget(neon_color_label)
         neon_color_row.addWidget(neon_picker)
         neon_color_row.addStretch()
-        neon_color_row.setContentsMargins(45, 0, 60, 0)
+        neon_color_row.setContentsMargins(60, 0, 75, 0)
         config_layout.addLayout(neon_color_row)
         
         # Slider pour la vitesse du néon
@@ -5111,7 +5138,7 @@ class ClipNotesWindow(QMainWindow):
         neon_speed_slider.valueChanged.connect(on_neon_speed_changed)
         neon_speed_layout.addWidget(neon_speed_label)
         neon_speed_layout.addWidget(neon_speed_slider)
-        neon_speed_layout.setContentsMargins(45, 0, 30, 10)
+        neon_speed_layout.setContentsMargins(60, 0, 45, 10)
         config_layout.addLayout(neon_speed_layout)
 
         neon_widgets = (
@@ -5138,11 +5165,11 @@ class ClipNotesWindow(QMainWindow):
             shadow_enabled = shadow_checkbox.isChecked()
             
             # Hauteur de base (sans néon ni ombre)
-            base_height = 730
+            base_height = 780
             # Hauteur supplémentaire pour l'ombre
-            shadow_height = 210
+            shadow_height = 220
             # Hauteur supplémentaire pour le néon
-            neon_height = 160
+            neon_height = 220
             
             total_height = base_height
             if shadow_enabled:
@@ -5242,6 +5269,7 @@ class ClipNotesWindow(QMainWindow):
         # label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         shortcuts_layout = QVBoxLayout(shortcuts_dialog_tab)
+        shortcuts_layout.setContentsMargins(30, 20, 30, 20)
         shortcuts_layout.addStretch()
         shortcuts_layout.addWidget(shortcuts_dialog, 1)
         shortcuts_layout.addStretch()
@@ -5251,7 +5279,7 @@ class ClipNotesWindow(QMainWindow):
         stored_clips_tab.setStyleSheet(self.dialog_style)
         stored_clips_layout = QVBoxLayout(stored_clips_tab)
         stored_clips_layout.setSpacing(10)
-        stored_clips_layout.setContentsMargins(20, 20, 20, 20)
+        stored_clips_layout.setContentsMargins(30, 20, 30, 20)
         
         # Créer le contenu des clips stockés
         stored_clips_widget = self.create_stored_clips_widget(dialog, x, y)

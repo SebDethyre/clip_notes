@@ -265,7 +265,44 @@ def get_json_order(file_path):
 # ====== FONCTIONS OPTIMISÉES (chargement unique du JSON) ======
 
 def load_clip_notes_data(file_path):
-    """Charge le fichier JSON une seule fois et retourne les données."""
+    """
+    Charge le fichier JSON et retourne uniquement les clips ACTIFS (non stockés).
+    Les clips stockés (stored=True) sont exclus.
+    """
+    json_path = file_path.replace('.txt', '.json')
+    if not os.path.exists(json_path):
+        return []
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            all_data = json.load(f)
+        # Filtrer pour ne garder que les clips non stockés
+        return [item for item in all_data if not item.get('stored', False)]
+    except:
+        return []
+
+
+def load_stored_clips_data(file_path):
+    """
+    Charge le fichier JSON et retourne uniquement les clips STOCKÉS.
+    Les clips actifs (stored=False ou absent) sont exclus.
+    """
+    json_path = file_path.replace('.txt', '.json')
+    if not os.path.exists(json_path):
+        return []
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            all_data = json.load(f)
+        # Filtrer pour ne garder que les clips stockés
+        return [item for item in all_data if item.get('stored', False)]
+    except:
+        return []
+
+
+def load_all_clips_data(file_path):
+    """
+    Charge TOUS les clips du fichier JSON (stockés et non stockés).
+    Utilisé pour calculer le prochain ID disponible.
+    """
     json_path = file_path.replace('.txt', '.json')
     if not os.path.exists(json_path):
         return []
@@ -274,6 +311,47 @@ def load_clip_notes_data(file_path):
             return json.load(f)
     except:
         return []
+
+
+def set_clip_stored_status(file_path, alias, stored):
+    """
+    Met à jour le statut 'stored' d'un clip dans le fichier JSON.
+    
+    Args:
+        file_path: Chemin du fichier JSON
+        alias: L'alias du clip à modifier
+        stored: True pour stocker, False pour déstocker
+    
+    Returns:
+        True si succès, False sinon
+    """
+    json_path = file_path.replace('.txt', '.json')
+    if not os.path.exists(json_path):
+        return False
+    
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        return False
+    
+    # Chercher le clip et mettre à jour son statut
+    found = False
+    for item in data:
+        if item.get('alias') == alias:
+            item['stored'] = stored
+            found = True
+            break
+    
+    if not found:
+        return False
+    
+    # Sauvegarder
+    with open(json_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+    
+    print(f"[Info] Statut 'stored' de '{alias}' mis à jour: {stored}")
+    return True
 
 
 def populate_actions_map_from_data(json_data, actions_map_sub, callback):
@@ -327,6 +405,7 @@ def get_clip_data_from_data(json_data, alias):
 def reorder_json_clips(file_path, action, new_order):
     """
     Réordonne les clips d'une action spécifique dans le fichier JSON.
+    Préserve les clips stockés qui ne sont pas concernés par le réordonnancement.
     
     Args:
         file_path: Chemin du fichier JSON
@@ -342,12 +421,19 @@ def reorder_json_clips(file_path, action, new_order):
     except:
         return
     
-    # Séparer les clips par action
+    # Séparer les clips non-stockés par action et garder les clips stockés
     clips_by_action = {"copy": [], "term": [], "exec": []}
+    stored_clips = []
+    
     for item in data:
-        item_action = item.get('action', 'copy')
-        if item_action in clips_by_action:
-            clips_by_action[item_action].append(item)
+        if item.get('stored', False):
+            # Garder les clips stockés séparément
+            stored_clips.append(item)
+        else:
+            # Clips non-stockés : séparer par action
+            item_action = item.get('action', 'copy')
+            if item_action in clips_by_action:
+                clips_by_action[item_action].append(item)
     
     # Réordonner les clips de l'action concernée selon new_order
     reordered = []
@@ -359,8 +445,8 @@ def reorder_json_clips(file_path, action, new_order):
     # Remplacer les clips de cette action par les réordonnés
     clips_by_action[action] = reordered
     
-    # Reconstruire la liste complète (copy, term, exec)
-    new_data = clips_by_action["copy"] + clips_by_action["term"] + clips_by_action["exec"]
+    # Reconstruire la liste complète (copy, term, exec) + clips stockés à la fin
+    new_data = clips_by_action["copy"] + clips_by_action["term"] + clips_by_action["exec"] + stored_clips
     
     # Sauvegarder
     with open(file_path, 'w', encoding='utf-8') as f:
@@ -371,6 +457,7 @@ def move_clip_in_json(file_path, source_alias, target_position_alias, insert_bef
     """
     Déplace un clip ou un groupe vers une nouvelle position dans le fichier JSON.
     Peut aussi changer l'action du clip/groupe si new_action est spécifié.
+    Préserve les clips stockés qui ne sont pas concernés par le déplacement.
     
     Args:
         file_path: Chemin du fichier JSON
@@ -391,10 +478,14 @@ def move_clip_in_json(file_path, source_alias, target_position_alias, insert_bef
     except:
         return False
     
-    # Trouver le clip source et sa position
+    # Séparer les clips stockés des clips actifs
+    stored_clips = [item for item in data if item.get('stored', False)]
+    active_data = [item for item in data if not item.get('stored', False)]
+    
+    # Trouver le clip source et sa position parmi les clips actifs
     source_clip = None
     source_index = None
-    for i, item in enumerate(data):
+    for i, item in enumerate(active_data):
         if item.get('alias') == source_alias:
             source_clip = item.copy()  # Copier pour pouvoir modifier
             source_index = i
@@ -403,9 +494,9 @@ def move_clip_in_json(file_path, source_alias, target_position_alias, insert_bef
     if source_clip is None:
         return False
     
-    # Trouver la position cible
+    # Trouver la position cible parmi les clips actifs
     target_index = None
-    for i, item in enumerate(data):
+    for i, item in enumerate(active_data):
         if item.get('alias') == target_position_alias:
             target_index = i
             break
@@ -422,7 +513,7 @@ def move_clip_in_json(file_path, source_alias, target_position_alias, insert_bef
                     child['action'] = new_action
     
     # Retirer le clip source de sa position actuelle
-    data.pop(source_index)
+    active_data.pop(source_index)
     
     # Ajuster l'index cible si nécessaire (car on a supprimé un élément)
     if source_index < target_index:
@@ -430,21 +521,21 @@ def move_clip_in_json(file_path, source_alias, target_position_alias, insert_bef
     
     # Insérer à la nouvelle position
     if insert_before:
-        data.insert(target_index, source_clip)
+        active_data.insert(target_index, source_clip)
     else:
-        data.insert(target_index + 1, source_clip)
+        active_data.insert(target_index + 1, source_clip)
     
     # Réorganiser pour garder les clips groupés par action (copy, term, exec)
     clips_by_action = {"copy": [], "term": [], "exec": []}
-    for item in data:
+    for item in active_data:
         item_action = item.get('action', 'copy')
         if item_action in clips_by_action:
             clips_by_action[item_action].append(item)
     
-    # Reconstruire la liste dans l'ordre correct
-    new_data = clips_by_action["copy"] + clips_by_action["term"] + clips_by_action["exec"]
+    # Reconstruire la liste dans l'ordre correct + clips stockés à la fin
+    new_data = clips_by_action["copy"] + clips_by_action["term"] + clips_by_action["exec"] + stored_clips
     
-    data_sent = new_data if context != "custom" else data
+    data_sent = new_data if context != "custom" else (active_data + stored_clips)
     # Sauvegarder
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(data_sent, f, indent=4, ensure_ascii=False)
@@ -462,7 +553,10 @@ def populate_actions_map_from_file(file_path, actions_map_sub, callback):
     
     try:
         with open(json_path, 'r', encoding='utf-8') as f:
-            json_data = json.load(f)
+            all_data = json.load(f)
+        
+        # Filtrer pour ne garder que les clips non stockés
+        json_data = [item for item in all_data if not item.get('stored', False)]
             
         for item in json_data:
             alias = item.get('alias')
@@ -551,7 +645,7 @@ def get_next_clip_id(data):
     
     return max_id + 1
 
-def append_to_actions_file_json(file_path, alias, string, action="copy", html_string=None):
+def append_to_actions_file_json(file_path, alias, string, action="copy", html_string=None, stored=False):
     """
     Ajoute une entrée dans le fichier JSON d'actions.
     
@@ -561,6 +655,7 @@ def append_to_actions_file_json(file_path, alias, string, action="copy", html_st
         string: La commande ou chaîne à associer
         action: Type d'action ("copy", "term", "exec"), par défaut "copy"
         html_string: Le contenu HTML formaté (optionnel, pour conserver la coloration)
+        stored: True si le clip est stocké, False sinon (défaut: False)
     """
     # Vérifier si la valeur est non vide
     if not string.strip():
@@ -576,7 +671,7 @@ def append_to_actions_file_json(file_path, alias, string, action="copy", html_st
     else:
         data = []
     
-    # Vérifier si l'alias existe déjà
+    # Vérifier si l'alias existe déjà (parmi TOUS les clips, stockés ou non)
     for item in data:
         if item.get("alias") == alias:
             print(f"[Info] L'alias '{alias}' existe déjà.")
@@ -586,13 +681,14 @@ def append_to_actions_file_json(file_path, alias, string, action="copy", html_st
     next_id = get_next_clip_id(data)
     created_at = datetime.now().isoformat()
     
-    # Ajouter la nouvelle entrée
+    # Ajouter la nouvelle entrée avec le statut stored
     new_entry = {
         "id": next_id,
         "created_at": created_at,
         "alias": alias,
         "action": action,
-        "string": string
+        "string": string,
+        "stored": stored
     }
     # Ajouter le HTML seulement s'il est fourni
     if html_string:
@@ -651,7 +747,7 @@ def replace_or_append_at_lineno(chemin_fichier, clef, valeur, numero_ligne):
     with open(chemin_fichier, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lignes) + '\n')  # ajoute un \n final propre
 
-def replace_or_append_json(file_path, alias, string, action="copy", html_string=None):
+def replace_or_append_json(file_path, alias, string, action="copy", html_string=None, stored=None):
     """
     Remplace une entrée existante ou l'ajoute si elle n'existe pas.
     
@@ -661,6 +757,7 @@ def replace_or_append_json(file_path, alias, string, action="copy", html_string=
         string: La commande ou chaîne à associer
         action: Type d'action ("copy", "term", "exec"), par défaut "copy"
         html_string: Le contenu HTML formaté (optionnel, pour conserver la coloration)
+        stored: Statut stored (si None, conserve l'existant ou met False pour nouveau)
     """
     # Vérifier si la valeur est non vide
     if not string.strip():
@@ -680,7 +777,7 @@ def replace_or_append_json(file_path, alias, string, action="copy", html_string=
     found = False
     for item in data:
         if item.get("alias") == alias:
-            # Remplacer les valeurs (mais garder id et created_at existants)
+            # Remplacer les valeurs (mais garder id, created_at et stored existants)
             item["string"] = string
             item["action"] = action
             # Gérer le HTML : l'ajouter, le mettre à jour, ou le supprimer
@@ -688,11 +785,14 @@ def replace_or_append_json(file_path, alias, string, action="copy", html_string=
                 item["html_string"] = html_string
             elif "html_string" in item:
                 del item["html_string"]  # Supprimer si plus de HTML
+            # Mettre à jour stored seulement si explicitement fourni
+            if stored is not None:
+                item["stored"] = stored
             found = True
             print(f"[Info] L'alias '{alias}' a été mis à jour.")
             break
     
-    # Si l'alias n'existe pas, l'ajouter avec id et created_at
+    # Si l'alias n'existe pas, l'ajouter avec id, created_at et stored
     if not found:
         next_id = get_next_clip_id(data)
         created_at = datetime.now().isoformat()
@@ -702,7 +802,8 @@ def replace_or_append_json(file_path, alias, string, action="copy", html_string=
             "created_at": created_at,
             "alias": alias,
             "action": action,
-            "string": string
+            "string": string,
+            "stored": stored if stored is not None else False
         }
         if html_string:
             new_entry["html_string"] = html_string
