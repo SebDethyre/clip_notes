@@ -605,10 +605,23 @@ class KeyboardShortcutsManager(QWidget):
         # Charger les clips depuis le JSON
         clips = self.load_clips()
         
-        # Trier les clips selon l'ordre configuré dans l'app
-        custom_order = getattr(self.app_instance, 'action_order', ["copy", "term", "exec"])
-        action_order = {action: i for i, action in enumerate(custom_order)}
-        sorted_clips = sorted(clips, key=lambda c: action_order.get(c.get('action', 'copy'), 999))
+        # Trier les clips selon le mode de tri configuré
+        sort_mode = getattr(self.app_instance, 'sort_mode', 'group')
+        
+        if sort_mode == "group":
+            # Tri par zone d'action
+            custom_order = getattr(self.app_instance, 'action_order', ["copy", "term", "exec"])
+            action_order = {action: i for i, action in enumerate(custom_order)}
+            sorted_clips = sorted(clips, key=lambda c: (action_order.get(c.get('action', 'copy'), 999), clips.index(c)))
+        elif sort_mode == "alpha":
+            # Tri alphabétique
+            sorted_clips = sorted(clips, key=lambda c: c.get('alias', '').lower())
+        elif sort_mode == "date":
+            # Tri par id (date de création)
+            sorted_clips = sorted(clips, key=lambda c: c.get('id', 999999))
+        else:  # "custom"
+            # Ordre du JSON tel quel
+            sorted_clips = clips
         
         action_description = {
             "copy" : "copie",

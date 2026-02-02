@@ -2170,7 +2170,6 @@ class ClipNotesWindow(QMainWindow):
                 remove_image_button.setVisible(True)
         
         layout.addWidget(image_container)
-        
         layout.addLayout(buttons_row)
         layout.addWidget(slider_container)
         layout.addWidget(value_input)
@@ -2213,8 +2212,8 @@ class ClipNotesWindow(QMainWindow):
                     
                     if self.dialog_remove_image_button:
                         self.dialog_remove_image_button.setVisible(True)
-                    
                     print(f"Icône d'application utilisée: {icon_path}")
+
         def find_app_icon(app_name):
             """Cherche l'icône d'une application installée"""
             if not app_name:
@@ -3980,6 +3979,7 @@ class ClipNotesWindow(QMainWindow):
             'menu_background_color': self.menu_background_color,
             'action_zone_colors': dict(self.action_zone_colors),
             'action_order': list(self.action_order),
+            'sort_mode': self.sort_mode,
             'zone_basic_opacity': self.zone_basic_opacity,
             'zone_hover_opacity': self.zone_hover_opacity,
             'menu_opacity': self.menu_opacity,
@@ -4035,6 +4035,7 @@ class ClipNotesWindow(QMainWindow):
             self.menu_background_color = initial_state['menu_background_color']
             self.action_zone_colors = dict(initial_state['action_zone_colors'])
             self.action_order = list(initial_state['action_order'])
+            self.sort_mode = initial_state['sort_mode']
             current_action_order = list(initial_state['action_order'])
             self.zone_basic_opacity = initial_state['zone_basic_opacity']
             self.zone_hover_opacity = initial_state['zone_hover_opacity']
@@ -4687,12 +4688,18 @@ class ClipNotesWindow(QMainWindow):
                 sort_combo.setCurrentIndex(i)
                 break
         
+        # Variable pour stocker la référence au manager de raccourcis (définie plus tard)
+        shortcuts_manager_ref = [None]
+        
         def on_sort_mode_changed(index):
             new_mode = sort_combo.itemData(index)
             self.sort_mode = new_mode
             # Activer/désactiver le drag des couleurs selon le mode
             action_pickers_container.setDragEnabled(new_mode == "group")
             self.refresh_menu()
+            # Rafraîchir l'onglet des raccourcis si disponible
+            if shortcuts_manager_ref[0] is not None:
+                shortcuts_manager_ref[0].refresh_clips_order()
         
         sort_combo.currentIndexChanged.connect(on_sort_mode_changed)
         
@@ -5222,6 +5229,9 @@ class ClipNotesWindow(QMainWindow):
             self.nb_icons_menu,
             dialog_parent=dialog  # Passer la référence au dialog pour le bouton Fermer
         )
+        
+        # Stocker la référence pour le refresh depuis on_sort_mode_changed
+        shortcuts_manager_ref[0] = shortcuts_dialog
 
         shortcuts_dialog.setSizePolicy(
             QSizePolicy.Policy.Expanding,
