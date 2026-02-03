@@ -1635,7 +1635,7 @@ class RadialMenu(QWidget):
                     angles_rad = [math.radians(pos * angle_step) for pos in indices_visible_pos]
                     avg_x = sum(math.cos(a) for a in angles_rad) / len(angles_rad)
                     avg_y = sum(math.sin(a) for a in angles_rad) / len(angles_rad)
-                    avg_angle_rad = math.atan2(avg_y, avg_x) if sort_mode != "custom" else 55
+                    avg_angle_rad = math.atan2(avg_y, avg_x) if sort_mode != "custom" else math.radians(-90)
                     
                     # Distance du badge depuis le centre (juste après les boutons)
                     badge_distance = self.radius + self.btn_size + 20

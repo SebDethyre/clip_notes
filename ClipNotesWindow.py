@@ -5269,7 +5269,7 @@ class ClipNotesWindow(QMainWindow):
         # label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         shortcuts_layout = QVBoxLayout(shortcuts_dialog_tab)
-        shortcuts_layout.setContentsMargins(30, 20, 30, 20)
+        shortcuts_layout.setContentsMargins(14, 20, 14, 20)
         shortcuts_layout.addStretch()
         shortcuts_layout.addWidget(shortcuts_dialog, 1)
         shortcuts_layout.addStretch()
@@ -5751,32 +5751,32 @@ class ClipNotesWindow(QMainWindow):
             btn = QPushButton(str(page_num + 1))
             btn.setFixedSize(28, 28)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            
+            r, g, b = self.menu_background_color
             # Style différent pour la page actuelle
             if page_num == self.current_page:
-                btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: rgba(100, 180, 255, 200);
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: rgba({r}, {g}, {b}, 200);
                         border: none;
                         border-radius: 14px;
                         color: white;
                         font-size: 12px;
                         font-weight: bold;
-                    }
+                    }}
                 """)
             else:
-                btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: rgba(255, 255, 255, 30);
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: rgba({r}, {g}, {b}, 30);
                         border: none;
                         border-radius: 14px;
                         color: rgba(255, 255, 255, 150);
                         font-size: 12px;
-                    }
-                    QPushButton:hover {
-                        background-color: rgba(255, 255, 255, 80);
+                    }}
+                    QPushButton:hover {{
+                        background-color: rgba({r}, {g}, {b}, 80);
                         color: white;
-                    }
+                    }}
                 """)
             
             # Connecter le clic
@@ -5789,11 +5789,19 @@ class ClipNotesWindow(QMainWindow):
         
         # Positionner en dessous du menu (et sous les tooltips)
         if self.current_popup:
+            # En dessous
+            # menu_geometry = self.current_popup.geometry()
+            # menu_bottom = menu_geometry.y() + menu_geometry.height()
+            # selector_x = x - selector_width // 2
+            # # Ajouter un offset pour être sous le tooltip (environ 80px pour le tooltip)
+            # selector_y = menu_bottom + 80
+
+            # Au dessus
             menu_geometry = self.current_popup.geometry()
-            menu_bottom = menu_geometry.y() + menu_geometry.height()
+            menu_top = menu_geometry.y()
             selector_x = x - selector_width // 2
-            # Ajouter un offset pour être sous le tooltip (environ 80px pour le tooltip)
-            selector_y = menu_bottom + 80
+            selector_y = menu_top - selector_height + 6  # 12px de marge
+
         else:
             selector_x = x - selector_width // 2
             selector_y = y + 200

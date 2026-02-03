@@ -299,7 +299,12 @@ class KeyboardShortcutsManager(QWidget):
             "shortcuts.json"
         )
         self.shortcuts = self.load_shortcuts()
-        
+
+        self.alias_column_width = 80
+        self.action_column_width = 90
+        self.value_column_width = 290
+        self.shortcut_column_width = 150
+        self.button_def_column_width = 100
         # self.setWindowTitle("⌨️ Raccourcis clavier")
         # self.setWindowFlags(
         #     Qt.WindowType.Dialog | 
@@ -490,7 +495,8 @@ class KeyboardShortcutsManager(QWidget):
         header_layout = QHBoxLayout()
         header_layout.setSpacing(8)
         
-        headers = [("Icône", 80), ("Action", 180), ("Valeur", 200), ("Raccourci", 150), ("Action", 100)]
+        headers = [("Alias", self.alias_column_width), ("Action", self.action_column_width), ("Valeur", self.value_column_width), ("Raccourci", self.shortcut_column_width), ("", self.button_def_column_width)]
+
         for text, width in headers:
             header = QLabel(text)
             header.setFixedWidth(width)
@@ -561,15 +567,17 @@ class KeyboardShortcutsManager(QWidget):
             }
         """)
         layout.addWidget(section_label)
-        supprimer_text = "Supprimer, Stocker, Stock" if self.nb_icons_menu == 5 else "Supprimer"
-        stocker_text = "Stocker, Stock" if self.nb_icons_menu == 6 else "Stocker, Stock" if self.nb_icons_menu == 7 else "Stocker"
+        # supprimer_text = "Supprimer, Stocker, Stock" if self.nb_icons_menu == 5 else "Supprimer"
+        # stocker_text = "Stocker, Stock" if self.nb_icons_menu == 6 else "Stocker, Stock" if self.nb_icons_menu == 7 else "Stocker"
         button_descriptions = {
             "➕": "Ajouter un clip",
             "🔧": "Modifier",
             "⚙️": "Configuration",
             "📦": "Stocker, Stock",
-            "💾": stocker_text,
-            "➖": supprimer_text,
+            # "💾": stocker_text,
+            "💾": "Stocker",
+            # "➖": supprimer_text,
+            "➖": "Supprimer",
         }
         
         # Afficher dans l'ordre de button_descriptions
@@ -634,7 +642,7 @@ class KeyboardShortcutsManager(QWidget):
             action = action_description.get(clip.get('action', 'copy'), clip.get('action', 'copy'))
             
             # Description courte
-            value = string[:50] + "..." if len(string) > 50 else string
+            value = string[:100] + "..." if len(string) > 50 else string
             value = value.replace('\n', ' ')
             if not string:
                 action = "sous-menu"
@@ -656,7 +664,7 @@ class KeyboardShortcutsManager(QWidget):
         
         # Colonne 1 : Icône
         icon_widget = QLabel()
-        icon_widget.setFixedSize(80, 48)
+        icon_widget.setFixedSize(self.alias_column_width, 48)
         icon_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon_widget.setStyleSheet("""
             QLabel {
@@ -684,7 +692,7 @@ class KeyboardShortcutsManager(QWidget):
         
         # Colonne 2 : action
         action_label = QLabel(action)
-        action_label.setFixedWidth(180)
+        action_label.setFixedWidth(self.action_column_width)
         action_label.setStyleSheet("""
             QLabel {
                 color: white;
@@ -699,7 +707,7 @@ class KeyboardShortcutsManager(QWidget):
         
         # Colonne 3 : Valeur de string
         value_label = QLabel(value)
-        value_label.setFixedWidth(200)
+        value_label.setFixedWidth(self.value_column_width)
         value_label.setStyleSheet("""
             QLabel {
                 color: white;
@@ -714,7 +722,7 @@ class KeyboardShortcutsManager(QWidget):
         
         # Colonne 4 : Raccourci actuel
         shortcut_label = QLabel(current_shortcut if current_shortcut else "Non défini")
-        shortcut_label.setFixedWidth(150)
+        shortcut_label.setFixedWidth(self.shortcut_column_width)
         shortcut_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         shortcut_label.setStyleSheet(f"""
             QLabel {{
@@ -732,7 +740,7 @@ class KeyboardShortcutsManager(QWidget):
         
         # Colonne 5 : Bouton pour définir
         set_btn = QPushButton("Définir")
-        set_btn.setFixedWidth(100)
+        set_btn.setFixedWidth(self.button_def_column_width)
         set_btn.setStyleSheet("""
             QPushButton {
                 background-color: rgba(100, 150, 255, 40);
